@@ -796,6 +796,9 @@ pub struct Team {
     /// The coach's order. Empty: [`Team::lineup`] fills it every game.
     #[serde(default)]
     pub card: LineCard,
+    /// Who wears number 1 this summer (family name): he starts when his arm is fresh.
+    #[serde(default)]
+    pub number_one: String,
 }
 
 impl Team {
@@ -823,6 +826,7 @@ impl Team {
         let mut t = Self {
             players,
             card: LineCard::default(),
+            number_one: String::new(),
         };
         t.unique_names();
         t.crown();
@@ -852,16 +856,26 @@ impl Team {
         let mut t = Self {
             players,
             card: LineCard::default(),
+            number_one: String::new(),
         };
         t.unique_names();
         t.crown();
         t
     }
 
-    /// The founding ace throws a heavy ball; the best older fielder is the captain.
+    /// The founding ace (a second-year: his summers are still ahead) throws a heavy
+    /// ball; the best older fielder is the captain.
     fn crown(&mut self) {
-        if let Some(i) = self.ace() {
+        let second_year_ace = (0..self.players.len())
+            .filter(|&i| self.players[i].pitcher() && self.players[i].grade == 2)
+            .max_by(|a, b| {
+                self.players[*a]
+                    .pitch_rating()
+                    .total_cmp(&self.players[*b].pitch_rating())
+            });
+        if let Some(i) = second_year_ace.or_else(|| self.ace()) {
             self.players[i].role = Role::Ace;
+            self.number_one = self.players[i].family.clone();
             self.players[i].grant_force(Ability::Heavy);
         }
         let cap = self
@@ -900,6 +914,14 @@ impl Team {
     /// The best pitcher who can play and is fresh enough, else anyone.
     pub fn ace(&self) -> Option<usize> {
         let ok = |p: &&Player| p.pitcher() && p.can_play();
+        // Number 1 takes the ball when he is rested enough.
+        if let Some(i) = self
+            .players
+            .iter()
+            .position(|p| p.family == self.number_one && ok(&p) && p.stamina >= 45)
+        {
+            return Some(i);
+        }
         self.players
             .iter()
             .enumerate()
@@ -1071,6 +1093,28 @@ impl Team {
         before - self.players.len()
     }
 
+    /// Players from other clubs who join mid-year so the club can field a nine: `n` of
+    /// them, second-years, raw. Returns their family names.
+    pub fn late_joiners(&mut self, rng: &mut Rng, n: usize, reputation: f32) -> Vec<String> {
+        let mut names = Vec::new();
+        for _ in 0..n {
+            let pos = if self.players.iter().filter(|p| p.pitcher()).count() < 2 {
+                Pos::P
+            } else if !self.players.iter().any(|p| p.pos == Pos::C) {
+                Pos::C
+            } else {
+                Pos::FIELD[1 + (rng.next_u32() as usize) % 8]
+            };
+            self.players
+                .push(rookie(rng, 2, pos, 30.0 + reputation * 0.15));
+            self.unique_names();
+            if let Some(p) = self.players.last() {
+                names.push(p.family.clone());
+            }
+        }
+        names
+    }
+
     /// April: the scouted players join, then walk-ins (more and better with reputation, 0 to
     /// 100). At least one pitcher and a catcher if the club needs them.
     pub fn recruit(&mut self, rng: &mut Rng, reputation: f32, scouted: Vec<Player>) -> usize {
@@ -1079,7 +1123,7 @@ impl Team {
             p.grade = 1;
             self.players.push(p);
         }
-        let n = (3 + (reputation / 25.0) as usize).saturating_sub(signed / 2);
+        let n = (4 + (reputation / 25.0) as usize).saturating_sub(signed / 2);
         let level = 30.0 + reputation * 0.25;
         let mut need: Vec<Pos> = Vec::new();
         if self.players.iter().filter(|p| p.pitcher()).count() < 3 {
@@ -1216,7 +1260,7 @@ mod tests {
         assert!(t.players.iter().all(|p| p.grade >= 2));
         let kid = Team::prospect(&mut rng, 60.0);
         let n = t.recruit(&mut rng, 60.0, vec![kid]);
-        assert_eq!(n, 6);
+        assert_eq!(n, 7);
         assert!(t.players.iter().filter(|p| p.pitcher()).count() >= 2);
     }
 

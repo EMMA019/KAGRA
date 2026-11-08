@@ -4,6 +4,7 @@
 //! the roster and one player's page.
 
 mod broadcast;
+mod season;
 mod stadium;
 #[cfg(test)]
 pub(in crate::diamond_days) use stadium::Finale;
@@ -180,6 +181,14 @@ impl DiamondDays {
             }
             Mode::CampTalk { .. } => {
                 push_choices(&mut b, hh, board::camp_talk().choices.len());
+            }
+            Mode::Bracket => push_choices(&mut b, hh, 3),
+            Mode::Decide(d) => {
+                let n = match d {
+                    super::Decide::Ace => self.ace_candidates().len(),
+                    super::Decide::Captain => self.captain_candidates().len(),
+                };
+                push_choices(&mut b, hh, n);
             }
             Mode::Roster => {
                 b.push((Btn::RosterUp, [296.0, 78.0, 42.0, 34.0]));
@@ -382,6 +391,7 @@ impl DiamondDays {
                 self.draw_match(&mut p, *shown, *t, *asking, &l);
             }
             Mode::MatchIntro => self.draw_match_intro(&mut p, &l),
+            Mode::Bracket => self.draw_bracket(&mut p, &l),
             Mode::MatchEnd => self.draw_match_end(&mut p, &l),
             Mode::Roster => {
                 art::backdrop(&mut p, month, self.clock);
@@ -419,6 +429,9 @@ impl DiamondDays {
         }
         if let Mode::CampTalk { who } = self.mode {
             self.draw_camp_talk(&mut p, who, &l);
+        }
+        if let Mode::Decide(d) = self.mode {
+            self.draw_decide(&mut p, d, &l);
         }
         if !self.pops.is_empty() {
             p.layer();
@@ -841,15 +854,14 @@ impl DiamondDays {
     }
 
     fn next_fixture(&self) -> Option<(u8, Fixture)> {
-        (self.s.week..=board::WEEKS)
-            .find_map(|wk| board::fixture(wk).map(|f| (wk, f)))
-            .filter(|(_, f)| match f {
-                Fixture::Summer(_) => self.s.summer_in,
-                Fixture::National(_) => self.s.national_in,
-                Fixture::Autumn(_) => self.s.autumn_in,
-                Fixture::Spring(_) => self.s.spring_in,
-                Fixture::Practice => true,
-            })
+        if let Some(f) = self.s.cup {
+            return Some((self.s.week, f));
+        }
+        (self.s.week..=board::WEEKS).find_map(|wk| {
+            board::fixture(wk)
+                .filter(|f| self.plays_in(*f))
+                .map(|f| (wk, f))
+        })
     }
 
     fn draw_next(&self, p: &mut Painter) {

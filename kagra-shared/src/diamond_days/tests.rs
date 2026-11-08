@@ -91,6 +91,7 @@ fn play_week(g: &mut DiamondDays) {
             Mode::Walk { .. } => run(g, 0.3),
             Mode::MatchIntro => press(g, hud::Btn::PlayBall),
             Mode::MatchEnd => press(g, hud::Btn::Continue),
+            Mode::Bracket | Mode::Decide(_) => press(g, hud::Btn::Choose(0)),
         }
         if g.flow.phase != FlowPhase::Play {
             return;
@@ -446,6 +447,8 @@ fn the_model_set_stays_fixed_through_a_week() {
     let key = g.document().gpu_mesh_key();
     for _ in 0..3 {
         play_week(&mut g);
+        // Back on the board (a game in between builds the ballpark, then lets it go).
+        run(&mut g, 0.05);
         assert_eq!(g.document().gpu_mesh_key(), key);
     }
 }
@@ -803,25 +806,32 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     assert_eq!(resumed.chapter(), 1);
     assert!(resumed.s.team.players[0].abilities.is_empty());
 
-    // Autumn champions are invited, and the same school comes back next year.
-    g.s.week = 27;
-    g.s.autumn_in = true;
-    g.s.autumn_wins = 2;
+    // A deep autumn run is invited to March on selection day in January.
+    g.s.week = board::SELECTION_WEEK;
+    g.s.selection_year = 0;
+    g.s.autumn_wins = 3;
     g.s.year = 1;
     g.mode = Mode::Plan;
     g.game = None;
     g.notes.clear();
     g.begin_week();
+    assert!(g.s.spring_in, "the autumn sends them to March");
+    assert!(g.notes.iter().any(|n| n.title == "Selection day"));
+
+    // A practice school comes back the same week next year.
+    g.notes.clear();
+    g.s.week = 22;
+    g.mode = Mode::Plan;
+    g.game = None;
+    g.begin_week();
     assert_eq!(g.mode, Mode::MatchIntro);
     let rival = g.s.rivals[g.rival_idx.unwrap()].name.clone();
     press(&mut g, hud::Btn::PlayBall);
     press(&mut g, hud::Btn::Skip);
-    assert!(g.s.spring_in, "the autumn sends them to March");
     g.notes.clear();
     g.mode = Mode::Plan;
     g.s.year = 2;
-    g.s.week = 27;
-    g.s.autumn_in = true;
+    g.s.week = 22;
     g.game = None;
     g.begin_week();
     let again = g.s.rivals[g.rival_idx.unwrap()].name.clone();
@@ -1951,4 +1961,265 @@ fn big_moments_in_3d_to_png() {
             shot(&mut g, x, n, hold * 0.32, "3d_bow_low");
         }
     }
+}
+
+/// Drive the screens with the first choice everywhere until `stop` holds (notes are read
+/// as they come, and handed to `seen`).
+fn drive(
+    g: &mut DiamondDays,
+    steps: usize,
+    stop: impl Fn(&DiamondDays) -> bool,
+    seen: &mut Vec<String>,
+) {
+    for _ in 0..steps {
+        if stop(g) {
+            return;
+        }
+        if let Some(n) = g.notes.first() {
+            if !seen.contains(&n.title) {
+                seen.push(n.title.clone());
+            }
+        }
+        match g.mode {
+            Mode::Notice => tap(g, 195.0, 400.0),
+            Mode::Ask { .. } | Mode::CampTalk { .. } => press(g, hud::Btn::Choose(0)),
+            Mode::Plan => {
+                for p in &mut g.s.team.players {
+                    p.auto_raise();
+                }
+                press(g, hud::Btn::Card(0))
+            }
+            Mode::Match {
+                asking: Some(_), ..
+            } => press(g, hud::Btn::Call(None)),
+            Mode::Match { .. } => press(g, hud::Btn::Skip),
+            Mode::Walk { .. } => run(g, 0.3),
+            Mode::MatchIntro => press(g, hud::Btn::PlayBall),
+            Mode::MatchEnd => press(g, hud::Btn::Continue),
+            Mode::Bracket | Mode::Decide(_) => press(g, hud::Btn::Choose(0)),
+            _ => panic!("unexpected {:?}", g.mode),
+        }
+    }
+    panic!("never got there; stuck in {:?}", g.mode);
+}
+
+/// A tournament is a run of game days: the board waits, the draw shows our path, each
+/// win stays on the same week, and the day before is rest, tune up, or study.
+#[test]
+fn a_tournament_is_a_run_of_game_days_on_its_draw() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 4;
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert_eq!(g.s.cup, Some(Fixture::SpringPref(1)));
+    assert_eq!(g.s.cup_path.len(), 4, "a school drawn for every round");
+    assert!(g.notes.iter().any(|n| n.title_ja == "春季県大会"));
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Bracket);
+    let hud = g.hud(W, H, false);
+    let texts: Vec<String> = all_texts(&hud).map(|t| t.text.clone()).collect();
+    assert!(texts
+        .iter()
+        .any(|t| t.contains("決勝") || t.contains("final")));
+    // Study them: the next school plays a little weaker, and the game is on.
+    for p in &mut g.s.team.players {
+        p.stamina = 50;
+    }
+    press(&mut g, hud::Btn::Choose(2));
+    assert_eq!(g.mode, Mode::MatchIntro);
+    assert!(g.s.studied);
+    let first = g.s.cup_path[0] as usize;
+    assert_eq!(
+        g.rival_idx,
+        Some(first),
+        "round 1 is the school drawn for it"
+    );
+    // Play rounds until it is over: a win keeps the week; the end moves past it.
+    let week = g.s.week;
+    let mut seen = Vec::new();
+    loop {
+        drive(&mut g, 400, |g| g.mode == Mode::MatchEnd, &mut seen);
+        let won = g.report.as_ref().is_some_and(|r| r.won);
+        if g.s.cup.is_some() {
+            assert!(won && g.s.week == week, "a win stays on the week");
+            press(&mut g, hud::Btn::Continue);
+            assert_eq!(g.mode, Mode::Bracket, "back to the draw");
+            assert_eq!(g.s.cup_scores.len(), g.s.cup.unwrap().round() as usize - 1);
+        } else {
+            assert_eq!(g.s.week, board::cup_end(Fixture::SpringPref(1)));
+            break;
+        }
+    }
+}
+
+/// Lose in the summer and the third-years retire on the spot: a word from each, they
+/// leave the team (to graduate in March), and the new team names a captain.
+#[test]
+fn the_summer_ends_the_third_years_and_the_new_team_names_a_captain() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let thirds: Vec<String> =
+        g.s.team
+            .players
+            .iter()
+            .filter(|p| p.grade == 3)
+            .map(|p| p.family.clone())
+            .collect();
+    assert!(!thirds.is_empty());
+    // A summer against a much stronger field, so it ends (a win would go on).
+    for s in &mut g.s.rivals {
+        s.strength = 90.0;
+    }
+    g.s.week = 13;
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert!(matches!(g.s.cup, Some(Fixture::Summer(_))));
+    let mut seen = Vec::new();
+    drive(
+        &mut g,
+        3000,
+        |g| g.mode == Mode::Decide(Decide::Captain),
+        &mut seen,
+    );
+    assert!(seen.iter().any(|t| t == "Farewell, seniors"), "{seen:?}");
+    assert!(g.s.team.players.iter().all(|p| p.grade < 3));
+    let gone: Vec<String> = g.s.seniors.iter().map(|p| p.family.clone()).collect();
+    assert_eq!(gone, thirds);
+    assert!(
+        g.s.team.players.len() >= 10,
+        "nine and a spare, whatever it takes"
+    );
+    // The captain: one of the oldest left, his way of leading.
+    let cands = g.captain_candidates();
+    assert!(!cands.is_empty() && cands.len() <= 3);
+    let mut ids: Vec<usize> = cands.iter().map(|(i, _)| *i).collect();
+    ids.dedup();
+    assert_eq!(ids.len(), cands.len(), "three different players");
+    let (pick, _) = cands[1.min(cands.len() - 1)];
+    let name = g.s.team.players[pick].family.clone();
+    press(&mut g, hud::Btn::Choose(1.min(cands.len() - 1)));
+    assert_eq!(g.s.captain, name);
+    assert!(!g.s.need_captain);
+    assert_eq!(g.captain_name(), Some(name));
+    // March: the retired seniors graduate.
+    g.notes.clear();
+    g.s.week = board::WEEKS;
+    g.mode = Mode::Plan;
+    g.end_week();
+    assert!(g.s.seniors.is_empty());
+    let grad = g
+        .notes
+        .iter()
+        .find(|n| n.title == "Graduation")
+        .expect("a graduation");
+    for fam in &thirds {
+        assert!(grad.faces.iter().any(|(f, _)| f == fam));
+    }
+}
+
+/// Before the summer the coach gives out number 1, and number 1 starts when rested.
+#[test]
+fn number_one_is_the_coachs_call_and_he_starts() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = board::NUMBERS_WEEK;
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert_eq!(g.mode, Mode::Decide(Decide::Ace));
+    let cands = g.ace_candidates();
+    assert!(cands.len() >= 2);
+    let last = cands.len() - 1;
+    let pick = cands[last];
+    press(&mut g, hud::Btn::Choose(last));
+    let fam = g.s.team.players[pick].family.clone();
+    assert_eq!(g.s.team.number_one, fam);
+    assert_eq!(g.s.week, board::NUMBERS_WEEK + 1);
+    assert!(g.notes.iter().any(|n| n.title == "Summer numbers"));
+    for p in &mut g.s.team.players {
+        p.stamina = 100;
+        p.hurt = 0;
+        p.study = 0;
+    }
+    assert_eq!(g.s.team.ace(), Some(pick), "number 1 takes the ball");
+    g.s.team.players[pick].stamina = 20;
+    assert_ne!(g.s.team.ace(), Some(pick), "not on a tired arm");
+}
+
+/// Winter has no games with other schools, and its training counts for more.
+#[test]
+fn winter_is_for_training() {
+    for w in board::WINTER {
+        assert!(board::fixture(w).is_none());
+    }
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = *board::WINTER.start();
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert!(g.notes.iter().any(|n| n.title == "Winter"));
+}
+
+/// The season's screens as pictures (`KAGRA_SHOTS=dir`): the first day, the draw, number
+/// 1, the farewell to the seniors and the captain.
+#[test]
+fn season_screens_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let shot = |g: &DiamondDays, name: &str| {
+        let list = g.hud(390, 844, false);
+        crate::raster2d::picture(&list, 390, 844)
+            .save_png(&dir.join(format!("{name}.png")))
+            .unwrap();
+    };
+    let mut g = DiamondDays::new(DiamondDaysSpec::default());
+    g.set_lang("ja");
+    let _ = g.hud(W, H, false);
+    g.confirm();
+    run(&mut g, 1.5);
+    shot(&g, "s0_first_day");
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = board::NUMBERS_WEEK;
+    g.mode = Mode::Plan;
+    g.begin_week();
+    run(&mut g, 1.5);
+    shot(&g, "s1_numbers");
+    press(&mut g, hud::Btn::Choose(0));
+    run(&mut g, 0.5);
+    shot(&g, "s2_draw_note");
+    g.notes.clear();
+    for s in &mut g.s.rivals {
+        s.strength = 90.0;
+    }
+    g.s.week = 13;
+    g.mode = Mode::Plan;
+    g.begin_week();
+    tap(&mut g, 195.0, 400.0);
+    run(&mut g, 1.5);
+    shot(&g, "s3_bracket");
+    let mut seen = Vec::new();
+    drive(
+        &mut g,
+        3000,
+        |g| {
+            g.mode == Mode::Notice
+                && g.notes
+                    .first()
+                    .is_some_and(|n| n.title == "Farewell, seniors")
+        },
+        &mut seen,
+    );
+    run(&mut g, 1.5);
+    shot(&g, "s4_farewell");
+    drive(
+        &mut g,
+        50,
+        |g| g.mode == Mode::Decide(Decide::Captain),
+        &mut seen,
+    );
+    run(&mut g, 1.5);
+    shot(&g, "s5_captain");
 }

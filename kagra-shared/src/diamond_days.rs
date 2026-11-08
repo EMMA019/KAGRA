@@ -182,6 +182,20 @@ enum Mode {
     MatchIntro,
     /// After the whistle: the score, the player of the game, what the club learned.
     MatchEnd,
+    /// A tournament: our path through the draw, and how to spend the day before the
+    /// next game (rest, tune up, study them).
+    Bracket,
+    /// The coach decides something for the club (the ace's number, the captain).
+    Decide(Decide),
+}
+
+/// What the coach is asked to decide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Decide {
+    /// Who wears number 1 this summer.
+    Ace,
+    /// Who captains the new team.
+    Captain,
 }
 
 /// What the result screen shows after a game.
@@ -287,7 +301,50 @@ struct Save {
     /// Graduates who went pro: full name and the career year they left.
     #[serde(default)]
     pros: Vec<(String, u32)>,
+    /// The tournament being played: its next game (the round). The board waits.
+    #[serde(default)]
+    cup: Option<Fixture>,
+    /// Who we meet in each round of the tournament, drawn when it starts: a circuit
+    /// school's index, or `AWAY + n` for the n-th school from elsewhere.
+    #[serde(default)]
+    cup_path: Vec<u8>,
+    /// Our score in each round played so far (us, them).
+    #[serde(default)]
+    cup_scores: Vec<(u8, u8)>,
+    /// Seeded in the summer off the spring: the summer starts in round 2.
+    #[serde(default)]
+    seeded: bool,
+    /// The next game's opponent was studied the day before: it plays a little weaker.
+    #[serde(default)]
+    studied: bool,
+    /// The years the summer numbers, the draft, the selection and winter happened.
+    #[serde(default)]
+    numbers_year: u8,
+    #[serde(default)]
+    draft_year: u8,
+    #[serde(default)]
+    selection_year: u8,
+    #[serde(default)]
+    winter_year: u8,
+    /// Third-years whose last summer is over: out of the team until they graduate.
+    #[serde(default)]
+    seniors: Vec<team::Player>,
+    /// Retired third-years the pros picked in October (family names).
+    #[serde(default)]
+    drafted: Vec<String>,
+    /// The captain (family name), named when the new team forms.
+    #[serde(default)]
+    captain: String,
+    /// The new team still waits for the coach to name a captain.
+    #[serde(default)]
+    need_captain: bool,
+    /// Summer games this coach has won here (the first ends a long drought).
+    #[serde(default)]
+    summer_won: u32,
 }
+
+/// `cup_path` entries from here on are schools from other prefectures.
+const AWAY: u8 = 100;
 
 /// One finished year in the career record.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -575,17 +632,26 @@ impl DiamondDays {
                 {
                     let (school, school_ja) =
                         (self.school_en().to_string(), self.school_ja().to_string());
+                    let cap = self.captain_name().unwrap_or_default();
                     self.note(
                         "A new coach",
                         "新しい監督",
                         vec![
                             (
-                                format!("You are the new coach of {school}. The club is small and has never won much."),
-                                format!("あなたは{school_ja}野球部の新しい監督。部員は少なく、勝った記憶もあまりない。"),
+                                format!("April. You are the new coach of {school}: a dozen players, and not one summer win in ten years."),
+                                format!("4月。あなたは{school_ja}野球部の新しい監督。部員は12人、夏はもう10年も勝てていない。"),
                             ),
                             (
-                                "Pick a card each week and walk the ring. Train, rest, and take them to the Summer Stadium.".into(),
-                                "毎週カードを選んで盤を進もう。鍛えて、休ませて、夏の大舞台へ。".into(),
+                                "A first-year girl runs up with a scorebook. \"I'm Kotori, the manager! I'll be with you for three years!\"".into(),
+                                "スコアブックを抱えた1年生が駆けてきた。「マネージャーの七瀬ことりです！三年間、よろしくお願いします！」".into(),
+                            ),
+                            (
+                                format!("Captain {cap}, a third-year: \"This is our last summer. Just once, I want to win a summer game.\""),
+                                format!("3年生の主将、{cap}が頭を下げる。「俺たち、これが最後の夏なんです。一度でいいから、夏に勝ちたい」"),
+                            ),
+                            (
+                                "This year: win a summer game. Pick a card each week, train them, and get there.".into(),
+                                "今年の目標は「夏の1勝」。毎週カードを選んで鍛え、夏へ向かおう。".into(),
                             ),
                         ],
                     );
@@ -634,41 +700,91 @@ impl DiamondDays {
                 p.study = p.study.saturating_sub(1);
             }
         }
-        if self.s.week == board::CAMP_WEEK && self.s.camp_year != self.s.year {
+        // A tournament under way: the draw, then the next game.
+        if self.s.cup.is_some() {
+            if self.game.is_none() && self.notes.is_empty() {
+                self.mode = Mode::Bracket;
+            }
+            return;
+        }
+        // The new team still needs its captain.
+        if self.s.need_captain {
+            if self.notes.is_empty() {
+                self.mode = Mode::Decide(Decide::Captain);
+            }
+            return;
+        }
+        let year = self.s.year;
+        if self.s.week == board::CAMP_WEEK && self.s.camp_year != year {
             self.run_camp();
             return;
         }
-        if self.s.week == board::EXAM_WEEK && self.s.exam_year != self.s.year {
+        if self.s.week == board::NUMBERS_WEEK && self.s.numbers_year != year {
+            self.mode = Mode::Decide(Decide::Ace);
+            return;
+        }
+        if self.s.week == board::EXAM_WEEK && self.s.exam_year != year {
             self.run_exams();
             return;
         }
-        if let Some(f) = board::fixture(self.s.week) {
-            let ours = match f {
-                Fixture::Practice => true,
-                Fixture::Summer(_) => self.s.summer_in,
-                Fixture::National(_) => self.s.national_in,
-                Fixture::Autumn(_) => self.s.autumn_in,
-                Fixture::Spring(_) => self.s.spring_in,
-            };
-            if ours && self.game.is_none() {
-                self.prepare_game(f);
+        if self.s.week == board::DRAFT_WEEK && self.s.draft_year != year {
+            self.s.draft_year = year;
+            self.run_draft();
+        }
+        if self.s.week == board::SELECTION_WEEK && self.s.selection_year != year {
+            self.s.selection_year = year;
+            self.run_selection();
+        }
+        if self.s.week == *board::WINTER.start() && self.s.winter_year != year {
+            self.s.winter_year = year;
+            self.note(
+                "Winter",
+                "冬",
+                vec![
+                    (
+                        "December: no more games with other schools until March. Winter training counts for more.".into(),
+                        "12月。3月まで対外試合はできない。冬の練習は身につきやすい。".into(),
+                    ),
+                    (
+                        "Kotori: \"Run, lift, swing. Spring will tell.\"".into(),
+                        "ことり「走って、鍛えて、振り込んで。春に答えが出ますよ」".into(),
+                    ),
+                ],
+            );
+        }
+        if let Some(f) = self.game_this_week() {
+            if self.game.is_none() {
+                if f.is_cup() {
+                    self.start_cup(f);
+                } else {
+                    self.prepare_game(f);
+                }
                 return;
             }
         }
         if self.notes.is_empty() {
             self.mode = Mode::Plan;
+        } else {
+            self.mode = Mode::Notice;
         }
     }
 
-    /// This week's game for us, if the calendar has one we are in.
-    fn game_this_week(&self) -> Option<Fixture> {
-        board::fixture(self.s.week).filter(|f| match f {
-            Fixture::Practice => true,
+    /// Whether the club plays in a fixture this year.
+    fn plays_in(&self, f: Fixture) -> bool {
+        match f {
+            Fixture::Practice | Fixture::SpringPref(_) => true,
             Fixture::Summer(_) => self.s.summer_in,
             Fixture::National(_) => self.s.national_in,
             Fixture::Autumn(_) => self.s.autumn_in,
             Fixture::Spring(_) => self.s.spring_in,
-        })
+        }
+    }
+
+    /// This week's game for us: the tournament under way, or one the calendar starts now.
+    fn game_this_week(&self) -> Option<Fixture> {
+        self.s
+            .cup
+            .or_else(|| board::fixture(self.s.week).filter(|f| self.plays_in(*f)))
     }
 
     /// A kept run picked up again: where it stands, and what this week holds.
@@ -700,6 +816,14 @@ impl DiamondDays {
                 "This week is exam week.".into(),
                 "今週はテスト週間です。".into(),
             ),
+            _ if self.s.need_captain => (
+                "The new team needs a captain.".into(),
+                "新チームの主将を決めるところからです。".into(),
+            ),
+            None if self.s.week == board::NUMBERS_WEEK && self.s.numbers_year != self.s.year => (
+                "This week: the summer numbers and the draw.".into(),
+                "今週は背番号発表と、夏の組み合わせ抽選会です。".into(),
+            ),
             Some(f) => {
                 let (en, ja) = Self::fixture_name(f);
                 (
@@ -716,36 +840,17 @@ impl DiamondDays {
     }
 
     fn fixture_name(f: Fixture) -> (String, String) {
-        match f {
-            Fixture::Practice => ("Practice game".into(), "練習試合".into()),
-            Fixture::Summer(5) => ("Summer prefectural final".into(), "夏の県大会 決勝".into()),
-            Fixture::Summer(r) => (
-                format!("Summer prefectural, round {r}"),
-                format!("夏の県大会 {r}回戦"),
-            ),
-            Fixture::National(r) => (
-                format!("Summer Stadium, round {r}"),
-                format!("夏の大舞台 {r}回戦"),
-            ),
-            Fixture::Autumn(3) => ("Autumn tournament final".into(), "秋季大会 決勝".into()),
-            Fixture::Autumn(r) => (
-                format!("Autumn tournament, round {r}"),
-                format!("秋季大会 {r}回戦"),
-            ),
-            Fixture::Spring(3) => (
-                "Blossom Invitational final".into(),
-                "春の招待舞台 決勝".into(),
-            ),
-            Fixture::Spring(r) => (
-                format!("Blossom Invitational, round {r}"),
-                format!("春の招待舞台 {r}回戦"),
-            ),
+        let (cup, cup_ja) = f.cup_name();
+        if !f.is_cup() {
+            return (cup.into(), cup_ja.into());
         }
+        let (r, r_ja) = f.round_name();
+        (format!("{cup}, {r}"), format!("{cup_ja} {r_ja}"))
     }
 
     /// Game day: pick today's opponent and show the pre-game screen.
     fn prepare_game(&mut self, f: Fixture) {
-        let idx = self.pick_rival(f);
+        let idx = self.opponent(f);
         self.rival_idx = Some(idx);
         self.pending_rival = Some(self.rival_side(f, idx));
         self.fixture = Some(f);
@@ -761,21 +866,167 @@ impl DiamondDays {
 
     /// The opponent's nine for a fixture against school `idx`.
     fn rival_side(&mut self, f: Fixture, idx: usize) -> Side {
-        let (en, ja) = self
-            .s
-            .rivals
-            .get(idx)
-            .map(|s| (s.name.clone(), s.name_ja.clone()))
-            .unwrap_or_else(|| board::rival_name(f, self.s.year, self.s.week));
-        let strength = self.s.rivals.get(idx).map(|s| s.strength).unwrap_or(40.0);
+        let target = board::rival_level(f, self.s.year);
+        let (en, ja, level) = match self.s.rivals.get(idx) {
+            Some(s) => (
+                s.name.clone(),
+                s.name_ja.clone(),
+                s.strength * 0.72 + target * 0.28,
+            ),
+            None => {
+                let (en, ja, _) =
+                    board::away_school(idx.saturating_sub(AWAY as usize), self.s.year);
+                (en, ja, target)
+            }
+        };
         let ease = if matches!(f, Fixture::Spring(_)) {
-            self.s.autumn_wins as f32 * 2.5
+            self.s.autumn_wins as f32 * 2.0
         } else {
             0.0
+        } + if self.s.studied { 3.0 } else { 0.0 };
+        Side::rival(&mut self.rng, &en, &ja, (level - ease).clamp(28.0, 92.0))
+    }
+
+    /// Who we meet in a fixture: the tournament's draw, or this week's practice school.
+    fn opponent(&mut self, f: Fixture) -> usize {
+        if f.is_cup() {
+            if let Some(&i) = self.s.cup_path.get(f.round() as usize - 1) {
+                return i as usize;
+            }
+        }
+        self.pick_rival(f)
+    }
+
+    /// A tournament starts: the draw (our path to the final), the opening words, then the
+    /// bracket. A summer seed starts in round 2.
+    fn start_cup(&mut self, f: Fixture) {
+        if self.s.rivals.is_empty() {
+            self.s.rivals = board::rival_schools();
+        }
+        let f = if matches!(f, Fixture::Summer(_)) && self.s.seeded {
+            f.at(2)
+        } else {
+            f.at(1)
         };
-        let level =
-            (strength * 0.72 + board::rival_level(f, self.s.year) * 0.28 - ease).clamp(28.0, 92.0);
-        Side::rival(&mut self.rng, &en, &ja, level)
+        self.s.cup_path = self.draw_path(f);
+        self.s.cup_scores.clear();
+        self.s.cup = Some(f);
+        self.s.studied = false;
+        let (cup, cup_ja) = f.cup_name();
+        let mut lines = Vec::new();
+        match f {
+            Fixture::SpringPref(_) => lines.push((
+                "The spring prefectural. Reach the last four and the summer draw seeds us.".into(),
+                "春季県大会。ベスト4まで行けば、夏はシード校になれる。".into(),
+            )),
+            Fixture::Summer(_) => {
+                lines.push((
+                    "Opening day. The schools march in behind their banners; one captain takes the oath for all.".into(),
+                    "開会式。各校がプラカードを先頭に行進し、ひとりの主将が選手宣誓をした。".into(),
+                ));
+                lines.push((
+                    "Lose once and the third-years' summer is over.".into(),
+                    "一度負けたら、3年生の夏は終わる。".into(),
+                ));
+                if self.s.seeded {
+                    lines.push((
+                        "Seeded off the spring: we start in round 2.".into(),
+                        "春の結果でシード。2回戦から登場。".into(),
+                    ));
+                }
+            }
+            Fixture::National(_) => lines.push((
+                "The Summer Stadium. Every school here won its prefecture. Each win plays the school song.".into(),
+                "夏の大舞台。ここにいるのは、どこも県を勝ち抜いた学校だ。勝てば校歌が流れる。".into(),
+            )),
+            Fixture::Autumn(_) => lines.push((
+                "The new team's first tournament. Go deep and March may call.".into(),
+                "新チーム最初の大会。勝ち進めば、春の招待舞台が見えてくる。".into(),
+            )),
+            Fixture::Spring(_) => lines.push((
+                "The Blossom Invitational. The first big stage of the year.".into(),
+                "春の招待舞台。一年で最初の大舞台だ。".into(),
+            )),
+            Fixture::Practice => {}
+        }
+        if let Some(c) = self.captain_line() {
+            lines.push(c);
+        }
+        crate::mixer::cue_sfx("event");
+        self.note(cup, cup_ja, lines);
+    }
+
+    /// Our path through a tournament: one school per round, stronger as it goes. The
+    /// strongest circuit school waits near the end of a prefectural draw.
+    fn draw_path(&mut self, f: Fixture) -> Vec<u8> {
+        let rounds = f.rounds();
+        if matches!(f, Fixture::National(_) | Fixture::Spring(_)) {
+            let base = self.rng.next_u32() as u8 % 24;
+            return (0..rounds).map(|r| AWAY + (base + r * 7) % 24).collect();
+        }
+        let n = self.s.rivals.len();
+        let mut used: Vec<usize> = Vec::new();
+        let mut path = Vec::new();
+        for r in 1..=rounds {
+            let target = board::rival_level(f.at(r), self.s.year);
+            let jitter = self.rng.unit() * 6.0 - 3.0;
+            let pick = (0..n).filter(|i| !used.contains(i)).min_by(|a, b| {
+                let d = |i: usize| (self.s.rivals[i].strength - target - jitter).abs();
+                d(*a).total_cmp(&d(*b))
+            });
+            match pick {
+                Some(i) => {
+                    used.push(i);
+                    path.push(i as u8);
+                }
+                None => path.push(AWAY + r),
+            }
+        }
+        // The best school on the circuit is in our half: we meet it late.
+        if let Some(top) = (0..n).max_by(|a, b| {
+            self.s.rivals[*a]
+                .strength
+                .total_cmp(&self.s.rivals[*b].strength)
+        }) {
+            let late = (rounds as usize).saturating_sub(2);
+            if let Some(at) = path.iter().position(|&i| i as usize == top) {
+                if at < late {
+                    path.swap(at, late);
+                }
+            } else if late < path.len() {
+                path[late] = top as u8;
+            }
+        }
+        path
+    }
+
+    /// The captain's word before a tournament, if the club has one.
+    fn captain_line(&self) -> Option<(String, String)> {
+        let cap = self.captain_name()?;
+        Some((
+            format!("Captain {cap} in the huddle: \"One game at a time. Let's go!\""),
+            format!("円陣で主将の{cap}が叫ぶ。「一戦必勝！いくぞ！」"),
+        ))
+    }
+
+    /// The captain's family name: the one the coach named, else the founding captain.
+    pub(crate) fn captain_name(&self) -> Option<String> {
+        if !self.s.captain.is_empty()
+            && self
+                .s
+                .team
+                .players
+                .iter()
+                .any(|p| p.family == self.s.captain)
+        {
+            return Some(self.s.captain.clone());
+        }
+        self.s
+            .team
+            .players
+            .iter()
+            .find(|p| p.role == Role::Captain)
+            .map(|p| p.family.clone())
     }
 
     /// Play ball: build both nines (the order as it stands now) and start.
@@ -801,8 +1052,8 @@ impl DiamondDays {
         let (school, school_ja) = (self.school_en().to_string(), self.school_ja().to_string());
         let us = Side::from_team(&self.s.team, &school, &school_ja);
         let idx = match self.rival_idx {
-            Some(i) if i < self.s.rivals.len() => i,
-            _ => self.pick_rival(f),
+            Some(i) => i,
+            None => self.opponent(f),
         };
         self.rival_idx = Some(idx);
         let them = match self.pending_rival.take() {
@@ -845,7 +1096,7 @@ impl DiamondDays {
         };
         self.want_call = false;
         let won = g.won() == Some(true);
-        let f = board::fixture(self.s.week).unwrap_or(Fixture::Practice);
+        let f = self.game_this_week().unwrap_or(Fixture::Practice);
         let (title, title_ja) = Self::fixture_name(f);
         let (us, them) = (g.runs(g.us), g.runs(1 - g.us));
         if won {
@@ -884,12 +1135,50 @@ impl DiamondDays {
                 g.sides[1 - g.us].name_ja
             ),
         )];
+        if f.is_cup() {
+            self.s
+                .cup_scores
+                .push((us.min(255) as u8, them.min(255) as u8));
+            self.s.studied = false;
+        }
+        let (r, last) = (f.round(), f.is_final());
         match f {
             Fixture::Practice => self.bump_rep(if won { 0.5 } else { 0.0 }),
-            Fixture::Summer(r) => {
+            Fixture::SpringPref(_) => {
                 if won {
+                    self.bump_rep(0.8 + r as f32 * 0.4);
+                }
+                // The last four (a semifinal) are seeded in the summer.
+                if !won || last {
+                    let reached = if won { r + 1 } else { r };
+                    self.s.seeded = reached >= f.rounds() - 1;
+                    if last && won {
+                        self.record("Spring prefectural champions", "春季県大会 優勝");
+                    }
+                    lines.push(if self.s.seeded {
+                        (
+                            "The last four in spring: we are seeded in the summer draw.".into(),
+                            "春はベスト4以上。夏はシード校だ。".into(),
+                        )
+                    } else {
+                        (
+                            "No seed for the summer: we start from round 1.".into(),
+                            "夏はノーシード。1回戦からの戦いになる。".into(),
+                        )
+                    });
+                }
+            }
+            Fixture::Summer(_) => {
+                if won {
+                    self.s.summer_won += 1;
+                    if self.s.summer_won == 1 {
+                        lines.push((
+                            "The first summer win in years! The stands are in tears.".into(),
+                            "何年ぶりかの夏の1勝！スタンドが泣いている。".into(),
+                        ));
+                    }
                     self.bump_rep(1.0 + r as f32 * 0.5);
-                    if r == 5 {
+                    if last {
                         self.s.national_in = true;
                         self.bump_rep(10.0);
                         lines.push((
@@ -900,13 +1189,14 @@ impl DiamondDays {
                     }
                 } else {
                     self.s.summer_in = false;
-                    self.record(&format!("Summer round {r}"), &format!("夏 {r}回戦敗退"));
+                    let (_, rn) = f.round_name();
+                    self.record(&format!("Summer round {r}"), &format!("夏 {rn}敗退"));
                 }
             }
-            Fixture::National(r) => {
+            Fixture::National(_) => {
                 if won {
                     self.bump_rep(6.0);
-                    if r == 2 {
+                    if last {
                         self.record("Summer Stadium champions", "夏の大舞台 優勝");
                         lines.push((
                             "National champions! The whole town is out in the street.".into(),
@@ -915,45 +1205,41 @@ impl DiamondDays {
                     }
                 } else {
                     self.s.national_in = false;
+                    let (_, rn) = f.round_name();
                     self.record(
                         &format!("Summer Stadium round {r}"),
-                        &format!("夏の大舞台 {r}回戦"),
+                        &format!("夏の大舞台 {rn}"),
                     );
                 }
             }
-            Fixture::Autumn(r) => {
+            Fixture::Autumn(_) => {
                 if won {
                     self.s.autumn_wins = self.s.autumn_wins.saturating_add(1);
                     self.bump_rep(1.0 + r as f32 * 0.5);
-                    if r == 3 {
+                    if last {
                         self.record("Autumn champions", "秋季大会優勝");
                     }
                 } else {
                     self.s.autumn_in = false;
                 }
-                if !self.s.autumn_in || r == 3 {
-                    self.s.spring_in = self.s.autumn_wins > 0;
-                    if self.s.spring_in {
-                        let seeded = self.s.autumn_wins >= 3;
-                        lines.push((
-                            if seeded {
-                                "Seeded for the Blossom Invitational in March.".into()
-                            } else {
-                                "Invited to the Blossom Invitational in March.".into()
-                            },
-                            if seeded {
-                                "3月の春の招待舞台、シードで出場。".into()
-                            } else {
-                                "3月の春の招待舞台に招待された。".into()
-                            },
-                        ));
-                    }
+                if !won || last {
+                    lines.push(if self.s.autumn_wins >= 3 {
+                        (
+                            "That run should put us on the list for March. The answer comes in January.".into(),
+                            "この成績なら、春の招待舞台の候補に入るはず。発表は1月だ。".into(),
+                        )
+                    } else {
+                        (
+                            "The autumn is over. Winter is for getting stronger.".into(),
+                            "秋が終わった。冬は力をためる季節だ。".into(),
+                        )
+                    });
                 }
             }
-            Fixture::Spring(r) => {
+            Fixture::Spring(_) => {
                 if won {
                     self.bump_rep(2.0 + r as f32);
-                    if r == 3 {
+                    if last {
                         self.record("Blossom Invitational champions", "春の招待舞台 優勝");
                         lines.push((
                             "The Blossom Invitational is yours.".into(),
@@ -962,11 +1248,23 @@ impl DiamondDays {
                     }
                 } else {
                     self.s.spring_in = false;
+                    let (_, rn) = f.round_name();
                     self.record(
                         &format!("Blossom Invitational round {r}"),
-                        &format!("春の招待舞台 {r}回戦"),
+                        &format!("春の招待舞台 {rn}"),
                     );
                 }
+            }
+        }
+        // Still in it: who is next.
+        if let Some(next) = f.next().filter(|_| won) {
+            let (rn, rn_ja) = next.round_name();
+            if let Some(&i) = self.s.cup_path.get(next.round() as usize - 1) {
+                let (en, ja, _) = self.path_school(i);
+                lines.push((
+                    format!("Next, the {rn}: {en}."),
+                    format!("次は{rn_ja}。相手は{ja}だ。"),
+                ));
             }
         }
         self.report = Some(Report {
@@ -983,8 +1281,13 @@ impl DiamondDays {
             exp,
             lines: lines.into_iter().skip(1).collect(),
         });
-        // The week moves on now (a save here is past the game), then the result shows.
-        self.end_week();
+        // The calendar moves on now (a save here is past the game), then the result shows.
+        // A tournament still going stays on its week: the next round is the next day.
+        match f.next().filter(|_| won) {
+            Some(next) => self.s.cup = Some(next),
+            None if f.is_cup() => self.finish_cup(f, won),
+            None => self.end_week(),
+        }
         self.mode = Mode::MatchEnd;
     }
 
@@ -1144,7 +1447,14 @@ impl DiamondDays {
 
     /// The best bat and the best arm of the season, on a notice card.
     fn season_awards(&mut self) {
-        let team = &self.s.team.players;
+        // The third-years retired in the summer count too: their numbers are this season's.
+        let team: Vec<&team::Player> = self
+            .s
+            .team
+            .players
+            .iter()
+            .chain(self.s.seniors.iter())
+            .collect();
         let bat = team
             .iter()
             .filter(|p| p.season.ab >= 8)
@@ -1192,17 +1502,371 @@ impl DiamondDays {
     }
 
     /// The coach leaves the result screen: the notes the week left, or the next week.
+    /// A tournament is over (lost, or won outright): the calendar moves past it. The end
+    /// of our summer (a summer loss, or the national tournament over) retires the
+    /// third-years and starts the new team.
+    fn finish_cup(&mut self, f: Fixture, won: bool) {
+        self.s.cup = None;
+        self.s.cup_path.clear();
+        self.s.cup_scores.clear();
+        self.s.studied = false;
+        let end = board::cup_end(f);
+        if self.s.week < end {
+            self.s.week = end - 1;
+        }
+        let summer_over = match f {
+            Fixture::Summer(_) => !won,
+            Fixture::National(_) => true,
+            _ => false,
+        };
+        self.end_week();
+        if summer_over {
+            self.retire_seniors();
+        }
+    }
+
+    /// The third-years' summer is over: a word from each, and they leave the team (they
+    /// graduate in March). A club left short takes in players from other clubs. The new
+    /// team then needs a captain.
+    fn retire_seniors(&mut self) {
+        let (leaving, staying): (Vec<team::Player>, Vec<team::Player>) =
+            std::mem::take(&mut self.s.team.players)
+                .into_iter()
+                .partition(|p| p.grade >= 3);
+        self.s.team.players = staying;
+        self.s.team.clear_lineup();
+        self.s.captain.clear();
+        self.s.team.number_one.clear();
+        self.s.need_captain = true;
+        if !leaving.is_empty() {
+            let n = leaving.len();
+            let mut lines = vec![(
+                format!("Our summer is over. {n} third-years hang up their uniforms."),
+                format!("{}の夏が終わった。3年生{n}人が引退する。", self.school_ja()),
+            )];
+            for p in leaving.iter().take(6) {
+                let (en, ja) = farewell(p);
+                lines.push((
+                    format!("{}: \"{en}\"", p.family),
+                    format!("{}「{ja}」", p.family),
+                ));
+            }
+            lines.push((
+                "Kotori can't stop crying. \"Thank you, seniors.\"".into(),
+                "ことりは涙が止まらない。「先輩たち、本当にお疲れさまでした…！」".into(),
+            ));
+            lines.push((
+                "You: \"Hold your heads up. You left this summer to the ones behind you.\"".into(),
+                "監督「胸を張れ。お前たちの夏は、ちゃんと後輩に残った」".into(),
+            ));
+            crate::mixer::cue_sfx("event");
+            self.note("Farewell, seniors", "3年生 引退", lines);
+            if let Some(note) = self.notes.last_mut() {
+                note.faces = leaving
+                    .iter()
+                    .map(|p| (p.family.clone(), p.given.clone()))
+                    .collect();
+                note.captions = leaving
+                    .iter()
+                    .map(|p| {
+                        let (en, ja) = senior_title(p);
+                        (en.to_string(), ja.to_string())
+                    })
+                    .collect();
+                note.roles = leaving.iter().map(|p| p.role).collect();
+            }
+            self.s.seniors.extend(leaving);
+        }
+        // Nine and a spare, whatever it takes.
+        let short = 10usize.saturating_sub(self.s.team.players.len());
+        if short > 0 {
+            let names = self
+                .s
+                .team
+                .late_joiners(&mut self.rng, short, self.s.reputation);
+            self.note(
+                "New members",
+                "助っ人入部",
+                vec![(
+                    format!(
+                        "Too few for a nine: {} join from other clubs.",
+                        names.join(", ")
+                    ),
+                    format!(
+                        "このままでは9人そろわない。{}が他の部から入部してくれた！",
+                        names.join("、")
+                    ),
+                )],
+            );
+        }
+        self.note(
+            "The new team",
+            "新チーム発足",
+            vec![(
+                "The new team starts today. First, a captain.".into(),
+                "今日から新チームだ。まずは主将を決めよう。".into(),
+            )],
+        );
+    }
+
+    /// Who could wear number 1: the best three pitchers.
+    pub(crate) fn ace_candidates(&self) -> Vec<usize> {
+        let mut v: Vec<usize> = (0..self.s.team.players.len())
+            .filter(|&i| self.s.team.players[i].pitcher())
+            .collect();
+        v.sort_by(|a, b| {
+            let r = |i: usize| self.s.team.players[i].pitch_rating();
+            r(*b).total_cmp(&r(*a))
+        });
+        v.truncate(3);
+        v
+    }
+
+    /// Who could captain the new team, each with his way of leading: the best player
+    /// (leads by example), the loudest (leads with his voice), the steadiest glove (holds
+    /// the field together). Drawn from the oldest class on the team.
+    pub(crate) fn captain_candidates(&self) -> Vec<(usize, Ability)> {
+        let ps = &self.s.team.players;
+        let top = ps.iter().map(|p| p.grade).max().unwrap_or(1);
+        let class: Vec<usize> = (0..ps.len()).filter(|&i| ps[i].grade == top).collect();
+        let pool = if class.len() >= 3 {
+            class
+        } else {
+            (0..ps.len()).collect()
+        };
+        let best = |key: &dyn Fn(usize) -> f32, taken: &[usize]| {
+            pool.iter()
+                .copied()
+                .filter(|i| !taken.contains(i))
+                .max_by(|a, b| key(*a).total_cmp(&key(*b)))
+        };
+        let mut out: Vec<(usize, Ability)> = Vec::new();
+        let rating = |i: usize| ps[i].bat_rating().max(ps[i].pitch_rating());
+        let voice =
+            |i: usize| (ps[i].has(Ability::Mood) as u8 as f32) * 100.0 + ps[i].mood as u8 as f32;
+        let glove = |i: usize| ps[i].field as f32;
+        for (key, a) in [
+            (&rating as &dyn Fn(usize) -> f32, Ability::Chance),
+            (&voice, Ability::Mood),
+            (&glove, Ability::Clutch),
+        ] {
+            let taken: Vec<usize> = out.iter().map(|(i, _)| *i).collect();
+            if let Some(i) = best(key, &taken) {
+                out.push((i, a));
+            }
+        }
+        out
+    }
+
+    /// The coach decides: the ace's number, or the new captain.
+    fn decide(&mut self, d: Decide, k: usize) {
+        match d {
+            Decide::Ace => {
+                let Some(&i) = self.ace_candidates().get(k) else {
+                    return;
+                };
+                self.s.numbers_year = self.s.year;
+                let fam = self.s.team.players[i].family.clone();
+                let given = self.s.team.players[i].given.clone();
+                self.s.team.number_one = fam.clone();
+                for (j, p) in self.s.team.players.iter_mut().enumerate() {
+                    if j == i {
+                        p.mood = p.mood.up().up();
+                    } else if p.pitcher() && p.grade == 3 {
+                        p.mood = p.mood.down();
+                    }
+                }
+                let mut lines = vec![
+                    (
+                        "The night before the summer, the coach hands out the numbers, one by one.".into(),
+                        "夏の大会を前に、監督が背番号をひとりずつ手渡していく。".into(),
+                    ),
+                    (
+                        format!("Number 1 goes to {fam}. He holds it in both hands and doesn't say a word."),
+                        format!("背番号1は{fam}。両手で受け取ったまま、何も言えずにいる。"),
+                    ),
+                ];
+                let seeded = self.s.seeded;
+                lines.push(if seeded {
+                    (
+                        "Then the draw: seeded, we start in round 2.".into(),
+                        "続いて組み合わせ抽選会。シード校として2回戦から登場する。".into(),
+                    )
+                } else {
+                    (
+                        "Then the draw: the captain pulls our slot. Round 1, and a long way up."
+                            .into(),
+                        "続いて組み合わせ抽選会。主将がくじを引いた。1回戦から、長い道のりだ。"
+                            .into(),
+                    )
+                });
+                crate::mixer::cue_sfx("event");
+                self.note("Summer numbers", "背番号発表・抽選会", lines);
+                if let Some(n) = self.notes.last_mut() {
+                    n.faces = vec![(fam, given)];
+                    n.captions = vec![("No. 1".into(), "背番号1".into())];
+                }
+                self.end_week();
+            }
+            Decide::Captain => {
+                let Some(&(i, a)) = self.captain_candidates().get(k) else {
+                    return;
+                };
+                self.s.need_captain = false;
+                let p = &mut self.s.team.players[i];
+                p.mood = p.mood.up().up();
+                let fam = p.family.clone();
+                let given = p.given.clone();
+                self.s.captain = fam.clone();
+                let learned = self.s.team.players[i].grant(a);
+                for p in &mut self.s.team.players {
+                    p.mood = p.mood.up();
+                }
+                let mut lines = vec![(
+                    format!("{fam} is the new captain. \"I'll take us further than last year.\""),
+                    format!("新主将は{fam}。「去年より、ひとつでも上へ連れていきます」"),
+                )];
+                if learned {
+                    lines.push((
+                        format!("The armband suits him: {}.", a.label(false)),
+                        format!("主将の自覚で、特技「{}」がついた。", a.label(true)),
+                    ));
+                }
+                crate::mixer::cue_sfx("train");
+                self.note("New captain", "新主将", lines);
+                if let Some(n) = self.notes.last_mut() {
+                    n.faces = vec![(fam, given)];
+                    n.captions = vec![("Captain".into(), "主将".into())];
+                }
+            }
+        }
+    }
+
+    /// The day before a tournament game: rest, tune up, or study the next school. Then
+    /// the game.
+    fn day_before(&mut self, k: usize) {
+        let Some(f) = self.s.cup else {
+            return;
+        };
+        match k {
+            0 => {
+                for p in &mut self.s.team.players {
+                    p.rest(30);
+                }
+            }
+            1 => {
+                for p in &mut self.s.team.players {
+                    p.rest(10);
+                    p.mood = p.mood.up();
+                }
+            }
+            _ => {
+                for p in &mut self.s.team.players {
+                    p.rest(10);
+                }
+                self.s.studied = true;
+            }
+        }
+        crate::mixer::cue_sfx("card");
+        self.prepare_game(f);
+    }
+
+    /// April: every tournament is open again; last year's seed and draw are gone.
+    fn new_season(&mut self) {
+        self.s.summer_in = true;
+        self.s.autumn_in = true;
+        self.s.national_in = false;
+        self.s.spring_in = false;
+        self.s.autumn_wins = 0;
+        self.s.seeded = false;
+        self.s.cup = None;
+        self.s.cup_path.clear();
+        self.s.cup_scores.clear();
+        self.s.studied = false;
+    }
+
+    /// October: the pro draft. A retired third-year good enough may hear his name.
+    fn run_draft(&mut self) {
+        let picks: Vec<String> = self
+            .s
+            .seniors
+            .iter()
+            .filter(|p| team::destination(p, self.s.reputation) == team::After::Pro)
+            .map(|p| p.family.clone())
+            .collect();
+        if picks.is_empty() {
+            return;
+        }
+        let names = picks.join(", ");
+        let names_ja = picks.join("、");
+        self.s.drafted = picks;
+        crate::mixer::cue_sfx("win");
+        self.note(
+            "Draft day",
+            "ドラフト会議",
+            vec![
+                (
+                    format!("Draft day. The phone rings in the staff room: {names} has been picked by a pro club!"),
+                    format!("ドラフト会議の日。職員室の電話が鳴った。{names_ja}がプロ球団から指名された！"),
+                ),
+                (
+                    "The club lines up for the press photo, caps in the air.".into(),
+                    "部員みんなで記者会見の写真に並び、帽子を空へ放り投げた。".into(),
+                ),
+            ],
+        );
+    }
+
+    /// January: the March invitations are announced. A deep autumn run waits by the
+    /// phone in the principal's office.
+    fn run_selection(&mut self) {
+        let wins = self.s.autumn_wins;
+        if wins < 2 {
+            return;
+        }
+        let chosen = wins >= 3 || self.rng.unit() < 0.45;
+        self.s.spring_in = chosen;
+        let mut lines = vec![(
+            "Selection day. The club waits in the principal's office, staring at the phone.".into(),
+            "選考発表の日。部員たちは校長室で、じっと電話を見つめている。".into(),
+        )];
+        if chosen {
+            crate::mixer::cue_sfx("win");
+            lines.push((
+                "It rings. \"Congratulations: you are invited to the Blossom Invitational.\" The room erupts.".into(),
+                "電話が鳴った。「春の招待舞台への出場が決まりました」部屋が歓声に包まれた。".into(),
+            ));
+        } else {
+            lines.push((
+                "The phone never rings. Someone else's spring. \"Then we take the summer,\" says the captain.".into(),
+                "電話は最後まで鳴らなかった。「なら、夏で取り返すぞ」と主将が言った。".into(),
+            ));
+        }
+        self.note("Selection day", "選考発表", lines);
+    }
+
     fn after_match(&mut self) {
         if self.mode != Mode::MatchEnd {
             return;
         }
         self.report = None;
         crate::mixer::cue_sfx("card");
+        let (title, color) = if self.s.cup.is_some() {
+            (
+                self.tr("ON TO THE NEXT ROUND", "次の試合へ"),
+                [176, 40, 52, 255],
+            )
+        } else {
+            (
+                self.tr("BACK TO PRACTICE", "練習に戻ろう"),
+                [70, 140, 84, 255],
+            )
+        };
         self.transition = Some(crate::hud_art::Transition::open(
             crate::hud_art::Wipe::Curtain,
             1.0,
-            [70, 140, 84, 255],
-            self.tr("BACK TO PRACTICE", "練習に戻ろう"),
+            color,
+            title,
         ));
         if !self.notes.is_empty() {
             self.mode = Mode::Notice;
@@ -1288,7 +1952,13 @@ impl DiamondDays {
                     &mut self.s.team,
                     d,
                     &card,
-                    self.spec.train_points * (1.0 + self.s.grounds as f32 * 0.08),
+                    self.spec.train_points
+                        * (1.0 + self.s.grounds as f32 * 0.08)
+                        * if board::WINTER.contains(&self.s.week) {
+                            1.25
+                        } else {
+                            1.0
+                        },
                 );
                 crate::mixer::cue_sfx("train");
                 let doubled = card.focus == Some(d);
@@ -1483,21 +2153,36 @@ impl DiamondDays {
     }
 
     fn end_year(&mut self) {
+        // The third-years retired in the summer graduate now (and any still on the team).
+        let drafted = std::mem::take(&mut self.s.drafted);
+        let rep = self.s.reputation;
+        let retired_after = |p: &team::Player| {
+            if drafted.contains(&p.family) {
+                team::After::Pro
+            } else {
+                // A retired senior goes pro only through the October draft.
+                match team::destination(p, rep) {
+                    team::After::Pro => team::After::College,
+                    a => a,
+                }
+            }
+        };
         let leaving: Vec<(String, String, Role, team::After)> = self
             .s
-            .team
-            .players
+            .seniors
             .iter()
-            .filter(|p| p.grade == 3)
-            .map(|p| {
-                (
-                    p.family.clone(),
-                    p.given.clone(),
-                    p.role,
-                    team::destination(p, self.s.reputation),
-                )
-            })
+            .map(|p| (p, retired_after(p)))
+            .chain(
+                self.s
+                    .team
+                    .players
+                    .iter()
+                    .filter(|p| p.grade >= 3)
+                    .map(|p| (p, team::destination(p, rep))),
+            )
+            .map(|(p, after)| (p.family.clone(), p.given.clone(), p.role, after))
             .collect();
+        let retired = self.s.seniors.len();
         let names = |t: &Team, grade: u8| -> Vec<(String, String)> {
             t.players
                 .iter()
@@ -1513,7 +2198,8 @@ impl DiamondDays {
                 self.s.pros.push((format!("{fam} {given}"), year_now));
             }
         }
-        let left = self.s.team.graduate();
+        let left = self.s.team.graduate() + retired;
+        self.s.seniors.clear();
         for p in &mut self.s.team.players {
             p.season = team::Stats::default();
         }
@@ -1534,11 +2220,7 @@ impl DiamondDays {
         }
         self.s.year += 1;
         self.s.week = 1;
-        self.s.summer_in = true;
-        self.s.autumn_in = true;
-        self.s.national_in = false;
-        self.s.spring_in = false;
-        self.s.autumn_wins = 0;
+        self.new_season();
         let scouted = std::mem::take(&mut self.s.scouted);
         let joined = self
             .s
@@ -1760,11 +2442,7 @@ impl DiamondDays {
         self.next_chapter();
         self.s.year = 1;
         self.s.week = 1;
-        self.s.summer_in = true;
-        self.s.autumn_in = true;
-        self.s.national_in = false;
-        self.s.spring_in = false;
-        self.s.autumn_wins = 0;
+        self.new_season();
         self.s.grounds = self.s.grounds.max(board::grounds_of(self.s.reputation));
         let scouted = std::mem::take(&mut self.s.scouted);
         let joined = self
@@ -1832,11 +2510,7 @@ impl DiamondDays {
         self.next_chapter();
         self.s.year = 1;
         self.s.week = 1;
-        self.s.summer_in = true;
-        self.s.autumn_in = true;
-        self.s.national_in = false;
-        self.s.spring_in = false;
-        self.s.autumn_wins = 0;
+        self.new_season();
         self.s.reputation = (self.s.reputation * 0.6).clamp(0.0, 100.0);
         self.s.grounds = 0;
         self.s.scouted.clear();
@@ -2387,13 +3061,12 @@ impl DiamondDays {
                 }
                 crate::mixer::cue_sfx("card");
             }
-            hud::Btn::Choose(k) => {
-                if matches!(self.mode, Mode::CampTalk { .. }) {
-                    self.answer_camp(k);
-                } else {
-                    self.answer(k);
-                }
-            }
+            hud::Btn::Choose(k) => match self.mode {
+                Mode::CampTalk { .. } => self.answer_camp(k),
+                Mode::Bracket => self.day_before(k),
+                Mode::Decide(d) => self.decide(d, k),
+                _ => self.answer(k),
+            },
             hud::Btn::Lineup => {
                 self.lineup_from_intro = self.mode == Mode::MatchIntro;
                 self.open_lineup();
@@ -2448,6 +3121,9 @@ impl DiamondDays {
             Mode::Lineup { .. } => "lineup",
             Mode::CampTalk { .. } => "camp",
             Mode::Epilogue { .. } => "epilogue",
+            Mode::Bracket => "bracket",
+            Mode::Decide(Decide::Ace) => "numbers",
+            Mode::Decide(Decide::Captain) => "captain",
         };
         json!({
             "phase": self.flow.phase.name(),
@@ -2466,6 +3142,58 @@ impl DiamondDays {
             "death": "",
             "death_text": "",
         })
+    }
+}
+
+/// What a third-year says when his summer ends (by his part in the club; the rest pick
+/// one of a few lines by name).
+fn farewell(p: &team::Player) -> (&'static str, &'static str) {
+    const LINES: [(&str, &str); 6] = [
+        (
+            "Three years of baseball. I was lucky.",
+            "この三年間、野球ができて幸せでした",
+        ),
+        (
+            "You lot had better get to the Summer Stadium.",
+            "後輩たち、絶対に夏の大舞台へ行けよ",
+        ),
+        ("I swore I wouldn't cry...", "泣かないって決めてたのに…"),
+        (
+            "Coach, thank you for everything!",
+            "監督、ありがとうございました！",
+        ),
+        (
+            "I'm keeping this uniform forever.",
+            "このユニフォーム、ずっと宝物にします",
+        ),
+        (
+            "Next summer I'll be shouting from the stands.",
+            "次は応援席から声を出すからな",
+        ),
+    ];
+    match p.role {
+        Role::Captain => (
+            "Thanks for following me. It's yours now.",
+            "みんな、ついてきてくれてありがとう。あとは頼んだぞ",
+        ),
+        Role::Ace => (
+            "I wanted to throw one more inning...",
+            "もう1イニング、投げたかったな…",
+        ),
+        _ if p.pitcher() => (
+            "I'm glad I got to stand on that mound.",
+            "あのマウンドに立てて、よかった",
+        ),
+        _ => LINES[art::hash(&p.family) as usize % LINES.len()],
+    }
+}
+
+/// The line under a retiring third-year's face.
+fn senior_title(p: &team::Player) -> (&'static str, &'static str) {
+    match p.role {
+        Role::Captain => ("Captain", "主将"),
+        Role::Ace => ("Ace", "エース"),
+        _ => (p.pos.short(false), p.pos.short(true)),
     }
 }
 
@@ -2505,6 +3233,20 @@ fn fresh_save(seed: u32) -> Save {
         history: Vec::new(),
         year_from: (0, 0),
         pros: Vec::new(),
+        cup: None,
+        cup_path: Vec::new(),
+        cup_scores: Vec::new(),
+        seeded: false,
+        studied: false,
+        numbers_year: 0,
+        draft_year: 0,
+        selection_year: 0,
+        winter_year: 0,
+        seniors: Vec::new(),
+        drafted: Vec::new(),
+        captain: String::new(),
+        need_captain: false,
+        summer_won: 0,
     }
 }
 

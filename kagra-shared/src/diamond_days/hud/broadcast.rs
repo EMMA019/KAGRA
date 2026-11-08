@@ -1378,6 +1378,7 @@ impl DiamondDays {
         let (title, title_ja) = Self::fixture_name(f);
         let color = match f {
             Fixture::Practice => [80, 120, 200, 255],
+            Fixture::SpringPref(_) => [90, 160, 90, 255],
             Fixture::Summer(_) | Fixture::National(_) => [220, 80, 60, 255],
             Fixture::Autumn(_) => [210, 120, 40, 255],
             Fixture::Spring(_) => [220, 110, 150, 255],

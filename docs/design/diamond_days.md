@@ -28,17 +28,34 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
 
 ## The year (48 weeks, April to March)
 
+The year follows a real high-school club (the scenario and why: `diamond_days_scenario.ja.md`).
+
 | Weeks | What |
 |---|---|
 | 1 | April: first-years join (after year 1) |
-| 6, 20, 36, 44 | Practice game against a nearby school |
-| 12 | Summer camp |
-| 13 to 17 | Summer prefectural tournament (knockout, up to 5 games) |
-| 18 to 19 | Summer Stadium, the national tournament, if you won the prefecture |
-| 25 to 27 | Autumn tournament (up to 3 games) |
+| 4 | Spring prefectural (4 rounds). The last four are seeded in the summer |
+| 6, 10, 22, 30 | Practice games against a nearby school |
+| 11 | Training camp |
+| 12 | Summer numbers (the coach gives number 1 to a pitcher) and the draw |
+| 13 | Summer prefectural (6 rounds; a seed starts in round 2). Lose once and the third-years' summer is over |
+| 17 | Summer Stadium, the national tournament (5 rounds), if we won the prefecture |
+| the day our summer ends | The third-years retire (a word from each), then the new team names a captain |
+| 24 | Autumn tournament of the new team (5 rounds) |
+| 27 | The pro draft: a retired third-year may be picked |
+| 33 to 44 | Winter: no games with other schools; training counts for 25% more |
+| 37 | Selection day: a deep autumn run waits by the phone for the March invitation |
 | 40 | Exam week |
-| 45 to 47 | Blossom Invitational, if the autumn invited you |
-| 48 | March: third-years graduate; the year ends |
+| 45 | Blossom Invitational (4 rounds), if selected |
+| 48 | March: the retired third-years graduate; the year ends |
+
+A tournament is played as one stretch of game days from its first week: the board
+waits, the draw shows our path from the first round up to the final (the scores so far,
+the next school lit), and the day before each game is rest, tune up (mood), or study the
+next school (it plays a little weaker). A win stays on the same week; when the tournament
+is over the calendar moves past it. Tiredness carries from game to game, so the ace's arm
+is a real worry in a long run. Number 1 starts when his arm is rested (stamina 45 or
+more). Extra innings are a tiebreak: from the 10th every half starts with men on first and
+second.
 
 The years never run out. Reputation rises with wins and brings better first-years, and
 the region names the school by its fame stars: 無名校 (Unknown), 注目校 (Noticed),
@@ -141,12 +158,14 @@ that game. The coach's card returns when the player can play again.
 
 Ten named schools stay for the whole run (北浜, 南野, 桜ヶ丘, 東山, 西川, 旭台,
 緑ヶ丘, 川辺, and the academies 白石 and 星見). Each has a colour, a face, and a
-strength that grows when they beat you and a little every spring. The same week next
-year is a rematch.
+strength that grows when they beat you and a little every spring. A practice game in the
+same week next year is a rematch; a tournament draws our path, the strongest school on the
+circuit waiting near the end. The national tournament and the March invitation bring
+schools from other prefectures (made-up names).
 
-Winning any game in the autumn tournament invites the club to the **Blossom
-Invitational** (春の招待舞台) in March, weeks 45 to 47, before graduation. Winning
-the autumn seeds you: the first opponent is easier. It is not a licensed event name.
+Three autumn wins put the club on the list for the **Blossom Invitational** (春の招待舞台)
+in March, two make it a coin toss; the answer comes on selection day in January. It is
+not a licensed event name.
 
 ## School life, thinly
 
@@ -155,8 +174,14 @@ the autumn seeds you: the first opponent is easier. It is not a licensed event n
   same gate as an injury, not a study minigame.
 - **Summer camp** (week 12, before the prefectural tournament). Extra practice in every
   drill, a real chance of a knock, and sometimes a conversation on the steps.
-- **Graduation.** The face card is still there. Under each third-year: プロ, 大学, or
-  就職, from his numbers, the school's reputation, and his traits. No draft meeting.
+- **Retirement and graduation.** The third-years leave the team when our summer ends
+  (a word from each, Kotori in tears); a club left with fewer than ten takes in players
+  from other clubs. They graduate in March, the face card showing プロ (only if the
+  October draft picked them), 大学, or 就職.
+- **The captain.** The new team names one of its oldest players: the best player
+  (leads by example, ここ一番), the loudest (leads with his voice, 元気印), or the
+  steadiest glove (holds the field together, 終盤の粘り). He calls the huddle before every
+  tournament.
 
 ## Practice and games are two parts
 

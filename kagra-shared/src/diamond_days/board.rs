@@ -537,37 +537,137 @@ pub fn apply(rng: &mut Rng, h: &Happening, team: &mut Team) -> Option<String> {
     None
 }
 
-/// What the calendar holds for a week (1 to 48).
+/// What the calendar holds for a week (1 to 48). A tournament (every variant but
+/// `Practice`) is played as one stretch of game days from its first week: the board
+/// waits, round follows round, and the calendar moves to [`cup_end`] when it is over.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Fixture {
     Practice,
-    /// The summer prefectural tournament, round 1 to 5.
+    /// The spring prefectural tournament (April), round 1 to 4. The last four are seeded
+    /// in the summer.
+    SpringPref(u8),
+    /// The summer prefectural tournament, round 1 to 6 (a seed starts in round 2).
     Summer(u8),
-    /// The national tournament at the Summer Stadium, round 1 to 4 (if qualified).
+    /// The national tournament at the Summer Stadium, round 1 to 5 (if qualified).
     National(u8),
-    /// The autumn tournament, round 1 to 3.
+    /// The autumn tournament of the new team, round 1 to 5.
     Autumn(u8),
-    /// March invitation, seeded from the autumn. Round 1 to 3.
+    /// March invitation, chosen in January off the autumn. Round 1 to 4.
     Spring(u8),
 }
 
 pub const WEEKS: u8 = 48;
 /// Late June: a training camp, not a square on the ring.
-pub const CAMP_WEEK: u8 = 12;
+pub const CAMP_WEEK: u8 = 11;
+/// The end of June: the numbers for the summer, and the draw.
+pub const NUMBERS_WEEK: u8 = 12;
+/// October: the pro draft (a retired third-year may be picked).
+pub const DRAFT_WEEK: u8 = 27;
+/// December to February: no games with other schools; winter training counts for more.
+pub const WINTER: std::ops::RangeInclusive<u8> = 33..=44;
+/// January: the day the March invitations are announced.
+pub const SELECTION_WEEK: u8 = 37;
 /// January: exam week. A red mark benches a player the way an injury does.
 pub const EXAM_WEEK: u8 = 40;
 
-/// The fixture of week `w`, if any.
+/// The fixture that starts in week `w`, if any (a tournament's first round).
 pub fn fixture(w: u8) -> Option<Fixture> {
     match w {
-        6 | 20 | 36 | 44 => Some(Fixture::Practice),
-        13..=15 => Some(Fixture::Summer(w - 12)),
-        16 => Some(Fixture::Summer(4)),
-        17 => Some(Fixture::Summer(5)),
-        18..=19 => Some(Fixture::National(w - 17)),
-        25..=27 => Some(Fixture::Autumn(w - 24)),
-        45..=47 => Some(Fixture::Spring(w - 44)),
+        4 => Some(Fixture::SpringPref(1)),
+        6 | 10 | 22 | 30 => Some(Fixture::Practice),
+        13 => Some(Fixture::Summer(1)),
+        17 => Some(Fixture::National(1)),
+        24 => Some(Fixture::Autumn(1)),
+        45 => Some(Fixture::Spring(1)),
         _ => None,
+    }
+}
+
+impl Fixture {
+    /// The round (1 for a practice game).
+    pub fn round(self) -> u8 {
+        match self {
+            Fixture::Practice => 1,
+            Fixture::SpringPref(r)
+            | Fixture::Summer(r)
+            | Fixture::National(r)
+            | Fixture::Autumn(r)
+            | Fixture::Spring(r) => r,
+        }
+    }
+
+    /// How many rounds the tournament has (1 for a practice game).
+    pub fn rounds(self) -> u8 {
+        match self {
+            Fixture::Practice => 1,
+            Fixture::SpringPref(_) => 4,
+            Fixture::Summer(_) => 6,
+            Fixture::National(_) => 5,
+            Fixture::Autumn(_) => 5,
+            Fixture::Spring(_) => 4,
+        }
+    }
+
+    /// The same tournament at round `r`.
+    pub fn at(self, r: u8) -> Fixture {
+        match self {
+            Fixture::Practice => Fixture::Practice,
+            Fixture::SpringPref(_) => Fixture::SpringPref(r),
+            Fixture::Summer(_) => Fixture::Summer(r),
+            Fixture::National(_) => Fixture::National(r),
+            Fixture::Autumn(_) => Fixture::Autumn(r),
+            Fixture::Spring(_) => Fixture::Spring(r),
+        }
+    }
+
+    /// The next round, if this is not the final (or a practice game).
+    pub fn next(self) -> Option<Fixture> {
+        (self.is_cup() && self.round() < self.rounds()).then(|| self.at(self.round() + 1))
+    }
+
+    pub fn is_cup(self) -> bool {
+        self != Fixture::Practice
+    }
+
+    pub fn is_final(self) -> bool {
+        self.is_cup() && self.round() == self.rounds()
+    }
+
+    /// The tournament's name, both languages.
+    pub fn cup_name(self) -> (&'static str, &'static str) {
+        match self {
+            Fixture::Practice => ("Practice game", "練習試合"),
+            Fixture::SpringPref(_) => ("Spring prefectural", "春季県大会"),
+            Fixture::Summer(_) => ("Summer prefectural", "夏の県大会"),
+            Fixture::National(_) => ("Summer Stadium", "夏の大舞台"),
+            Fixture::Autumn(_) => ("Autumn tournament", "秋季大会"),
+            Fixture::Spring(_) => ("Blossom Invitational", "春の招待舞台"),
+        }
+    }
+
+    /// The round's name: the final, the semifinal, the quarterfinal, or "round 2".
+    pub fn round_name(self) -> (String, String) {
+        let (r, n) = (self.round(), self.rounds());
+        match n - r {
+            _ if !self.is_cup() => (String::new(), String::new()),
+            0 => ("final".into(), "決勝".into()),
+            1 => ("semifinal".into(), "準決勝".into()),
+            2 if n >= 5 => ("quarterfinal".into(), "準々決勝".into()),
+            _ => (format!("round {r}"), format!("{r}回戦")),
+        }
+    }
+}
+
+/// The week the calendar moves to when a tournament that started in its first week is
+/// over (lost, or won outright). The national tournament follows the summer one.
+pub fn cup_end(f: Fixture) -> u8 {
+    match f {
+        Fixture::Practice => 0,
+        Fixture::SpringPref(_) => 5,
+        Fixture::Summer(_) => 16,
+        Fixture::National(_) => 19,
+        Fixture::Autumn(_) => 27,
+        Fixture::Spring(_) => 47,
     }
 }
 
@@ -586,63 +686,45 @@ pub fn rival_level(f: Fixture, year: u8) -> f32 {
     let base = 36.0 + year as f32 * 2.0;
     match f {
         Fixture::Practice => base + 2.0,
-        Fixture::Summer(r) => base + r as f32 * 5.0,
-        Fixture::National(r) => base + 28.0 + r as f32 * 5.0,
+        Fixture::SpringPref(r) => base + r as f32 * 4.0,
+        Fixture::Summer(r) => base + r as f32 * 4.5,
+        Fixture::National(r) => base + 26.0 + r as f32 * 4.5,
         Fixture::Autumn(r) => base + r as f32 * 4.0,
-        Fixture::Spring(r) => base + 6.0 + r as f32 * 4.0,
+        Fixture::Spring(r) => base + 8.0 + r as f32 * 4.0,
     }
 }
 
-/// A rival school's name for a fixture (made up; picked by week and year).
-pub fn rival_name(f: Fixture, year: u8, week: u8) -> (String, String) {
-    const EN: [&str; 12] = [
-        "Kitahama",
-        "Minamino",
-        "Sakuragaoka",
-        "Higashiyama",
-        "Nishikawa",
-        "Asahidai",
-        "Midorigaoka",
-        "Kawabe",
-        "Shiroishi",
-        "Hoshimi",
-        "Tsukiyama",
-        "Aokita",
+/// A school from another prefecture (the national stage, the March invitation): name,
+/// both languages, and its colour. `n` picks one of 24; the names are made up.
+pub fn away_school(n: usize, year: u8) -> (String, String, [u8; 3]) {
+    const ROWS: [(&str, &str, [u8; 3]); 24] = [
+        ("Aoba Gakuin", "青葉学院", [30, 120, 70]),
+        ("Uminari Academy", "海鳴学園", [30, 80, 160]),
+        ("Shirakaba High", "白樺高校", [90, 90, 110]),
+        ("Koryo Academy", "紅陵学園", [170, 30, 50]),
+        ("Hoohkan High", "鳳凰館高校", [200, 140, 30]),
+        ("Tachibana Commercial", "立花商業", [40, 100, 60]),
+        ("Hokurei High", "北嶺高校", [60, 70, 140]),
+        ("Nishikigaoka High", "錦ヶ丘高校", [150, 60, 120]),
+        ("Kaiyo Tech", "海洋工業", [20, 110, 150]),
+        ("Seiran Academy", "青嵐学園", [40, 90, 170]),
+        ("Asagiri High", "朝霧高校", [110, 120, 130]),
+        ("Hyuga Daiichi", "日陽第一", [210, 90, 40]),
+        ("Kurenai Gakuin", "紅学院", [180, 40, 70]),
+        ("Mutsumi High", "睦美高校", [90, 140, 60]),
+        ("Ishizuchi Tech", "石鎚工業", [80, 80, 90]),
+        ("Sazanami Academy", "細波学園", [40, 140, 170]),
+        ("Kogane High", "黄金高校", [200, 160, 40]),
+        ("Tokiwa Gakuin", "常盤学院", [30, 110, 90]),
+        ("Hayate Commercial", "疾風商業", [60, 60, 160]),
+        ("Kirishima High", "霧島高校", [120, 90, 150]),
+        ("Ryuo Academy", "竜王学園", [140, 30, 30]),
+        ("Ginga High", "銀河高校", [50, 50, 110]),
+        ("Matsukaze High", "松風高校", [60, 120, 80]),
+        ("Kagaribi Gakuin", "篝火学院", [210, 80, 30]),
     ];
-    const JA: [&str; 12] = [
-        "北浜",
-        "南野",
-        "桜ヶ丘",
-        "東山",
-        "西川",
-        "旭台",
-        "緑ヶ丘",
-        "川辺",
-        "白石",
-        "星見",
-        "月山",
-        "青北",
-    ];
-    let tier = match f {
-        Fixture::National(_) => 6,
-        Fixture::Spring(_) => 3,
-        _ => 0,
-    };
-    let i = ((week as usize) * 7 + (year as usize) * 5 + tier) % EN.len();
-    let suffix_en = if matches!(f, Fixture::National(_)) {
-        " Academy"
-    } else {
-        " High"
-    };
-    let suffix_ja = if matches!(f, Fixture::National(_)) {
-        "学園"
-    } else {
-        "高校"
-    };
-    (
-        format!("{}{suffix_en}", EN[i]),
-        format!("{}{suffix_ja}", JA[i]),
-    )
+    let (en, ja, c) = ROWS[(n + year as usize * 5) % ROWS.len()];
+    (en.into(), ja.into(), c)
 }
 
 /// A school on the circuit. The same ten stay for the whole run, and grow.
@@ -905,23 +987,39 @@ mod tests {
 
     #[test]
     fn the_calendar_has_the_tournaments_in_their_months() {
+        // Each tournament starts in its month and runs on as game days from there.
+        assert_eq!(fixture(4), Some(Fixture::SpringPref(1)));
         assert_eq!(fixture(13), Some(Fixture::Summer(1)));
-        assert_eq!(fixture(17), Some(Fixture::Summer(5)));
-        assert_eq!(fixture(18), Some(Fixture::National(1)));
-        assert_eq!(fixture(26), Some(Fixture::Autumn(2)));
+        assert_eq!(fixture(14), None);
+        assert_eq!(fixture(17), Some(Fixture::National(1)));
+        assert_eq!(fixture(24), Some(Fixture::Autumn(1)));
         assert_eq!(fixture(45), Some(Fixture::Spring(1)));
-        assert_eq!(fixture(47), Some(Fixture::Spring(3)));
         assert_eq!(fixture(7), None);
         assert_eq!(fixture(CAMP_WEEK), None);
+        assert_eq!(fixture(NUMBERS_WEEK), None);
+        const { assert!(CAMP_WEEK < NUMBERS_WEEK && NUMBERS_WEEK < 13) };
         assert_eq!(month(1), 4);
         assert_eq!(month(13), 7);
         assert_eq!(month(45), 3);
         assert_eq!(month(48), 3);
+        // Four practice games and five tournaments, none in the winter.
         let n = (1..=WEEKS).filter(|w| fixture(*w).is_some()).count();
-        assert_eq!(n, 4 + 5 + 2 + 3 + 3);
+        assert_eq!(n, 4 + 5);
+        assert!(WINTER.clone().all(|w| fixture(w).is_none()));
         assert!(rival_level(Fixture::National(1), 1) > rival_level(Fixture::Summer(5), 1));
-        let (en, ja) = rival_name(Fixture::Summer(1), 1, 13);
-        assert!(en.ends_with("High") && ja.ends_with("高校"));
+        let (en, ja, _) = away_school(3, 1);
+        assert!(!en.is_empty() && !ja.is_empty());
+        // Rounds and their names.
+        assert_eq!(Fixture::Summer(6).round_name().1, "決勝");
+        assert_eq!(Fixture::Summer(5).round_name().1, "準決勝");
+        assert_eq!(Fixture::Summer(4).round_name().1, "準々決勝");
+        assert_eq!(Fixture::Summer(2).round_name().1, "2回戦");
+        assert_eq!(Fixture::SpringPref(3).round_name().1, "準決勝");
+        assert_eq!(Fixture::Summer(5).next(), Some(Fixture::Summer(6)));
+        assert_eq!(Fixture::Summer(6).next(), None);
+        assert!(Fixture::National(5).is_final() && !Fixture::Practice.is_cup());
+        // The national tournament starts after the summer one is over.
+        assert!(cup_end(Fixture::Summer(1)) < 17 && fixture(17) == Some(Fixture::National(1)));
         let schools = rival_schools();
         assert_eq!(schools.len(), 10);
         assert!(schools.iter().any(|s| s.name_ja.ends_with("学園")));

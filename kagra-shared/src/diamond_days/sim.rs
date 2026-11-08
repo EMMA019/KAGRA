@@ -641,6 +641,11 @@ pub struct Game {
     snap_their_call: Option<Tactic>,
 }
 
+/// Extra innings from the 10th start with men on first and second.
+pub const TIEBREAK: u8 = 10;
+/// A game still tied after this many innings is settled by a run of luck (no ties).
+const LAST_INNING: u8 = 20;
+
 impl Game {
     pub fn new(us_side: Side, them: Side, we_bat_first: bool, seed: u32) -> Self {
         let (us, sides) = if we_bat_first {
@@ -1523,15 +1528,15 @@ impl Game {
             self.top = false;
             self.line[1].push(0);
         } else {
-            if self.inning >= 9 && self.runs(0) != self.runs(1) || self.inning >= 15 {
+            if self.inning >= 9 && self.runs(0) != self.runs(1) || self.inning >= LAST_INNING {
                 self.over = true;
-                // A tie after 15 goes to the visitors by a run of luck: no ties in a knockout.
+                // The tiebreak almost always settles it; a tie this late goes to a run of luck.
                 if self.runs(0) == self.runs(1) {
                     let w = if self.rng.unit() < 0.5 { 0 } else { 1 };
                     self.add_runs_last(w);
                     self.say(
-                        "Tie-break: decided by a final run.".into(),
-                        "タイブレークの末、決着。".into(),
+                        "Still tied after 20: decided by lot.".into(),
+                        "20回でも決着せず、抽選で勝敗が決まった。".into(),
                         1,
                     );
                 }
@@ -1549,6 +1554,19 @@ impl Game {
             format!("{n}回{ja_side}。"),
             0,
         );
+        // Extra innings are a tiebreak: every half starts with men on first and second
+        // (the last two batters of the order before this one).
+        if self.inning >= TIEBREAK {
+            let s = self.batting();
+            let k = self.sides[s].bats.len().max(1);
+            let up = self.up[s] % k;
+            self.bases = [Some((up + k - 1) % k), Some((up + k - 2) % k), None];
+            self.say(
+                "Tiebreak: nobody out, men on first and second.".into(),
+                "タイブレーク。無死一・二塁から始まる。".into(),
+                0,
+            );
+        }
         true
     }
 
@@ -1948,6 +1966,34 @@ mod tests {
             }
         }
         assert!(checked > 0, "a steal during a pinch with a call made");
+    }
+
+    /// Extra innings are a tiebreak: from the 10th every half starts with men on first
+    /// and second, so a long tie ends.
+    #[test]
+    fn extra_innings_start_with_two_on() {
+        let mut seen = 0;
+        for seed in 0..300 {
+            let mut g = Game::new(side(50.0, seed), side(50.0, seed + 3), true, seed);
+            let mut guard = 0;
+            while !g.over && guard < 4000 {
+                if g.spot().is_some() {
+                    g.call(None);
+                }
+                g.step();
+                guard += 1;
+            }
+            assert!(g.over && g.inning < LAST_INNING, "a tiebreak settles it");
+            for (k, pl) in g.log.iter().enumerate() {
+                if pl.ja.starts_with("タイブレーク") {
+                    seen += 1;
+                    let next = g.log[k..].iter().find(|q| q.is_pa()).unwrap();
+                    assert_eq!(next.bases0 & 0b011, 0b011, "men on first and second");
+                    assert!(next.inning >= TIEBREAK);
+                }
+            }
+        }
+        assert!(seen > 0, "some games go to extra innings");
     }
 
     #[test]
