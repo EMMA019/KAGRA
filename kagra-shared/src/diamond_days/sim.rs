@@ -915,6 +915,11 @@ impl Game {
             }
             (Some(Tactic::Steal), _) => {
                 self.steal_lead(s);
+                // The batter is still up: a call the coach made for him (a walk, inside,
+                // the infield in) still stands when the other bench steals.
+                if coach != Some(Tactic::Steal) {
+                    self.tactic = coach;
+                }
                 return self.after_play(s);
             }
             _ => {}
@@ -1905,6 +1910,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_steal_does_not_wipe_out_the_coachs_call() {
+        // As the screen asks: once per batter, at a pinch. Strong sides have the quick
+        // runners the other bench sends.
+        let mut checked = 0;
+        for seed in 0..300 {
+            let mut g = Game::new(side(85.0, seed), side(85.0, seed + 77), seed % 2 == 0, seed);
+            let mut guard = 0;
+            while !g.over && guard < 4000 {
+                guard += 1;
+                if g.spot() == Some(Spot::Pinch) {
+                    g.call(Some(Tactic::Inside));
+                }
+                g.step();
+            }
+            for (i, p) in g.log.iter().enumerate() {
+                let stolen = matches!(p.kind, PlayKind::Steal | PlayKind::CaughtStealing);
+                if !(stolen
+                    && p.their_call == Some(Tactic::Steal)
+                    && p.call == Some(Tactic::Inside))
+                {
+                    continue;
+                }
+                // The same batter's turn, unless the steal ended the inning.
+                let Some(next) = g.log[i + 1..].iter().find(|q| q.is_pa()) else {
+                    continue;
+                };
+                if next.batter != p.batter || next.inning != p.inning {
+                    continue;
+                }
+                assert_eq!(next.call, Some(Tactic::Inside), "after {}", p.en);
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "a steal during a pinch with a call made");
     }
 
     #[test]
