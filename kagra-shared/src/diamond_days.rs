@@ -1964,6 +1964,17 @@ impl DiamondDays {
         if matches!(play.kind, sim::PlayKind::Hit(n) if n >= 2) {
             pace = pace.max(1.7);
         }
+        // A home run gets its moment; the end of the game (a walk-off, the bow) longer.
+        if play.kind == sim::PlayKind::Hit(4) {
+            pace = pace.max(3.0);
+        }
+        if self
+            .game
+            .as_ref()
+            .is_some_and(|g| self.finale(g, shown).is_some())
+        {
+            pace = pace.max(6.0);
+        }
         pace
     }
 

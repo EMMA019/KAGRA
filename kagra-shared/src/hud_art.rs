@@ -313,6 +313,220 @@ impl Pops {
     }
 }
 
+/// How confetti is thrown.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Throw {
+    /// Up and out from a point (a home run, a record), `speed` design units a second.
+    Burst { at: P, speed: f32 },
+    /// Falling from above the stage between `x0` and `x1`, a few at a time (a win).
+    Shower { x0: f32, x1: f32, y: f32 },
+}
+
+/// Paper confetti in design units. Nothing to tick: every piece is worked out from the
+/// seconds since the throw, so a kit keeps only the throw and its start time, and a replay
+/// draws the same pieces. Pieces flutter (they turn over, showing their darker back), drift
+/// down at a paper's slow fall, and fade out at the end of their life.
+///
+/// ```
+/// use kagra_shared::hud_art::{Confetti, Painter, Stage};
+/// use kagra_shared::scene::DrawList;
+/// let pop = Confetti::burst([200.0, 300.0], 7);
+/// let mut list = DrawList::default();
+/// let mut p = Painter::new(&mut list, Stage::fit(400.0, 720.0, 400.0, 720.0));
+/// pop.draw(&mut p, 0.5);
+/// assert!(!list.top().mesh.verts.is_empty());
+/// assert!(pop.done(10.0));
+/// ```
+#[derive(Clone, Debug, PartialEq)]
+pub struct Confetti {
+    pub throw: Throw,
+    pub seed: u32,
+    pub count: usize,
+    /// A piece's length (design units).
+    pub size: f32,
+    pub colors: Vec<Rgba>,
+    /// Every piece's opacity is multiplied by this (fade the lot out when the moment ends).
+    pub alpha: f32,
+}
+
+/// One piece of confetti at a moment.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Piece {
+    pub at: P,
+    /// Turn in the picture plane (radians).
+    pub angle: f32,
+    /// How much of its width shows as it turns over (-1..1; below 0 is its back).
+    pub flip: f32,
+    pub color: Rgba,
+    /// 0 before it is thrown and after it fades, 1 in between.
+    pub alpha: f32,
+}
+
+/// Bright paper colours (gold, red, sky, green, pink, white).
+pub const CONFETTI_COLORS: [Rgba; 6] = [
+    [255, 206, 64, 255],
+    [240, 72, 72, 255],
+    [72, 170, 250, 255],
+    [96, 210, 120, 255],
+    [250, 120, 190, 255],
+    [255, 255, 255, 255],
+];
+
+/// Seconds a piece lives (before its fade ends), at most.
+pub const CONFETTI_SECS: f32 = 3.6;
+
+/// Air drag (per second) and gravity (design units / s²): paper falls at about `G / DRAG`.
+const DRAG: f32 = 2.4;
+const G: f32 = 230.0;
+
+impl Confetti {
+    pub fn burst(at: P, seed: u32) -> Self {
+        Confetti {
+            throw: Throw::Burst { at, speed: 430.0 },
+            seed,
+            count: 64,
+            size: 11.0,
+            colors: CONFETTI_COLORS.to_vec(),
+            alpha: 1.0,
+        }
+    }
+
+    /// A shower over the width `x0..x1`, starting above `y` (the top of the stage).
+    pub fn shower(x0: f32, x1: f32, y: f32, seed: u32) -> Self {
+        Confetti {
+            throw: Throw::Shower { x0, x1, y },
+            seed,
+            count: 90,
+            size: 10.0,
+            colors: CONFETTI_COLORS.to_vec(),
+            alpha: 1.0,
+        }
+    }
+
+    pub fn count(mut self, n: usize) -> Self {
+        self.count = n;
+        self
+    }
+
+    /// The whole lot at opacity `a` (0..1).
+    pub fn fade(mut self, a: f32) -> Self {
+        self.alpha = a.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn colors(mut self, c: &[Rgba]) -> Self {
+        if !c.is_empty() {
+            self.colors = c.to_vec();
+        }
+        self
+    }
+
+    /// A number in 0..1 for piece `i`, draw `k` (the same every time).
+    fn rand(&self, i: usize, k: u32) -> f32 {
+        let mut x = self
+            .seed
+            .wrapping_mul(0x9E37_79B9)
+            .wrapping_add((i as u32).wrapping_mul(0x85EB_CA6B))
+            .wrapping_add(k.wrapping_mul(0xC2B2_AE35));
+        x ^= x >> 16;
+        x = x.wrapping_mul(0x7FEB_352D);
+        x ^= x >> 15;
+        x = x.wrapping_mul(0x846C_A68B);
+        x ^= x >> 16;
+        (x >> 8) as f32 / (1u32 << 24) as f32
+    }
+
+    /// Piece `i`, `t` seconds after the throw.
+    pub fn piece(&self, i: usize, t: f32) -> Piece {
+        let r = |k| self.rand(i, k);
+        let (start, p0, v0) = match self.throw {
+            Throw::Burst { at, speed } => {
+                // Up and out in a fan, some fast and some lazy.
+                let a = -std::f32::consts::FRAC_PI_2 + (r(0) - 0.5) * 2.4;
+                let s = speed * (0.4 + 0.6 * r(1));
+                (0.0, at, [a.cos() * s, a.sin() * s])
+            }
+            Throw::Shower { x0, x1, y } => (
+                r(0) * 1.6,
+                [x0 + (x1 - x0) * r(1), y - 10.0 - r(2) * 60.0],
+                [(r(3) - 0.5) * 60.0, 20.0 + r(4) * 50.0],
+            ),
+        };
+        let t = t - start;
+        let life = CONFETTI_SECS * (0.72 + 0.28 * r(5));
+        let color = self.colors[(r(6) * self.colors.len() as f32) as usize % self.colors.len()];
+        if t < 0.0 || t >= life {
+            return Piece {
+                at: p0,
+                angle: 0.0,
+                flip: 1.0,
+                color,
+                alpha: 0.0,
+            };
+        }
+        let fall = G / DRAG;
+        let ease = 1.0 - (-DRAG * t).exp();
+        let sway =
+            (t * (2.5 + r(7) * 2.5) + r(8) * 6.3).sin() * (6.0 + r(9) * 10.0) * (t * 2.0).min(1.0);
+        let at = [
+            p0[0] + v0[0] / DRAG * ease + sway,
+            p0[1] + fall * t + (v0[1] - fall) / DRAG * ease,
+        ];
+        let flip = (t * (5.0 + r(10) * 7.0) + r(11) * 6.3).cos();
+        let fade = ((life - t) / 0.5).min(1.0);
+        Piece {
+            at,
+            angle: r(12) * 6.3 + t * (r(13) - 0.5) * 6.0,
+            flip,
+            color: if flip < 0.0 {
+                shade(color, -0.25)
+            } else {
+                color
+            },
+            alpha: fade,
+        }
+    }
+
+    /// Every piece has faded by `t` seconds.
+    pub fn done(&self, t: f32) -> bool {
+        let start = match self.throw {
+            Throw::Burst { .. } => 0.0,
+            Throw::Shower { .. } => 1.6,
+        };
+        t >= start + CONFETTI_SECS
+    }
+
+    /// Draw the pieces `t` seconds after the throw, on the painter's top layer.
+    pub fn draw(&self, p: &mut Painter, t: f32) {
+        if self.colors.is_empty() || self.done(t) || self.alpha <= 0.0 {
+            return;
+        }
+        for i in 0..self.count {
+            let pc = self.piece(i, t);
+            if pc.alpha <= 0.0 {
+                continue;
+            }
+            let (s, c) = pc.angle.sin_cos();
+            let hw = (self.size * 0.3 * pc.flip.abs()).max(0.35);
+            let hh = self.size * 0.5;
+            let corner = |x: f32, y: f32| [pc.at[0] + x * c - y * s, pc.at[1] + x * s + y * c];
+            let quad = [
+                corner(-hw, -hh),
+                corner(hw, -hh),
+                corner(hw, hh),
+                corner(-hw, hh),
+            ];
+            let col = [
+                pc.color[0],
+                pc.color[1],
+                pc.color[2],
+                (pc.color[3] as f32 * pc.alpha * self.alpha) as u8,
+            ];
+            p.fill(&quad, Paint::Solid(col));
+        }
+    }
+}
+
 /// A list that follows a finger, in design units: drag it, fling it, and it settles back
 /// inside its ends. The game feeds pointer positions (`press`, `drag`, `release`) and time
 /// (`step`), draws its rows at `-offset`, and treats a release that did not move as a tap.
@@ -903,6 +1117,29 @@ impl<'a> Painter<'a> {
         self.fill(&s, Paint::Solid(color));
     }
 
+    /// Rays of light around (`cx`, `cy`), `r` long, fading out at their ends: behind a
+    /// title at a big moment. `turn` (radians) spins them; `rays` is how many.
+    pub fn sunburst(&mut self, cx: f32, cy: f32, r: f32, rays: usize, turn: f32, color: Rgba) {
+        let rays = rays.max(3);
+        let step = std::f32::consts::TAU / rays as f32;
+        let paint = Paint::Radial {
+            center: [cx, cy],
+            radius: r,
+            c0: color,
+            c1: [color[0], color[1], color[2], 0],
+        };
+        for i in 0..rays {
+            let a = turn + i as f32 * step;
+            let (a0, a1) = (a - step * 0.24, a + step * 0.24);
+            let tri = [
+                [cx, cy],
+                [cx + a0.cos() * r, cy + a0.sin() * r],
+                [cx + a1.cos() * r, cy + a1.sin() * r],
+            ];
+            self.fill(&tri, paint);
+        }
+    }
+
     /// A speech bubble with a tail pointing at (`tx`, `ty`).
     #[allow(clippy::too_many_arguments)]
     pub fn bubble(
@@ -957,6 +1194,78 @@ impl<'a> Painter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn confetti_goes_up_flutters_and_drifts_down() {
+        let pop = Confetti::burst([200.0, 400.0], 3);
+        let n = pop.count;
+        let early: Vec<Piece> = (0..n).map(|i| pop.piece(i, 0.15)).collect();
+        // Thrown up and out: most pieces are above the throw a moment later, spread wide.
+        assert!(early.iter().filter(|p| p.at[1] < 400.0).count() > n * 9 / 10);
+        let xs: Vec<f32> = early.iter().map(|p| p.at[0]).collect();
+        let spread = xs.iter().cloned().fold(f32::MIN, f32::max)
+            - xs.iter().cloned().fold(f32::MAX, f32::min);
+        assert!(spread > 60.0, "spread {spread}");
+        // Later they come down at a paper's pace, not a stone's.
+        let a = pop.piece(0, 1.6).at[1];
+        let b = pop.piece(0, 1.8).at[1];
+        let speed = (b - a) / 0.2;
+        assert!(speed > 0.0 && speed < G / DRAG * 1.3, "falls at {speed}");
+        // They turn over: the width that shows changes, and the back is darker.
+        let flips: Vec<f32> = (0..20)
+            .map(|k| pop.piece(1, k as f32 * 0.05).flip)
+            .collect();
+        assert!(flips.iter().any(|f| *f > 0.5) && flips.iter().any(|f| *f < -0.5));
+        // The same throw draws the same pieces; another seed, others.
+        assert_eq!(
+            pop.piece(5, 0.7),
+            Confetti::burst([200.0, 400.0], 3).piece(5, 0.7)
+        );
+        assert_ne!(
+            pop.piece(5, 0.7),
+            Confetti::burst([200.0, 400.0], 4).piece(5, 0.7)
+        );
+    }
+
+    #[test]
+    fn confetti_fades_away_and_a_shower_falls_from_the_top() {
+        let st = Stage::fit(400.0, 720.0, 400.0, 720.0);
+        let pop = Confetti::burst([200.0, 300.0], 1);
+        let drawn = |c: &Confetti, t: f32| {
+            let mut list = DrawList::default();
+            let mut p = Painter::new(&mut list, st);
+            c.draw(&mut p, t);
+            list.top().mesh.verts.len()
+        };
+        assert!(drawn(&pop, 0.4) > 0);
+        assert_eq!(drawn(&pop.clone().fade(0.0), 0.4), 0);
+        assert!(pop.done(CONFETTI_SECS) && !pop.done(1.0));
+        assert_eq!(drawn(&pop, CONFETTI_SECS + 0.1), 0);
+        assert!((0..pop.count).all(|i| pop.piece(i, CONFETTI_SECS).alpha == 0.0));
+        let rain = Confetti::shower(0.0, 400.0, 0.0, 9).count(40);
+        for i in 0..rain.count {
+            let p = rain.piece(i, 0.0);
+            assert!(p.at[0] >= 0.0 && p.at[0] <= 400.0 && p.at[1] < 0.0);
+        }
+        // A shower keeps coming: some pieces are not thrown yet at first, all are later.
+        assert!((0..40).any(|i| rain.piece(i, 0.2).alpha == 0.0));
+        assert!((0..40).filter(|i| rain.piece(*i, 1.7).alpha > 0.0).count() > 30);
+        // It reaches the stage: pieces get below the top.
+        assert!((0..40).any(|i| rain.piece(i, 2.5).at[1] > 100.0));
+    }
+
+    #[test]
+    fn a_sunburst_is_rays_that_fade_at_their_ends() {
+        let mut list = DrawList::default();
+        let mut p = Painter::new(&mut list, Stage::fit(400.0, 720.0, 400.0, 720.0));
+        p.sunburst(200.0, 200.0, 150.0, 12, 0.3, [255, 220, 120, 200]);
+        let m = &list.top().mesh;
+        assert!(m.verts.len() >= 12 * 3);
+        // Bright at the centre, clear at the ends.
+        let centre = m.verts.iter().filter(|v| v.color[3] >= 190).count();
+        let ends = m.verts.iter().filter(|v| v.color[3] <= 10).count();
+        assert!(centre >= 12 && ends >= 24, "{centre} {ends}");
+    }
 
     #[test]
     fn a_phone_fills_the_width_and_a_desktop_centres_the_canvas() {

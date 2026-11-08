@@ -22,7 +22,7 @@ The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit 
    `WorldPlay` or game branches to `play.html`.
 2. **Reuse the shared parts before writing new ones** (`game_core::{stick, motion, view, platform, grid, tween, progress, floats, dialogue, items,
    physics2d, anim, swarm, enemies, lives, missions, juice, portrait, chibi, chibi3d}`, `hud_kit` (cards, buttons), `hud_art` (a design stage,
-   illustrated panels, glossy buttons, ribbons, chips, bubbles, PNG pictures and nine-slice frames via `image2d`),
+   illustrated panels, glossy buttons, ribbons, chips, bubbles, confetti, light rays, PNG pictures and nine-slice frames via `image2d`),
    `vector` (fills, strokes, gradients, glows, clipping),
    rounded `Quad`s, `TextFace::Display`; in 3D, `toon` props for cel shading with an outline
    and `image2d:` textures for pictures baked at run time). When a game grows a part another game could use, move it into `game_core` in the

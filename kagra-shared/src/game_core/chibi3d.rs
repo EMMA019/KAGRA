@@ -68,6 +68,9 @@ pub struct Figure<'a> {
     pub mitt: bool,
     /// A bat in the hands (any pose; `Pose::Bat` always has one).
     pub bat: bool,
+    /// A fielder's glove on the glove hand (on by default; off for a batter's side
+    /// celebrating, or a line-up after the game).
+    pub glove: bool,
     /// Reach the glove hand toward this world point (as far as the arm goes): a catcher
     /// framing a pitch, a fielder stretching for a throw.
     pub reach: Option<[f32; 3]>,
@@ -95,6 +98,7 @@ impl<'a> Figure<'a> {
             detail: Detail::Full,
             mitt: false,
             bat: false,
+            glove: true,
             reach: None,
         }
     }
@@ -126,6 +130,11 @@ impl<'a> Figure<'a> {
 
     pub fn bat(mut self, bat: bool) -> Self {
         self.bat = bat;
+        self
+    }
+
+    pub fn glove(mut self, on: bool) -> Self {
+        self.glove = on;
         self
     }
 
@@ -463,6 +472,28 @@ fn rig_for(pose: Pose) -> Rig {
             hand: [v(-0.16, 0.93, 0.03), v(0.16, 0.93, 0.03)],
             ..STAND
         },
+        Pose::Bow(d) => {
+            // Heels together and hands at the sides, then down from the waist, the hands
+            // sliding to the knees.
+            let upright = Rig {
+                lean: 0.0,
+                knee: [v(-0.05, 0.145, 0.01), v(0.05, 0.145, 0.01)],
+                ankle: [v(-0.05, 0.036, 0.0), v(0.05, 0.036, 0.0)],
+                elbow: [v(-0.17, 0.37, -0.01), v(0.17, 0.37, -0.01)],
+                hand: [v(-0.16, 0.26, 0.01), v(0.16, 0.26, 0.01)],
+                ..STAND
+            };
+            let low = Rig {
+                hips: v(0.0, 0.265, -0.035),
+                lean: 0.78,
+                nod: 0.25,
+                elbow: [v(-0.14, 0.31, 0.1), v(0.14, 0.31, 0.1)],
+                hand: [v(-0.09, 0.2, 0.09), v(0.09, 0.2, 0.09)],
+                ..upright
+            };
+            let d = d.clamp(0.0, 1.0);
+            upright.mix(&low, d * d * (3.0 - 2.0 * d))
+        }
     }
 }
 
@@ -631,7 +662,7 @@ pub fn build(f: &Figure, out: &mut Vec<WorldProp>) {
             v(0.085, 0.085, 0.05),
             MITT,
         );
-    } else if !matches!(f.pose, Pose::Bat(_)) && !f.bat {
+    } else if f.glove && !matches!(f.pose, Pose::Bat(_)) && !f.bat {
         o.ball(
             r.hand[1] + v(0.0, 0.01, 0.02),
             glove_q,
@@ -785,6 +816,8 @@ mod tests {
             Pose::Bat(1.0),
             Pose::Squat,
             Pose::Cheer,
+            Pose::Bow(0.0),
+            Pose::Bow(1.0),
         ] {
             let mut props = Vec::new();
             build(&figure(&face, &kit, pose), &mut props);
@@ -881,6 +914,43 @@ mod tests {
         let target = [0.45, 0.45, 0.95];
         let lefty = glove_hand(&base.lefty(true).reach(Some(target)));
         assert!(d(lefty, target) < 0.15, "{lefty:?}");
+    }
+
+    #[test]
+    fn a_bow_dips_the_head_and_a_bare_hand_has_no_glove() {
+        let face = Face::from_seed(6);
+        let kit = Kit::home([30, 80, 170, 255]);
+        let head = |d: f32| {
+            let mut props = Vec::new();
+            build(&figure(&face, &kit, Pose::Bow(d)), &mut props);
+            // The head is the biggest ball of skin.
+            let skin = SKINS[face.skin as usize % SKINS.len()];
+            let skin = Some([skin[0] as u32, skin[1] as u32, skin[2] as u32]);
+            let h = props
+                .iter()
+                .filter(|p| p.model == "sphere" && p.color == skin)
+                .max_by(|a, b| a.scale[0].total_cmp(&b.scale[0]));
+            h.map(|p| p.position).expect("a head")
+        };
+        let (up, down) = (head(0.0), head(1.0));
+        // Facing +Z: the head goes down and forward, and halfway is in between.
+        assert!(
+            down[1] < up[1] - 0.25 && down[2] > up[2] + 0.3,
+            "{up:?} {down:?}"
+        );
+        let mid = head(0.5);
+        assert!(mid[1] < up[1] && mid[1] > down[1], "{mid:?}");
+        // Off the ends it holds the end pose.
+        assert_eq!(head(1.4), down);
+        let count = |f: Figure| {
+            let mut props = Vec::new();
+            build(&f, &mut props);
+            let glove = Some([GLOVE[0] as u32, GLOVE[1] as u32, GLOVE[2] as u32]);
+            props.iter().filter(|p| p.color == glove).count()
+        };
+        let f = figure(&face, &kit, Pose::Cheer);
+        assert_eq!(count(f), 1);
+        assert_eq!(count(f.glove(false)), 0);
     }
 
     #[test]

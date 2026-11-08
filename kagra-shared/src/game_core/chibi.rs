@@ -51,6 +51,8 @@ pub enum Pose {
     Squat,
     /// Both arms up.
     Cheer,
+    /// A bow from the waist, hands at the sides: 0 upright, 1 the deepest point.
+    Bow(f32),
 }
 
 /// The uniform.
@@ -293,6 +295,24 @@ fn rig(pose: Pose) -> Rig {
             hand: [[-28.0, 70.0], [28.0, 70.0]],
             ..STAND
         },
+        Pose::Bow(d) => {
+            // Heels together, hands flat at the sides; seen from the front the head dips.
+            let upright = Rig {
+                knee: [[-6.0, 14.0], [6.0, 14.0]],
+                ankle: [[-6.0, 3.0], [6.0, 3.0]],
+                elbow: [[-18.0, 37.0], [18.0, 37.0]],
+                hand: [[-16.0, 24.0], [16.0, 24.0]],
+                ..STAND
+            };
+            let low = Rig {
+                ty: -2.0,
+                head: [0.0, -15.0],
+                elbow: [[-17.0, 34.0], [17.0, 34.0]],
+                hand: [[-12.0, 20.0], [12.0, 20.0]],
+                ..upright
+            };
+            blend(&upright, &low, d)
+        }
     }
 }
 
@@ -531,7 +551,7 @@ pub fn draw(
                 shade(GLOVE, -0.3),
             );
         }
-        Pose::Cheer => {}
+        Pose::Cheer | Pose::Bow(_) => {}
     }
 
     // The head.
@@ -649,6 +669,8 @@ mod tests {
             Pose::Bat(1.0),
             Pose::Squat,
             Pose::Cheer,
+            Pose::Bow(0.0),
+            Pose::Bow(1.0),
         ] {
             for facing in [Facing::Front, Facing::Back] {
                 let list = one(facing, pose);

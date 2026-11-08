@@ -11,7 +11,7 @@ use crate::diamond_days::team::{grade, Pos};
 use crate::diamond_days::{DiamondDays, PITCH_SECS};
 use crate::game_core::chibi::{self, Facing, Kit, Pose};
 use crate::game_core::portrait::{Expr, Face, Outfit};
-use crate::hud_art::Painter;
+use crate::hud_art::{Confetti, Painter};
 use crate::scene::TextAlign;
 use crate::vector::{self, shade, Paint, Rgba, P};
 
@@ -205,6 +205,91 @@ pub(super) fn in_play(kind: PlayKind) -> bool {
 }
 
 impl DiamondDays {
+    /// A batter's home runs here, counting this game up to line `upto`: the number the
+    /// broadcast gives him ("career No. 12").
+    pub(in crate::diamond_days) fn career_homers(&self, g: &Game, upto: usize) -> u32 {
+        let Some(pl) = g.log.get(upto) else { return 0 };
+        let before = self
+            .s
+            .team
+            .players
+            .iter()
+            .find(|q| q.family == pl.batter)
+            .map(|q| q.career.hr as u32)
+            .unwrap_or(0);
+        let today = g.log[..=upto]
+            .iter()
+            .filter(|q| q.side == pl.side && q.batter == pl.batter && q.kind == PlayKind::Hit(4))
+            .count() as u32;
+        before + today
+    }
+
+    /// The last line of a finished game, over the picture: WALK-OFF or GAME SET, and the
+    /// shout under it. Paper falls when it is our win.
+    fn draw_finale(&self, p: &mut Painter, g: &Game, shown: usize, t: f32, r: [f32; 4], mid: f32) {
+        let Some(f) = self.finale(g, shown) else {
+            return;
+        };
+        let ja = self.lang_ja;
+        let hold = self.spec.line_secs * self.line_pace(shown);
+        let secs = if t.is_finite() { t.min(hold) } else { hold };
+        let k = secs / hold.max(0.05);
+        let we_won = g.runs(g.us) > g.runs(1 - g.us);
+        let (title, col) = match f {
+            super::stadium::Finale::WalkOff { .. } if we_won => {
+                (self.tr("WALK-OFF!", "サヨナラ！"), art::GOLD)
+            }
+            super::stadium::Finale::WalkOff { .. } => (
+                self.tr("WALK-OFF LOSS", "サヨナラ負け…"),
+                [170, 200, 255, 255],
+            ),
+            super::stadium::Finale::LineUp => (self.tr("GAME SET", "ゲームセット"), WHITE),
+        };
+        if we_won {
+            p.sunburst(
+                200.0,
+                mid - 6.0,
+                190.0 * (k * 6.0).min(1.0),
+                20,
+                self.clock * 0.3,
+                [255, 214, 110, 110],
+            );
+        }
+        let pop = 1.0 + (1.0 - (k * 6.0).min(1.0)) * 0.3;
+        p.text_outlined(
+            title,
+            200.0,
+            mid - 10.0,
+            40.0 * pop,
+            col,
+            [16, 18, 30, 255],
+            3.0,
+            TextAlign::Center,
+        );
+        if let Some(pl) = g.log.get(shown - 1) {
+            let txt = if ja { &pl.ja } else { &pl.en };
+            let one: String = wrap(txt, 16.0, 340.0)
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            p.text_outlined(
+                &one,
+                200.0,
+                mid + 40.0,
+                16.0,
+                WHITE,
+                [16, 18, 30, 255],
+                2.0,
+                TextAlign::Center,
+            );
+        }
+        if we_won {
+            p.clip_layer(r);
+            Confetti::shower(r[0], r[0] + r[2], r[1], g.log.len() as u32).draw(p, secs);
+            p.layer();
+        }
+    }
+
     pub(super) fn phase(
         &self,
         g: &Game,
@@ -619,6 +704,41 @@ impl DiamondDays {
                 } else {
                     32.0
                 };
+                // A home run: rays behind the words; ours gets paper and his number.
+                if pl.kind == PlayKind::Hit(4) && k < 0.97 {
+                    let ours = pl.side as usize == g.us;
+                    let grow = (k * 8.0).min(1.0);
+                    p.sunburst(
+                        200.0,
+                        mid - 6.0,
+                        170.0 * grow,
+                        18,
+                        self.clock * 0.35,
+                        if ours {
+                            [255, 214, 110, 120]
+                        } else {
+                            [230, 230, 240, 70]
+                        },
+                    );
+                    if ours {
+                        let n = self.career_homers(g, line.unwrap_or(0));
+                        let cap = if ja {
+                            format!("{}、高校通算{}号！", pl.batter, n)
+                        } else {
+                            format!("{}: career home run No. {}", pl.batter, n)
+                        };
+                        p.text_outlined(
+                            &cap,
+                            200.0,
+                            mid + 64.0,
+                            15.0,
+                            [255, 236, 170, 255],
+                            [16, 18, 30, 255],
+                            2.0,
+                            TextAlign::Center,
+                        );
+                    }
+                }
                 if !txt.is_empty() && k < 0.97 {
                     let pop = 1.0 + (1.0 - (k * 6.0).min(1.0)) * 0.25;
                     p.text_outlined(
@@ -631,6 +751,15 @@ impl DiamondDays {
                         3.0,
                         TextAlign::Center,
                     );
+                }
+                if pl.kind == PlayKind::Hit(4) && pl.side as usize == g.us {
+                    let hold = self.spec.line_secs * self.line_pace(shown);
+                    let pop =
+                        Confetti::burst([200.0, mid], art::hash(&pl.batter) as u32 ^ shown as u32);
+                    let fade = ((1.0 - k) / 0.15).min(1.0);
+                    p.clip_layer(r);
+                    pop.fade(fade).draw(p, k * hold);
+                    p.layer();
                 }
                 if pl.runs > 0 && k < 0.97 {
                     let msg = if ja {
@@ -665,6 +794,9 @@ impl DiamondDays {
                         TextAlign::Center,
                     );
                 }
+            }
+            (None, _) if self.finale(g, shown).is_some() => {
+                self.draw_finale(p, g, shown, t, r, mid);
             }
             (None, _) => {
                 if let Some(pl) = play {

@@ -5,6 +5,8 @@
 
 mod broadcast;
 mod stadium;
+#[cfg(test)]
+pub(in crate::diamond_days) use stadium::Finale;
 
 use super::art::{self, INK, INK_SOFT, ORANGE, OURS, WHITE};
 use super::board::{self, Fixture, Square};

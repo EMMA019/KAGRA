@@ -1691,3 +1691,246 @@ fn the_team_button_is_drawn_when_no_games_are_left() {
     let hud = g.hud(W, H, false);
     assert!(all_texts(&hud).any(|t| t.text == "TEAM"));
 }
+
+/// Games played straight through in the sim from today's match-up, by seed.
+fn games_to_the_end(
+    g: &DiamondDays,
+    seeds: std::ops::Range<u32>,
+    we_bat_first: bool,
+) -> Vec<sim::Game> {
+    let gm = g.game.as_ref().expect("a game on");
+    let (us, them) = (gm.sides[gm.us].clone(), gm.sides[1 - gm.us].clone());
+    seeds
+        .map(|seed| {
+            let mut x = sim::Game::new(us.clone(), them.clone(), we_bat_first, seed);
+            let mut guard = 0;
+            while !x.over && guard < 4000 {
+                if x.spot().is_some() {
+                    x.call(None);
+                }
+                x.step();
+                guard += 1;
+            }
+            assert!(x.over);
+            x
+        })
+        .collect()
+}
+
+fn on_game_day() -> DiamondDays {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    assert_eq!(g.mode, Mode::MatchIntro);
+    press(&mut g, hud::Btn::PlayBall);
+    g
+}
+
+/// The last line of a game is its moment: a walk-off brings the bench out to the hero, any
+/// other end lines both nines up across the plate to bow, and the line holds long enough
+/// to see it.
+#[test]
+fn a_game_ends_with_a_walk_off_party_or_a_bow() {
+    let mut g = on_game_day();
+    let games = games_to_the_end(&g, 0..400, false);
+    let ends: Vec<_> = games.iter().map(|x| g.finale(x, x.log.len())).collect();
+    assert!(
+        ends.iter().all(|e| e.is_some()),
+        "every finished game has an end"
+    );
+    // Before the last line there is no finale.
+    assert!(games.iter().all(|x| g.finale(x, x.log.len() - 1).is_none()));
+    let walk = ends
+        .iter()
+        .position(|e| matches!(e, Some(hud::Finale::WalkOff { .. })))
+        .expect("a walk-off in 400 games");
+    let bow = ends
+        .iter()
+        .position(|e| matches!(e, Some(hud::Finale::LineUp)))
+        .expect("a game that ends with the bow");
+    // A walk-off: the home side won on its last play, and that batter is the hero.
+    let x = &games[walk];
+    let last = x.log.iter().rev().find(|q| q.is_pa()).unwrap();
+    assert_eq!(last.side, 1);
+    assert!(x.runs(1) > x.runs(0));
+    let Some(hud::Finale::WalkOff { hero }) = &ends[walk] else {
+        unreachable!()
+    };
+    assert_eq!(*hero, last.batter);
+
+    let ids = |g: &DiamondDays| -> Vec<String> {
+        let mut v: Vec<String> = g
+            .match_world()
+            .props
+            .iter()
+            .filter_map(|p| p.id.split(':').next().map(str::to_string))
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let at = |g: &mut DiamondDays, x: &sim::Game, t: f32| {
+        g.game = Some(x.clone());
+        g.mode = Mode::Match {
+            shown: x.log.len(),
+            t,
+            asking: None,
+        };
+    };
+    at(&mut g, &games[walk], 0.0);
+    let hold = g.line_time(games[walk].log.len());
+    assert!(hold >= g.spec.line_secs * 6.0 - 1e-3, "{hold}");
+    at(&mut g, &games[walk], hold * 0.8);
+    let seen = ids(&g);
+    assert!(seen.contains(&"hero".to_string()), "{seen:?}");
+    let mates = seen.iter().filter(|i| i.starts_with("mate")).count();
+    assert!(mates >= 10, "the bench pours out: {mates}");
+    // By the end they ring the hero, close by.
+    let doc = g.match_world();
+    let hero = doc
+        .props
+        .iter()
+        .find(|p| p.id.starts_with("hero:"))
+        .unwrap()
+        .position;
+    let near = doc
+        .props
+        .iter()
+        .filter(|p| p.id.starts_with("mate") && p.id.ends_with(":1"))
+        .filter(|p| (p.position[0] - hero[0]).hypot(p.position[2] - hero[2]) < 3.5)
+        .count();
+    assert!(near >= 10, "around him: {near}");
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "サヨナラ！"), "{texts:?}");
+    // Batting first, a walk-off is theirs: the title says we lost it.
+    let away = games_to_the_end(&g, 0..400, true);
+    let lost = away
+        .iter()
+        .find(|x| matches!(g.finale(x, x.log.len()), Some(hud::Finale::WalkOff { .. })))
+        .expect("a walk-off against us in 400 games");
+    at(&mut g, lost, hold * 0.5);
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "サヨナラ負け…"), "{texts:?}");
+
+    at(&mut g, &games[bow], 1.0);
+    let seen = ids(&g);
+    for side in 0..2 {
+        for j in 0..9 {
+            assert!(seen.contains(&format!("row{side}-{j}")), "{seen:?}");
+        }
+    }
+    assert!(seen.contains(&"ump".to_string()));
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "ゲームセット"), "{texts:?}");
+}
+
+/// A home run holds long enough for its moment, and ours carries his number here.
+#[test]
+fn a_home_run_has_its_moment_and_his_number() {
+    let mut g = on_game_day();
+    let games = games_to_the_end(&g, 0..60, false);
+    let (x, i) = games
+        .iter()
+        .find_map(|x| {
+            x.log
+                .iter()
+                .position(|q| q.kind == sim::PlayKind::Hit(4) && q.side as usize == x.us)
+                .map(|i| (x, i))
+        })
+        .expect("one of ours goes out in 60 games");
+    let name = x.log[i].batter.clone();
+    for p in &mut g.s.team.players {
+        if p.family == name {
+            p.career.hr = 11;
+        }
+    }
+    assert_eq!(g.career_homers(x, i), 12);
+    g.game = Some(x.clone());
+    assert!(g.line_pace(i + 1) >= 3.0);
+    // On screen while the result holds: the words, his number, and paper in the air.
+    let t = g.pitch_time(i + 1) + g.spec.line_secs * 0.6;
+    g.mode = Mode::Match {
+        shown: i + 1,
+        t,
+        asking: None,
+    };
+    let hud = g.hud(W, H, false);
+    let texts: Vec<String> = all_texts(&hud).map(|t| t.text.clone()).collect();
+    assert!(texts.iter().any(|t| t == "ホームラン！"), "{texts:?}");
+    assert!(
+        texts.iter().any(|t| t.contains("高校通算12号")),
+        "{texts:?}"
+    );
+}
+
+/// The big moments in 3D with the HUD, for a look (`KAGRA_SHOTS3D=dir`): a home run of
+/// ours, a walk-off and the bow at the end.
+#[cfg(feature = "render")]
+#[test]
+fn big_moments_in_3d_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS3D") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut g = on_game_day();
+    let shot = |g: &mut DiamondDays, x: &sim::Game, shown: usize, t: f32, name: &str| {
+        g.game = Some(x.clone());
+        g.mode = Mode::Match {
+            shown,
+            t,
+            asking: None,
+        };
+        g.clock = t;
+        g.transition = None;
+        g.doc = g.match_world();
+        let hud = g.hud(W, H, false);
+        let rgba = crate::render::render_world_doc_with_hud(&g.doc, W, H, &hud).unwrap();
+        let mut c = crate::raster2d::Canvas::new(W, H, [0, 0, 0, 255]);
+        c.rgba = rgba;
+        c.save_png(&dir.join(format!("{name}.png"))).unwrap();
+    };
+    let games = games_to_the_end(&g, 0..400, false);
+    if let Some((x, i)) = games.iter().find_map(|x| {
+        x.log
+            .iter()
+            .position(|q| q.kind == sim::PlayKind::Hit(4) && q.side as usize == x.us)
+            .map(|i| (x, i))
+    }) {
+        g.game = Some(x.clone());
+        let t = g.pitch_time(i + 1) + g.spec.line_secs * 0.5;
+        shot(&mut g, x, i + 1, t, "3d_homer");
+    }
+    for (x, name) in [
+        (
+            games
+                .iter()
+                .find(|x| matches!(g.finale(x, x.log.len()), Some(hud::Finale::WalkOff { .. }))),
+            "3d_walkoff",
+        ),
+        (
+            games.iter().find(|x| {
+                matches!(g.finale(x, x.log.len()), Some(hud::Finale::LineUp))
+                    && x.runs(x.us) > x.runs(1 - x.us)
+            }),
+            "3d_bow",
+        ),
+    ] {
+        let Some(x) = x else { continue };
+        g.game = Some(x.clone());
+        let hold = g.line_time(x.log.len());
+        let n = x.log.len();
+        shot(&mut g, x, n, hold * 0.75, name);
+        if name == "3d_bow" {
+            shot(&mut g, x, n, hold * 0.32, "3d_bow_low");
+        }
+    }
+}

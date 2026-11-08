@@ -191,6 +191,15 @@ on the broadcast, and leaving the result opens a green curtain with 練習に戻
    and "to the end" are buttons.
    The coach can also call any batter: the 作戦 button asks for the next plate appearance,
    whoever bats, chance or not.
+   The big moments get their own picture. A home run holds about three times as long as
+   a single: light rays turn behind ホームラン！, and when it is ours paper bursts over the
+   picture and the caption gives his number here (「三浦、高校通算12号！」, his career
+   home runs before the game plus today's). The last line of a game is a scene of its own,
+   held about four seconds: a walk-off brings the whole bench out of the first-base
+   dugout to ring the batter who won it, jumping, while the other nine stand with their
+   heads down (サヨナラ！); any other end lines both nines up in two rows in front of the
+   plate, the umpire at the plate, and they bow together, then the winners jump and the
+   losers hang their heads (ゲームセット). Paper falls on our wins.
 3. **The result.** Win or loss, the final line score, the player of the game (a chibi
    cheering, with his line), the game experience the club earned (practice points: batting
    for every one of the nine, more per hit; pitching for whoever pitched, more for
@@ -281,6 +290,7 @@ that week and never moves a kept one. Links for the owner do not carry it.
   stands), a camera framed for a band of the screen. The 2D broadcast picture is gone.
   Look at it with a GPU or lavapipe:
   `KAGRA_SHOTS3D=dir cargo test --features render --lib match_in_3d -- --nocapture`
-  (`KAGRA_NIGHT=1` for a game under the lights).
+  (`KAGRA_NIGHT=1` for a game under the lights). The big moments (a home run of ours,
+  a walk-off, the bow): `KAGRA_SHOTS3D=dir cargo test --features render --lib big_moments_in_3d`.
 - Still to come: a balance pass. Hit and UI sounds already use the files the other
   games ship.
