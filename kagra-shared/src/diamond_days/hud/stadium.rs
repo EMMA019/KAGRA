@@ -863,10 +863,25 @@ impl DiamondDays {
                 );
                 // From behind the mound, the stands behind the plate beyond them, easing in.
                 let push = k.min(0.62) / 0.62;
-                View {
+                let lineup = View {
                     eye: [0.0, 8.0 - push * 1.2, -25.0 + push * 3.0],
                     target: [0.0, 0.8, -4.6],
                     fov: 30.0,
+                };
+                // After a tournament loss the camera follows the losers to their stands.
+                let loser = (0..2).find(|&side| !won(side) && won(1 - side));
+                match loser.filter(|_| cup) {
+                    Some(side) if k > 0.6 => {
+                        let x = if side == 0 { -1.0 } else { 1.0 };
+                        let stands = View {
+                            eye: [x * 6.0, 7.0, -16.0],
+                            target: [x * 22.0, 1.0, -2.0],
+                            fov: 40.0,
+                        };
+                        let w = ((k - 0.6) / 0.2).clamp(0.0, 1.0);
+                        lineup.lerp(&stands, w * w * (3.0 - 2.0 * w))
+                    }
+                    _ => lineup,
                 }
             }
             Finale::Crown => {

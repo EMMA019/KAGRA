@@ -909,6 +909,10 @@ impl DiamondDays {
     /// in the first year of a chapter and a year older every year after. (School, name.)
     pub(crate) fn rival_ace(&self) -> Option<(usize, &'static str)> {
         const NAMES: [&str; 5] = ["神崎", "氷室", "鷹野", "不破", "黒崎"];
+        // His last summer ends in August of his third year; he is gone by the autumn.
+        if self.s.year >= 3 && self.s.week >= 20 {
+            return None;
+        }
         let i = self
             .s
             .rivals
@@ -931,6 +935,7 @@ impl DiamondDays {
         let school = &self.s.rivals[ai];
         let (rn, rn_ja) = f.at(at as u8 + 1).round_name();
         let velo = 134 + self.s.year.clamp(1, 3) as u32 * 7;
+        let summer = matches!(f, Fixture::Summer(_));
         Some(match self.s.year {
             1 => (
                 format!("{} has a first-year ace they call a monster: {name}. If we keep winning, the {rn}.", school.name),
@@ -940,9 +945,13 @@ impl DiamondDays {
                 format!("{name} is a second-year now, up to {velo} km/h. He waits in the {rn}."),
                 format!("{name}は2年生になり、球速は{velo}キロ。{rn_ja}で待っている。"),
             ),
-            _ => (
+            _ if summer => (
                 format!("{name}'s last summer too. {velo} km/h. The {rn}."),
                 format!("{name}にとっても最後の夏。{velo}キロの怪物が{rn_ja}で待っている。"),
+            ),
+            _ => (
+                format!("{name}, a third-year now, {velo} km/h. The {rn}."),
+                format!("3年生になった{name}、{velo}キロ。{rn_ja}で待っている。"),
             ),
         })
     }

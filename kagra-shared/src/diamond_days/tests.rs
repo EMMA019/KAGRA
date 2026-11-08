@@ -2315,6 +2315,13 @@ fn tournament_ceremonies_school_song_stands_and_the_ring() {
         .map(|p| p.position[0].abs())
         .fold(0.0f32, f32::max);
     assert!(ran > 10.0, "they ran to their stands: {ran}");
+    // And the camera goes with them.
+    let cam = &doc.cameras[0];
+    assert!(
+        cam.target[0].abs() > 10.0,
+        "the camera follows: {:?}",
+        cam.target
+    );
     // Winning the final: everyone at the mound in a ring, the title on top.
     g.s.cup = Some(Fixture::Summer(6));
     show(&mut g, won_plain, 0.8);
@@ -2390,6 +2397,17 @@ fn the_rival_ace_waits_in_our_half_and_grows() {
         velo.push(side.arms[0].velo);
     }
     assert!(velo[0] < velo[1] && velo[1] < velo[2], "{velo:?}");
+    // His last summer ends in August of his third year: no autumn, no practice games.
+    g.s.year = 3;
+    g.s.week = 24;
+    assert!(g.rival_ace().is_none());
+    let side = g.rival_side(Fixture::Autumn(4), ai);
+    assert_ne!(side.arms[0].name, name);
+    g.s.year = 2;
+    assert!(
+        g.rival_ace().is_some(),
+        "a second-year still pitches in the autumn"
+    );
 }
 
 /// Kotori grows a year with the club, and her own summer ends with the third year's.
