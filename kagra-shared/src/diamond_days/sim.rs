@@ -1370,17 +1370,20 @@ impl Game {
             if by == 2 && base == 0 && self.rng.unit() < 0.25 + speed(self, r) * 0.006 {
                 to = 3;
             }
-            // Running on the pitch, the man on first goes first to third on a single.
-            if by == 1 && base == 0 && hit_run && self.rng.unit() < 0.8 {
+            // Running on the pitch, the man on first goes first to third on a single
+            // (when the runner ahead of him has not taken third).
+            if by == 1 && base == 0 && hit_run && next[2].is_none() && self.rng.unit() < 0.8 {
                 to = 2;
             }
-            if to >= 3 {
+            // A base already taken by the runner ahead pushes him on; past third he scores.
+            // Nobody is ever dropped.
+            let mut t = to;
+            while t < 3 && next[t].is_some() {
+                t += 1;
+            }
+            if t >= 3 {
                 *runs += 1;
             } else {
-                let mut t = to;
-                while next[t].is_some() && t < 2 {
-                    t += 1;
-                }
                 next[t] = Some(r);
             }
         }
@@ -1868,6 +1871,40 @@ mod tests {
         assert_eq!(g.tactic, None, "a fielding call while we bat is dropped");
         g.call(Some(Tactic::Wait));
         assert_eq!(g.tactic, Some(Tactic::Wait));
+    }
+
+    #[test]
+    fn a_hit_never_loses_a_runner() {
+        for seed in 0..400u32 {
+            for start in 1u8..8 {
+                for by in 1..=4usize {
+                    for hit_run in [false, true] {
+                        let mut g = Game::new(side(50.0, seed), side(50.0, seed + 1), true, seed);
+                        // A fresh game's first draws are small; move the dice along.
+                        for _ in 0..(seed % 37) {
+                            g.rng.unit();
+                        }
+                        let s = g.batting();
+                        g.bases = std::array::from_fn(|b| (start & (1 << b) != 0).then_some(b + 1));
+                        let before = g.bases.iter().filter(|x| x.is_some()).count();
+                        let mut runs = 0;
+                        g.advance(s, 5, by, &mut runs, hit_run);
+                        let after = g.bases.iter().filter(|x| x.is_some()).count();
+                        assert_eq!(
+                            after + runs as usize,
+                            before + 1,
+                            "seed {seed} start {start:03b} by {by} hit_run {hit_run}: {:?}",
+                            g.bases
+                        );
+                        // Every runner is someone different.
+                        let mut ids: Vec<usize> = g.bases.iter().flatten().copied().collect();
+                        ids.sort();
+                        ids.dedup();
+                        assert_eq!(ids.len(), after);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
