@@ -2512,6 +2512,19 @@ fn the_board_is_a_road_with_the_steps_ahead_numbered() {
     for d in 1..=6 {
         assert!(now.contains(&d.to_string()), "step {d} in {now:?}");
     }
+    // Every step number sits on the screen, 6 included, left to right.
+    let hud_now = g.hud(W, H, false);
+    let xs: Vec<f32> = (1..=6)
+        .map(|d| {
+            all_texts(&hud_now)
+                .filter(|t| t.text == d.to_string() && t.size < 14.0)
+                .map(|t| t.x)
+                .next()
+                .unwrap_or(f32::MAX)
+        })
+        .collect();
+    assert!(xs.windows(2).all(|w| w[0] < w[1]), "{xs:?}");
+    assert!(xs[5] < W as f32 - 8.0, "step 6 on the screen: {xs:?}");
     // The six squares ahead are on screen by name, in order.
     let n = g.spec.ring.len();
     for d in 1..=6 {
@@ -2531,4 +2544,31 @@ fn the_board_is_a_road_with_the_steps_ahead_numbered() {
         .iter()
         .any(|t| t.starts_with("あと") && t.ends_with("マス")));
     assert!(!walking.iter().any(|t| t.contains("カードの数字")));
+}
+
+/// The milestone's notes under each way on fit the screen in English too.
+#[test]
+fn the_milestone_notes_fit_the_screen() {
+    let mut g = started();
+    g.notes.clear();
+    g.s.epilogue = true;
+    g.mode = Mode::Epilogue { schools: false };
+    for lang in ["en", "ja"] {
+        g.set_lang(lang);
+        let hud = g.hud(W, H, false);
+        let st = g.stage(W as f32, H as f32);
+        for t in all_texts(&hud).filter(|t| t.size < 13.0 * st.k + 0.5) {
+            let w = crate::font::measure_text(&t.text, t.size);
+            let (l, r) = match t.align {
+                crate::scene::TextAlign::Center => (t.x - w * 0.5, t.x + w * 0.5),
+                crate::scene::TextAlign::Right => (t.x - w, t.x),
+                _ => (t.x, t.x + w),
+            };
+            assert!(
+                l >= -1.0 && r <= W as f32 + 1.0,
+                "{lang}: {:?} runs off ({l}..{r})",
+                t.text
+            );
+        }
+    }
 }

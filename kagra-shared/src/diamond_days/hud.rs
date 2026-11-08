@@ -1003,9 +1003,10 @@ impl DiamondDays {
         }
         let n = self.spec.ring.len().max(1);
         let here = self.s.pos % n;
-        let pitch = 62.0;
-        let (tw, th) = (54.0, 60.0);
-        let x_here = rx + 50.0;
+        // The coach's square and the six ahead all fit on the road: a 6 shows where it lands.
+        let x_here = rx + 34.0;
+        let pitch = (rw - 64.0) / 6.0;
+        let (tw, th) = (pitch - 5.0, 60.0);
         let cy = py + ph * 0.5;
         let walking = matches!(self.mode, Mode::Walk { .. });
         let k = if walking {
@@ -1925,14 +1926,16 @@ impl DiamondDays {
                     ),
                     _ => continue,
                 };
-                p.text(
-                    what,
-                    200.0,
-                    r[1] + r[3] + 6.0,
-                    12.0,
-                    [226, 232, 246, 255],
-                    TextAlign::Center,
-                );
+                for (i, line) in wrap(what, 12.0, 340.0).iter().take(2).enumerate() {
+                    p.text(
+                        line,
+                        200.0,
+                        r[1] + r[3] + 4.0 + i as f32 * 14.0,
+                        12.0,
+                        [226, 232, 246, 255],
+                        TextAlign::Center,
+                    );
+                }
             }
         }
         for (b, r) in &l.buttons {
