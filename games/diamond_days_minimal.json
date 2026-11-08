@@ -17,6 +17,7 @@
     "pause": true,
     "fixed_step": true,
     "save": true,
+    "resume": true,
     "blurb": "blurb.diamond",
     "url_params": {
       "week": "string"

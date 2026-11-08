@@ -17,6 +17,7 @@ branches in the page. The manifest now says what the game wants and the page onl
       "direct": true,          # ?play=1 or a portal build starts the run with no title card
       "tagline": true,         # show the title card's tagline line
       "save": true,            # keep the kit's save_json() on the device, hand it back as world.save
+      "resume": true,          # the save is a run in progress: つづきから / はじめから on the title
       "theme": "hop",          # html[data-theme] for the page's per-game CSS
       "blurb": "hop.blurb",    # i18n key of the title-card blurb (swipe games)
       "default_quality": "mobile",                      # world.quality when the link sets none
@@ -26,6 +27,8 @@ branches in the page. The manifest now says what the game wants and the page onl
 
 ``save`` keeps what a kit returns from ``KitHost::save_json`` (unlocked stages, records) in
 the device's storage under ``kagra.save.v1.<slug>`` and hands it back as ``world.save``.
+``resume`` (with ``save``) is for a kit whose save is a run in progress: while one is kept,
+the title card's button says Continue, and a smaller New game erases it (after asking).
 
 ``url_params`` copies a link's ``?name=`` into the world before load: a list allows those
 values, ``"string"`` any non-empty value, ``"bool"`` ``0`` / ``1`` (as false / true). Like
@@ -47,6 +50,7 @@ FLAGS = (
     "direct",
     "tagline",
     "save",
+    "resume",
 )
 PICTURE = ("low", "mobile", "high")
 QUALITY_WORDS = ("safe", "mid", "max")
@@ -113,6 +117,8 @@ def normalize_page(raw: Any) -> dict[str, Any]:
             else:
                 raise PageError(f"page.url_params.{name} must be a list of values, 'string' or 'bool'")
         out["url_params"] = clean
+    if out.get("resume") and not out.get("save"):
+        raise PageError("page.resume needs page.save (it is about the run the page keeps)")
     if out.get("music_sync") and not out.get("fixed_step"):
         raise PageError("page.music_sync needs page.fixed_step (the sim follows the music clock per step)")
     return out

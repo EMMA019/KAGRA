@@ -1583,6 +1583,64 @@ fn the_throw_to_first_meets_a_raised_glove() {
     panic!("no ground ball out thrown to first");
 }
 
+/// Opening the game again never drops you straight into a game: a kept run greets the coach
+/// with where it stands first, even when this week is a game day. The `?week=` test switch
+/// only starts new runs.
+#[test]
+fn opening_a_kept_run_says_where_it_stands_first() {
+    let world_with = |save: Value, week: Option<u8>| {
+        let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
+        world["save"] = save;
+        if let Some(w) = week {
+            world["week"] = json!(w);
+        }
+        let mut h = DiamondDays::from_json(&world.to_string()).unwrap();
+        h.set_lang("ja");
+        h
+    };
+    let kept = |week: u8| {
+        let mut g = started();
+        tap(&mut g, 195.0, 400.0);
+        g.s.week = week;
+        serde_json::from_str::<Value>(&g.save_json().unwrap()).unwrap()
+    };
+    // A game week: the greeting first, the game day after the tap.
+    let mut h = world_with(kept(6), None);
+    let _ = h.hud(W, H, false);
+    h.confirm();
+    assert_eq!(h.mode, Mode::Notice);
+    assert_eq!(h.notes[0].title_ja, "おかえりなさい、監督");
+    assert!(
+        h.notes[0].lines[1].1.contains("練習試合"),
+        "{:?}",
+        h.notes[0].lines
+    );
+    while h.mode == Mode::Notice {
+        tap(&mut h, 195.0, 400.0);
+    }
+    assert_eq!(h.mode, Mode::MatchIntro);
+    // A practice week: the greeting, then the cards.
+    let mut h = world_with(kept(2), None);
+    let _ = h.hud(W, H, false);
+    h.confirm();
+    assert_eq!(h.notes[0].title_ja, "おかえりなさい、監督");
+    assert!(h.notes[0].lines[1].1.contains("練習から"));
+    while h.mode == Mode::Notice {
+        tap(&mut h, 195.0, 400.0);
+    }
+    assert_eq!(h.mode, Mode::Plan);
+    // `?week=` does not move a kept run.
+    let mut h = world_with(kept(2), Some(6));
+    h.confirm();
+    assert_eq!(h.s.week, 2);
+    // A new run still opens on the new coach.
+    let mut g = DiamondDays::new(DiamondDaysSpec::default());
+    g.set_lang("ja");
+    let _ = g.hud(W, H, false);
+    g.confirm();
+    assert_eq!(g.notes[0].title_ja, "新しい監督");
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();

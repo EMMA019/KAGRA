@@ -2209,7 +2209,7 @@ fn stamina_color(s: u8) -> Rgba {
     }
 }
 
-fn month_en(m: u8) -> &'static str {
+pub(super) fn month_en(m: u8) -> &'static str {
     [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ][(m.clamp(1, 12) - 1) as usize]

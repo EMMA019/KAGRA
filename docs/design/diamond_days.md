@@ -231,6 +231,15 @@ career keeps a small save.
 Grounds are a small training bonus (up to three levels) that rises with reputation
 and is kept if you stay.
 
+## Opening the game again
+
+A run is kept on the device. Opening the page again, the title says つづきから (the
+manifest's `page.resume`), with a smaller はじめから that erases the run after asking.
+Continuing never drops the coach straight into a game: Kotori first says where the run
+stands (year, month, week, record) and what this week holds, and the week (a game day too)
+starts on the tap. The `?week=` link switch is for testing only: it starts a new run at
+that week and never moves a kept one. Links for the owner do not carry it.
+
 ## Rounds
 
 - **Round 1 (this PR):** the week loop (cards, board, training, rest, events, fatigue,

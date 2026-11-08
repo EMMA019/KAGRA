@@ -79,3 +79,16 @@ def test_page_save_keeps_a_kits_progress_per_game():
     assert "kagra.save.v1.${slug}" in html, "one key per game"
     assert "world.save = kept" in html, "handed back to the kit at load"
     assert "session.kitSaveJson()" in html and "if (!page.save" in html, "only for games that ask"
+
+
+def test_page_resume_offers_continue_and_a_new_game():
+    assert normalize_page({"save": True, "resume": True}) == {"save": True, "resume": True}
+    with pytest.raises(PageError, match="resume needs page.save"):
+        normalize_page({"resume": True})
+    html = PLAY.read_text(encoding="utf-8")
+    assert "page.resume" in html and 't("start.resume")' in html, "the title says Continue"
+    assert 'id="fresh"' in html and "window.confirm" in html, "start over only after asking"
+    assert "localStorage.removeItem(saveKey(slug))" in html
+    # Leaving the page saves the run; after starting over nothing is written back.
+    assert "erased = true" in html and "|| erased ||" in html
+

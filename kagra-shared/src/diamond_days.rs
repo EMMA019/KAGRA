@@ -535,15 +535,22 @@ impl DiamondDays {
         match self.flow.phase {
             FlowPhase::Title | FlowPhase::Result => {
                 self.core = Core::default();
-                self.s = match self.resume.take() {
-                    Some(s) if self.flow.phase == FlowPhase::Title => s,
-                    _ => fresh_save(self.spec.seed.wrapping_add(self.clock.to_bits())),
-                };
+                let kept = self
+                    .resume
+                    .take()
+                    .filter(|_| self.flow.phase == FlowPhase::Title);
+                let resumed = kept.is_some();
+                self.s = kept.unwrap_or_else(|| {
+                    fresh_save(self.spec.seed.wrapping_add(self.clock.to_bits()))
+                });
                 self.rng = Rng::new(self.s.seed);
                 self.want_call = false;
                 self.transition = None;
+                // The `?week=` test switch starts a new run there; it never moves a kept one.
                 if let Some(w) = self.start_week.take() {
-                    self.s.week = w;
+                    if !resumed {
+                        self.s.week = w;
+                    }
                 }
                 self.notes.clear();
                 self.game = None;
@@ -555,6 +562,12 @@ impl DiamondDays {
                 crate::mixer::play_bgm("bgm", 0.5);
                 // Only the very first week of a career (a later chapter also starts at
                 // year 1, week 1, 0-0).
+                if resumed {
+                    // Opening the game again: say where the run stands before anything
+                    // happens (even on a game day), and start the week on the tap.
+                    self.welcome_back();
+                    return;
+                }
                 if self.s.week == 1
                     && self.career_year() == 1
                     && self.s.history.is_empty()
@@ -645,6 +658,46 @@ impl DiamondDays {
         if self.notes.is_empty() {
             self.mode = Mode::Plan;
         }
+    }
+
+    /// This week's game for us, if the calendar has one we are in.
+    fn game_this_week(&self) -> Option<Fixture> {
+        board::fixture(self.s.week).filter(|f| match f {
+            Fixture::Practice => true,
+            Fixture::Summer(_) => self.s.summer_in,
+            Fixture::National(_) => self.s.national_in,
+            Fixture::Autumn(_) => self.s.autumn_in,
+            Fixture::Spring(_) => self.s.spring_in,
+        })
+    }
+
+    /// A kept run picked up again: where it stands, and what this week holds.
+    fn welcome_back(&mut self) {
+        let m = board::month(self.s.week);
+        let wk = (self.s.week - 1) % 4 + 1;
+        let y = self.career_year();
+        let (w, l) = (self.s.wins, self.s.losses);
+        let mut lines = vec![(
+            format!(
+                "Year {y}, {} week {wk}, {w}-{l}: picking up where you left off.",
+                hud::month_en(m)
+            ),
+            format!("{y}年目 {m}月 第{wk}週、{w}勝{l}敗。前回の続きからです。"),
+        )];
+        lines.push(match self.game_this_week() {
+            Some(f) => {
+                let (en, ja) = Self::fixture_name(f);
+                (
+                    format!("This week is game day: {en}."),
+                    format!("今週は{ja}の日です。準備はいいですか？"),
+                )
+            }
+            None => (
+                "Another week of practice: pick a card.".into(),
+                "今週も練習から。カードを選びましょう。".into(),
+            ),
+        });
+        self.note("Welcome back", "おかえりなさい、監督", lines);
     }
 
     fn fixture_name(f: Fixture) -> (String, String) {
