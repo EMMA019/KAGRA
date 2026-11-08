@@ -1398,6 +1398,65 @@ fn match_in_3d_to_png() {
     assert!(pitch && field, "pitch {pitch} field {field}");
 }
 
+/// Each plate appearance keeps who was on which bag, and the 3D picture puts those runners
+/// there (not the top of the order).
+#[test]
+fn the_runners_on_screen_are_the_ones_on_base() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
+    let mut seen = 0;
+    for _ in 0..60000 {
+        match g.mode {
+            Mode::Match {
+                asking: Some(_), ..
+            } => press(&mut g, hud::Btn::Call(None)),
+            Mode::Match { .. } => g.tick(DT),
+            _ => break,
+        }
+        if let Some(gm) = g.game.as_ref() {
+            for pl in gm.log.iter().filter(|p| p.is_pa()) {
+                for b in 0..3 {
+                    assert_eq!(
+                        pl.bases0 & (1 << b) != 0,
+                        !pl.runners0[b].is_empty(),
+                        "{}: bag {b}",
+                        pl.en
+                    );
+                }
+            }
+            if gm.bases.iter().any(|x| x.is_some()) {
+                let doc = g.document();
+                let names = gm.runner_names();
+                for (b, n) in names.iter().enumerate() {
+                    let drawn = doc
+                        .props
+                        .iter()
+                        .any(|p| p.id.starts_with(&format!("run{b}:")));
+                    if !n.is_empty()
+                        && matches!(
+                            g.mode,
+                            Mode::Match {
+                                asking: Some(_),
+                                ..
+                            }
+                        )
+                    {
+                        assert!(drawn, "runner on bag {b} drawn");
+                        seen += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        seen > 0,
+        "a game with someone on base while the coach was asked"
+    );
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();

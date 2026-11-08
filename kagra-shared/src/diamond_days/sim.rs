@@ -305,6 +305,10 @@ pub struct Play {
     /// The inning of the plate appearance (the game may already be in the next half).
     #[serde(default)]
     pub inning: u8,
+    /// Who was on first, second and third as the plate appearance started (empty for a
+    /// bare bag), so the picture shows the right runners.
+    #[serde(default)]
+    pub runners0: [String; 3],
 }
 
 /// One pitch of a plate appearance, as shown (the result comes from the plate appearance).
@@ -338,6 +342,7 @@ impl Play {
             pitcher: String::new(),
             velo: 0.0,
             inning: 0,
+            runners0: Default::default(),
         }
     }
 
@@ -470,6 +475,8 @@ pub struct Game {
     mark_clutch: bool,
     /// The plate appearance as it starts (see [`Play::side`]).
     snap: (u8, u8, u8, String, String, f32, u8),
+    /// The runners as it starts (see [`Play::runners0`]).
+    snap_runners: [String; 3],
 }
 
 impl Game {
@@ -500,6 +507,7 @@ impl Game {
             mark_banner: None,
             mark_clutch: false,
             snap: (0, 0, 0, String::new(), String::new(), 0.0, 1),
+            snap_runners: Default::default(),
         }
     }
 
@@ -570,7 +578,19 @@ impl Game {
             pitcher: snap.4,
             velo: snap.5,
             inning: snap.6,
+            runners0: self.snap_runners.clone(),
         });
+    }
+
+    /// The names of the runners on first, second and third now (empty for a bare bag).
+    pub fn runner_names(&self) -> [String; 3] {
+        let s = self.batting();
+        std::array::from_fn(|b| {
+            self.bases[b]
+                .and_then(|i| self.sides[s].bats.get(i))
+                .map(|x| x.name.clone())
+                .unwrap_or_default()
+        })
     }
 
     fn risp(&self) -> bool {
@@ -641,6 +661,7 @@ impl Game {
             .iter()
             .enumerate()
             .fold(0u8, |m, (i, b)| m | ((b.is_some() as u8) << i));
+        self.snap_runners = self.runner_names();
         self.snap = (
             s as u8,
             self.outs,

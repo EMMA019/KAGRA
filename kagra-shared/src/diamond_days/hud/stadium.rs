@@ -598,6 +598,21 @@ fn fielder_spot(i: usize) -> [f32; 3] {
 }
 
 impl DiamondDays {
+    /// The face of the fielder at position `i` (pitcher first): the pitcher of the play on
+    /// the mound, the side's catcher behind the plate, the rest from the nine. The pitch
+    /// view and the field view use the same faces, so nobody changes at the cut.
+    fn fielder_face(&self, g: &Game, side: usize, i: usize, pitcher: &str) -> Face {
+        match i {
+            0 => self.face_for(g, side, pitcher),
+            1 => Face::from_seed(art::hash(&g.sides[side].name) ^ 77),
+            _ => g.sides[side]
+                .bats
+                .get(i)
+                .map(|b| self.face_for(g, side, &b.name))
+                .unwrap_or_else(|| Face::from_seed(i as u64)),
+        }
+    }
+
     /// The band of the screen the 3D picture fills (fractions of the height, from the
     /// top): between the scoreboard and the lower panel.
     pub(in crate::diamond_days) fn match_band(&self) -> (f32, f32) {
@@ -667,12 +682,13 @@ impl DiamondDays {
         let (phase, line) = self.phase(g, shown, t, asking);
         let play = line.and_then(|i| g.log.get(i));
         let pa = play.filter(|pl| pl.is_pa());
-        let (bat_side, batter, pitcher, bases) = match (pa, phase) {
+        let (bat_side, batter, pitcher, bases, on_base) = match (pa, phase) {
             (Some(pl), Phase::Pitch { .. } | Phase::Result { .. }) => (
                 pl.side as usize,
                 pl.batter.clone(),
                 pl.pitcher.clone(),
                 pl.bases0,
+                pl.runners0.clone(),
             ),
             _ => (
                 g.batting(),
@@ -682,8 +698,10 @@ impl DiamondDays {
                     .iter()
                     .enumerate()
                     .fold(0u8, |m, (i, x)| m | ((x.is_some() as u8) << i)),
+                g.runner_names(),
             ),
         };
+        let runners = (bases, &on_base);
         let fld_side = 1 - bat_side;
         let kit_for = |side: usize| {
             let c = self.side_color(g, side);
@@ -787,7 +805,7 @@ impl DiamondDays {
                 g,
                 pa.expect("a play"),
                 phase,
-                (bat_side, &batter, bases),
+                (bat_side, &batter, runners),
                 (&fkit, &bkit, &ckit),
                 clock,
                 out,
@@ -829,7 +847,7 @@ impl DiamondDays {
                 .lefty(bl),
             out,
         );
-        let cface = Face::from_seed(art::hash(&g.sides[fld_side].name) ^ 77);
+        let cface = self.fielder_face(g, fld_side, 1, &pitcher);
         chibi3d::build(
             &Figure::new("catcher", [0.0, 0.0, 1.35], PI, H, &cface, &ckit)
                 .pose(Pose::Squat)
@@ -844,15 +862,9 @@ impl DiamondDays {
                 .detail(Detail::Far),
             out,
         );
-        let names = &g.sides[fld_side].bats;
         let ids: Vec<String> = (2..9).map(|i| format!("f{i}")).collect();
         let faces: Vec<Face> = (2..9)
-            .map(|i| {
-                names
-                    .get(i)
-                    .map(|b| self.face_for(g, fld_side, &b.name))
-                    .unwrap_or_else(|| Face::from_seed(i as u64))
-            })
+            .map(|i| self.fielder_face(g, fld_side, i, &pitcher))
             .collect();
         for (j, i) in (2..9).enumerate() {
             let p = fielder_spot(i);
@@ -870,7 +882,7 @@ impl DiamondDays {
                 out,
             );
         }
-        self.runners(g, bat_side, bases, 0.0, 0, &bkit, clock, out);
+        self.runners(g, bat_side, runners, 0.0, 0, &bkit, clock, out);
         if let Some(b) = ball {
             push_ball(out, b, 0.24);
         }
@@ -881,25 +893,21 @@ impl DiamondDays {
         }
     }
 
-    /// Runners on base (`bases` bits), `ahead` bases on along the paths at `k`.
+    /// Runners on base (`bases` bits, and who is on each bag), `ahead` bases on along the
+    /// paths at `k`.
     #[allow(clippy::too_many_arguments)]
     fn runners(
         &self,
         g: &Game,
         bat_side: usize,
-        bases: u8,
+        (bases, names): (u8, &[String; 3]),
         k: f32,
         ahead: u8,
         kit: &Kit,
         clock: f32,
         out: &mut Vec<WorldProp>,
     ) {
-        let names: Vec<String> = g.sides[bat_side]
-            .bats
-            .iter()
-            .map(|b| b.name.clone())
-            .collect();
-        for b in 0..3usize {
+        for (b, on_bag) in names.iter().enumerate() {
             if bases & (1 << b) == 0 {
                 continue;
             }
@@ -915,7 +923,13 @@ impl DiamondDays {
             };
             let moving = ahead > 0 && k < 1.0 && p < 4.0;
             let next = base((p.floor() as usize + 1).min(4));
-            let face = self.face_for(g, bat_side, names.get(b).map(|s| s.as_str()).unwrap_or("r"));
+            // An old save keeps the bags but not the names: any face will do there.
+            let name = if on_bag.is_empty() {
+                format!("runner{b}")
+            } else {
+                on_bag.clone()
+            };
+            let face = self.face_for(g, bat_side, &name);
             let id = format!("run{b}");
             chibi3d::build(
                 &Figure::new(
@@ -949,7 +963,7 @@ impl DiamondDays {
         g: &Game,
         pl: &crate::diamond_days::sim::Play,
         phase: Phase,
-        (bat_side, batter, bases): (usize, &str, u8),
+        (bat_side, batter, runners): (usize, &str, (u8, &[String; 3])),
         (fkit, bkit, ckit): (&Kit, &Kit, &Kit),
         clock: f32,
         out: &mut Vec<WorldProp>,
@@ -983,15 +997,11 @@ impl DiamondDays {
                 d(*a).total_cmp(&d(*b))
             })
             .unwrap_or(7);
-        let names = &g.sides[fld_side].bats;
         let ids: Vec<String> = (0..9).map(|i| format!("f{i}")).collect();
         let mut caught_at = None;
         for (i, id) in ids.iter().enumerate() {
             let home_spot = fielder_spot(i);
-            let face = names
-                .get(i)
-                .map(|b| self.face_for(g, fld_side, &b.name))
-                .unwrap_or_else(|| Face::from_seed(i as u64));
+            let face = self.fielder_face(g, fld_side, i, &pl.pitcher);
             let (p, pose, yaw) = if i == chaser && !matches!(pl.kind, PlayKind::Hit(4)) {
                 // Out: he gets there. A hit: it gets past him.
                 let reach = if out_play { 1.0 } else { 0.72 };
@@ -1049,13 +1059,13 @@ impl DiamondDays {
         );
         let ahead = match pl.kind {
             PlayKind::Hit(n) => n,
-            PlayKind::SacFly if bases & 4 != 0 => 1,
+            PlayKind::SacFly if runners.0 & 4 != 0 => 1,
             _ => 0,
         };
         self.runners(
             g,
             bat_side,
-            bases,
+            runners,
             (k * 1.3).min(1.0),
             ahead,
             bkit,
