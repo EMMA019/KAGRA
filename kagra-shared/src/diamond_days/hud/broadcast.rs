@@ -225,7 +225,7 @@ impl DiamondDays {
     }
 
     /// The last line of a finished game, over the picture: WALK-OFF or GAME SET, and the
-    /// shout under it. Paper falls when it is our win.
+    /// shout under it. Rays and falling paper when it is our win, under the words.
     fn draw_finale(&self, p: &mut Painter, g: &Game, shown: usize, t: f32, r: [f32; 4], mid: f32) {
         let Some(f) = self.finale(g, shown) else {
             return;
@@ -254,6 +254,10 @@ impl DiamondDays {
                 self.clock * 0.3,
                 [255, 214, 110, 110],
             );
+            // Paper over the picture, under the words (they go on a layer above it).
+            p.clip_layer(r);
+            Confetti::shower(r[0], r[0] + r[2], r[1], g.log.len() as u32).draw(p, secs);
+            p.layer();
         }
         let pop = 1.0 + (1.0 - (k * 6.0).min(1.0)) * 0.3;
         p.text_outlined(
@@ -282,11 +286,6 @@ impl DiamondDays {
                 2.0,
                 TextAlign::Center,
             );
-        }
-        if we_won {
-            p.clip_layer(r);
-            Confetti::shower(r[0], r[0] + r[2], r[1], g.log.len() as u32).draw(p, secs);
-            p.layer();
         }
     }
 
@@ -659,6 +658,33 @@ impl DiamondDays {
                 }
             }
             (Some(pl), Phase::Result { k }) => {
+                // A home run: rays, then (ours) paper over the picture, both under the
+                // words, which go on a layer of their own on top.
+                let homer = pl.kind == PlayKind::Hit(4);
+                let ours = pl.side as usize == g.us;
+                if homer && k < 0.97 {
+                    p.sunburst(
+                        200.0,
+                        mid - 6.0,
+                        170.0 * (k * 8.0).min(1.0),
+                        18,
+                        self.clock * 0.35,
+                        if ours {
+                            [255, 214, 110, 120]
+                        } else {
+                            [230, 230, 240, 70]
+                        },
+                    );
+                }
+                if homer && ours {
+                    let hold = self.spec.line_secs * self.line_pace(shown);
+                    let pop =
+                        Confetti::burst([200.0, mid], art::hash(&pl.batter) as u32 ^ shown as u32);
+                    let fade = ((1.0 - k) / 0.15).min(1.0);
+                    p.clip_layer(r);
+                    pop.fade(fade).draw(p, k * hold);
+                    p.layer();
+                }
                 if let Some(ab) = pl.banner {
                     p.text_outlined(
                         ab.label(ja),
@@ -704,41 +730,6 @@ impl DiamondDays {
                 } else {
                     32.0
                 };
-                // A home run: rays behind the words; ours gets paper and his number.
-                if pl.kind == PlayKind::Hit(4) && k < 0.97 {
-                    let ours = pl.side as usize == g.us;
-                    let grow = (k * 8.0).min(1.0);
-                    p.sunburst(
-                        200.0,
-                        mid - 6.0,
-                        170.0 * grow,
-                        18,
-                        self.clock * 0.35,
-                        if ours {
-                            [255, 214, 110, 120]
-                        } else {
-                            [230, 230, 240, 70]
-                        },
-                    );
-                    if ours {
-                        let n = self.career_homers(g, line.unwrap_or(0));
-                        let cap = if ja {
-                            format!("{}、高校通算{}号！", pl.batter, n)
-                        } else {
-                            format!("{}: career home run No. {}", pl.batter, n)
-                        };
-                        p.text_outlined(
-                            &cap,
-                            200.0,
-                            mid + 64.0,
-                            15.0,
-                            [255, 236, 170, 255],
-                            [16, 18, 30, 255],
-                            2.0,
-                            TextAlign::Center,
-                        );
-                    }
-                }
                 if !txt.is_empty() && k < 0.97 {
                     let pop = 1.0 + (1.0 - (k * 6.0).min(1.0)) * 0.25;
                     p.text_outlined(
@@ -752,14 +743,24 @@ impl DiamondDays {
                         TextAlign::Center,
                     );
                 }
-                if pl.kind == PlayKind::Hit(4) && pl.side as usize == g.us {
-                    let hold = self.spec.line_secs * self.line_pace(shown);
-                    let pop =
-                        Confetti::burst([200.0, mid], art::hash(&pl.batter) as u32 ^ shown as u32);
-                    let fade = ((1.0 - k) / 0.15).min(1.0);
-                    p.clip_layer(r);
-                    pop.fade(fade).draw(p, k * hold);
-                    p.layer();
+                // Ours carries his number here.
+                if homer && ours && k < 0.97 {
+                    let n = self.career_homers(g, line.unwrap_or(0));
+                    let cap = if ja {
+                        format!("{}、高校通算{}号！", pl.batter, n)
+                    } else {
+                        format!("{}: career home run No. {}", pl.batter, n)
+                    };
+                    p.text_outlined(
+                        &cap,
+                        200.0,
+                        mid + 64.0,
+                        15.0,
+                        [255, 236, 170, 255],
+                        [16, 18, 30, 255],
+                        2.0,
+                        TextAlign::Center,
+                    );
                 }
                 if pl.runs > 0 && k < 0.97 {
                     let msg = if ja {

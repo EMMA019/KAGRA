@@ -1692,6 +1692,21 @@ fn the_team_button_is_drawn_when_no_games_are_left() {
     assert!(all_texts(&hud).any(|t| t.text == "TEAM"));
 }
 
+/// The words `word` sit on a layer above the paper (the first clipped layer with shapes,
+/// which in a game is only ever the confetti over the picture).
+fn words_over_paper(list: &crate::scene::DrawList, word: &str) {
+    let layers = list.flatten();
+    let paper = layers
+        .iter()
+        .position(|l| l.clip.is_some() && !l.mesh.verts.is_empty())
+        .expect("paper in the air");
+    let at = layers
+        .iter()
+        .position(|l| l.texts.iter().any(|t| t.text.contains(word)))
+        .unwrap_or_else(|| panic!("no {word}"));
+    assert!(at > paper, "{word} on layer {at}, paper on {paper}");
+}
+
 /// Games played straight through in the sim from today's match-up, by seed.
 fn games_to_the_end(
     g: &DiamondDays,
@@ -1802,10 +1817,10 @@ fn a_game_ends_with_a_walk_off_party_or_a_bow() {
         .filter(|p| (p.position[0] - hero[0]).hypot(p.position[2] - hero[2]) < 3.5)
         .count();
     assert!(near >= 10, "around him: {near}");
-    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
-        .map(|t| t.text.clone())
-        .collect();
+    let hud_now = g.hud(W, H, false);
+    let texts: Vec<String> = all_texts(&hud_now).map(|t| t.text.clone()).collect();
     assert!(texts.iter().any(|t| t == "サヨナラ！"), "{texts:?}");
+    words_over_paper(&hud_now, "サヨナラ！");
     // Batting first, a walk-off is theirs: the title says we lost it.
     let away = games_to_the_end(&g, 0..400, true);
     let lost = away
@@ -1869,6 +1884,9 @@ fn a_home_run_has_its_moment_and_his_number() {
         texts.iter().any(|t| t.contains("高校通算12号")),
         "{texts:?}"
     );
+    // The paper flies under the words, not over them.
+    words_over_paper(&hud, "ホームラン！");
+    words_over_paper(&hud, "高校通算12号");
 }
 
 /// The big moments in 3D with the HUD, for a look (`KAGRA_SHOTS3D=dir`): a home run of
