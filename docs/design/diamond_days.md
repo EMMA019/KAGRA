@@ -95,6 +95,12 @@ button is tagged おすすめ from the matchup and the bases:
 | 前進守備 (infield in) | a ground ball never scores the runner from third | more balls get through |
 | エンドラン (hit and run) | no double play; first to third on a single; more contact | a strikeout can hang the runner |
 
+The other bench calls too, from the same reading of the game, in the spots that matter
+and not every time: their battery works our sluggers away and gets low with a man on
+first; their bench hits and runs, squeezes and steals. The coach calls only for his own
+side (batting calls when we bat, fielding calls when we field), so both calls can be in
+force for one batter, and chips over the picture show them (作戦：… and 相手：…).
+
 A ground ball out moves runners (the man on third scores about half the time against a
 normal infield). A hit batsman takes first and is not an at bat. The pitches on screen
 follow the call: in on the hands, on the outer corner, or low in the zone, and the one

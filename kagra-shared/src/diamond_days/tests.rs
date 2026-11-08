@@ -1364,6 +1364,7 @@ fn match_in_3d_to_png() {
             .map(|p| p.position)
     };
     let (mut pitch, mut field, mut idle, mut grounder) = (false, false, false, false);
+    let mut called = false;
     for _ in 0..60000 {
         match g.mode {
             Mode::Match {
@@ -1417,7 +1418,20 @@ fn match_in_3d_to_png() {
                 grounder = true;
             }
         }
-        if pitch && field && grounder {
+        // A pitch with the other bench's call in force (their chip over the picture).
+        let their = match (&g.mode, g.game.as_ref()) {
+            (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => {
+                gm.log.get(shown - 1).and_then(|p| p.their_call)
+            }
+            _ => None,
+        };
+        if let (false, Some(_), Some(b), None) = (called, their, find(&g, "ball"), shadow) {
+            if b[2] < -4.0 {
+                shot(&g, "3d_call");
+                called = true;
+            }
+        }
+        if pitch && field && grounder && called {
             break;
         }
     }

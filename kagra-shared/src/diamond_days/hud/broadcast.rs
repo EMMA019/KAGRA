@@ -97,7 +97,7 @@ pub(super) fn location(play: &Play, i: usize, pitch: Pitch) -> P {
             strike
         }
     };
-    match play.call {
+    match play.approach() {
         Some(Tactic::Inside) => [inside * wide(0.35 + f(40) * 0.6, 1.2 + f(40) * 0.35), q[1]],
         Some(Tactic::Outside) => [-inside * wide(0.4 + f(40) * 0.6, 1.2 + f(40) * 0.35), q[1]],
         Some(Tactic::Low) => [q[0], wide(0.35 + f(48) * 0.6, 1.25 + f(48) * 0.3)],
@@ -489,6 +489,39 @@ impl DiamondDays {
                 [r[0] + r[2] - 74.0, r[1] + r[3] - 92.0, 66.0, 84.0],
                 &marks,
             );
+        }
+        // The calls in force for this batter: ours, and what the other bench called.
+        if let (Some(pl), Phase::Pitch { .. } | Phase::Result { .. }) = (pa, phase) {
+            let mut y = r[1] + r[3] - 34.0;
+            let theirs = 1 - g.us;
+            for (call, who_en, who_ja, col) in [
+                (pl.their_call, "Them", "相手", colors[theirs]),
+                (pl.call, "Call", "作戦", colors[g.us]),
+            ] {
+                let Some(t) = call else { continue };
+                let text = if ja {
+                    format!("{who_ja}：{}", t.label(true))
+                } else {
+                    format!("{who_en}: {}", t.label(false))
+                };
+                let w = crate::font::measure_text(&text, 13.0) + 26.0;
+                p.panel(
+                    r[0] + 8.0,
+                    y,
+                    w,
+                    26.0,
+                    13.0,
+                    [16, 20, 36, 225],
+                    [10, 12, 24, 225],
+                    0.0,
+                );
+                p.fill(
+                    &vector::rounded_rect(r[0] + 14.0, y + 7.0, 5.0, 12.0, 2.5),
+                    Paint::Solid(col),
+                );
+                p.text(&text, r[0] + 24.0, y + 5.0, 13.0, WHITE, TextAlign::Left);
+                y -= 32.0;
+            }
         }
         if velo > 0.0 {
             if let (Some(_), Phase::Pitch { k, .. }) = (pa, phase) {

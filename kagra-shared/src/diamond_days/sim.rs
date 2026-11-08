@@ -366,6 +366,19 @@ impl Tactic {
         }
     }
 
+    /// A call for the batting side (the rest are for the side in the field).
+    pub fn offense(self) -> bool {
+        matches!(
+            self,
+            Tactic::Hit
+                | Tactic::Wait
+                | Tactic::Bunt
+                | Tactic::Squeeze
+                | Tactic::Steal
+                | Tactic::HitAndRun
+        )
+    }
+
     /// Can it be called now?
     pub fn possible(self, g: &Game) -> bool {
         let f = 1 - g.batting();
@@ -431,6 +444,10 @@ pub struct Play {
     /// The call the coach made for this plate appearance (it shows where the pitches go).
     #[serde(default)]
     pub call: Option<Tactic>,
+    /// The other bench's call for it: their battery's approach to our batter, or their
+    /// offense against us.
+    #[serde(default)]
+    pub their_call: Option<Tactic>,
 }
 
 /// One pitch of a plate appearance, as shown (the result comes from the plate appearance).
@@ -466,6 +483,7 @@ impl Play {
             inning: 0,
             runners0: Default::default(),
             call: None,
+            their_call: None,
         }
     }
 
@@ -487,6 +505,14 @@ impl Play {
                     | PlayKind::SacFly
                     | PlayKind::Bunt
             )
+    }
+
+    /// How the battery worked him (inside, away or low), whichever bench called it.
+    pub fn approach(&self) -> Option<Tactic> {
+        [self.call, self.their_call]
+            .into_iter()
+            .flatten()
+            .find(|t| matches!(t, Tactic::Inside | Tactic::Outside | Tactic::Low))
     }
 
     /// A batter the pitcher faced (a steal is not one).
@@ -522,7 +548,7 @@ impl Play {
             // The last pitch is the one that hits him.
             PlayKind::HitByPitch => (next(3) as usize, next(3) as usize, Pitch::Ball),
             // Working the outside corner, he can freeze on strike three.
-            PlayKind::Strikeout if self.call == Some(Tactic::Outside) => {
+            PlayKind::Strikeout if self.approach() == Some(Tactic::Outside) => {
                 (next(4) as usize, 2, Pitch::Looking)
             }
             PlayKind::Strikeout => (next(4) as usize, 2, Pitch::Swinging),
@@ -611,6 +637,8 @@ pub struct Game {
     snap_runners: [String; 3],
     /// The call for it (see [`Play::call`]).
     snap_call: Option<Tactic>,
+    /// The other bench's call (see [`Play::their_call`]).
+    snap_their_call: Option<Tactic>,
 }
 
 impl Game {
@@ -643,6 +671,7 @@ impl Game {
             snap: (0, 0, 0, String::new(), String::new(), 0.0, 1),
             snap_runners: Default::default(),
             snap_call: None,
+            snap_their_call: None,
         }
     }
 
@@ -715,6 +744,7 @@ impl Game {
             inning: snap.6,
             runners0: self.snap_runners.clone(),
             call: self.snap_call,
+            their_call: self.snap_their_call,
         });
     }
 
@@ -782,7 +812,31 @@ impl Game {
     pub fn call(&mut self, t: Option<Tactic>) {
         let s = self.batting();
         self.asked = Some((s, self.up[s]));
-        self.tactic = t.filter(|t| t.possible(self));
+        // A batting call when we bat, a fielding call when we field.
+        let batting = s == self.us;
+        self.tactic = t.filter(|t| t.possible(self) && t.offense() == batting);
+    }
+
+    /// The other bench's call for the plate appearance now: their battery's approach to
+    /// our batter, or their offense against us. They read the game like the coach's advice
+    /// but call only in the spots that matter, and not every time.
+    fn ai_call(&mut self, s: usize) -> Option<Tactic> {
+        let risp = self.bases[1].is_some() || self.bases[2].is_some();
+        let on_first = self.bases[0].is_some() && self.outs < 2;
+        let roll = self.rng.unit();
+        if s == self.us {
+            let worth = risp || on_first || self.batter_now().power >= 65.0;
+            if !worth || roll > 0.6 {
+                return None;
+            }
+            Tactic::advice(self, Spot::Pinch)
+                .filter(|t| !matches!(t, Tactic::Relief | Tactic::Challenge))
+        } else {
+            if !(risp || on_first) || roll > 0.45 {
+                return None;
+            }
+            Tactic::advice(self, Spot::Chance).filter(|t| !matches!(t, Tactic::Hit | Tactic::Wait))
+        }
     }
 
     /// Play one plate appearance (or the change of sides). Returns false when the game is
@@ -799,6 +853,7 @@ impl Game {
             .fold(0u8, |m, (i, b)| m | ((b.is_some() as u8) << i));
         self.snap_runners = self.runner_names();
         self.snap_call = None;
+        self.snap_their_call = None;
         self.snap = (
             s as u8,
             self.outs,
@@ -829,10 +884,21 @@ impl Game {
             );
             return true;
         }
-        let tactic = self.tactic.take();
-        self.snap_call = tactic;
-        match tactic {
-            Some(Tactic::Relief) if self.arm[f] + 1 < self.sides[f].arms.len() => {
+        let coach = self.tactic.take();
+        // The other bench reads the game too: their battery's approach when we bat, their
+        // offense when they do (now and then, not every batter).
+        let ai = self.ai_call(s);
+        self.snap_call = coach;
+        self.snap_their_call = ai;
+        // The batting side's call and the fielding side's call.
+        let (off, def) = if s == self.us {
+            (coach, ai)
+        } else {
+            (ai, coach)
+        };
+        let has = |t: Tactic| off == Some(t) || def == Some(t);
+        match (off, def) {
+            (_, Some(Tactic::Relief)) if self.arm[f] + 1 < self.sides[f].arms.len() => {
                 self.arm[f] += 1;
                 self.thrown[f] = 0;
                 let n = self.pitcher_now().name.clone();
@@ -847,7 +913,7 @@ impl Game {
                 self.asked = Some((s2, self.up[s2]));
                 return true;
             }
-            Some(Tactic::Steal) => {
+            (Some(Tactic::Steal), _) => {
                 self.steal_lead(s);
                 return self.after_play(s);
             }
@@ -856,19 +922,9 @@ impl Game {
         let bi = self.up[s] % self.sides[s].bats.len();
         let b = self.sides[s].bats[bi].clone();
         let arm = self.pitcher_now().clone();
-        let mut stuff = arm.stuff(self.thrown[f])
-            + if tactic == Some(Tactic::Challenge) {
-                5.0
-            } else {
-                0.0
-            };
+        let mut stuff = arm.stuff(self.thrown[f]) + if has(Tactic::Challenge) { 5.0 } else { 0.0 };
         // On a hit and run he has to put it in play: shorter swing, more contact.
-        let mut contact = b.contact
-            + if tactic == Some(Tactic::HitAndRun) {
-                6.0
-            } else {
-                0.0
-            };
+        let mut contact = b.contact + if has(Tactic::HitAndRun) { 6.0 } else { 0.0 };
         let mut power = b.power;
         if self.risp() && b.abil & BIT_CHANCE != 0 {
             contact += 8.0;
@@ -890,7 +946,7 @@ impl Game {
         let situation = self.our_banner(s, b.abil, arm.abil);
         let our_bat = s == self.us;
         let field = self.sides[f].field;
-        let order = match tactic {
+        let order = match off {
             Some(Tactic::Hit) => Order::Swing,
             Some(Tactic::Bunt) => Order::Small,
             _ if s == self.us => self.order,
@@ -899,7 +955,7 @@ impl Game {
         self.thrown[f] += 3
             + (self.rng.unit() * 4.0) as u32
             // Going right at him costs the arm: he tires sooner.
-            + if tactic == Some(Tactic::Challenge) {
+            + if has(Tactic::Challenge) {
                 3
             } else {
                 0
@@ -908,7 +964,7 @@ impl Game {
         let name = b.name.clone();
         let r = self.rng.unit();
         // An intentional walk.
-        if tactic == Some(Tactic::Walk) {
+        if has(Tactic::Walk) {
             let mut runs = 0;
             self.walk(s, bi, &mut runs);
             self.say_as(
@@ -920,7 +976,7 @@ impl Game {
             return self.after_play(s);
         }
         // The squeeze: the runner on third breaks as the batter bunts.
-        if tactic == Some(Tactic::Squeeze) && self.bases[2].is_some() {
+        if has(Tactic::Squeeze) && self.bases[2].is_some() {
             self.outs += 1;
             if r < 0.68 {
                 self.mark_clutch = true;
@@ -990,12 +1046,12 @@ impl Game {
             Order::Normal => (0.0, 1.0),
             Order::Small => (-0.04, 0.7),
         };
-        let wait = tactic == Some(Tactic::Wait);
-        let hit_run = tactic == Some(Tactic::HitAndRun);
+        let wait = has(Tactic::Wait);
+        let hit_run = has(Tactic::HitAndRun);
         let eye = if b.abil & BIT_EYE != 0 { 1.8 } else { 1.0 };
         // How the battery works him: each approach trades one risk for another.
-        let k_call = match tactic {
-            Some(Tactic::Inside) => 0.025,
+        let k_call = match def {
+            Some(Tactic::Inside) => 0.04,
             Some(Tactic::Outside) => -0.01,
             _ => 0.0,
         };
@@ -1003,17 +1059,16 @@ impl Game {
             + k_call)
             .clamp(0.04, 0.42)
             * if hit_run { 0.85 } else { 1.0 };
-        let bb_call = match tactic {
+        let bb_call = match def {
             Some(Tactic::Outside) => 1.4,
             Some(Tactic::Low) => 1.15,
-            Some(Tactic::HitAndRun) => 0.5,
             _ => 1.0,
-        };
+        } * if hit_run { 0.5 } else { 1.0 };
         let bb = (0.10 - arm.control * 0.0007).clamp(0.02, 0.11)
             * if wait { 2.2 } else { 1.0 }
             * eye
             * bb_call;
-        let hit_call = match tactic {
+        let hit_call = match def {
             Some(Tactic::Inside) => -0.03,
             Some(Tactic::Outside) => -0.015,
             Some(Tactic::Low) => 0.01,
@@ -1024,17 +1079,16 @@ impl Game {
         let hit = (0.28 + (contact - stuff * 0.8) * 0.0035 - (field - 50.0) * 0.0012 + hit_call)
             .clamp(0.12, 0.55);
         // A slugger turns on an inside mistake; away and low keep the ball in the park.
-        let hr_call = match tactic {
+        let hr_call = match def {
             Some(Tactic::Inside) if power >= 65.0 => 1.2,
             Some(Tactic::Inside) => 0.75,
             Some(Tactic::Outside) => 0.55,
             Some(Tactic::Low) => 0.6,
-            Some(Tactic::HitAndRun) => 0.85,
             _ => 1.0,
-        };
+        } * if hit_run { 0.85 } else { 1.0 };
         // Inside, a wild one hits him (more so with poor control).
         let hbp = 0.006
-            + if tactic == Some(Tactic::Inside) {
+            + if has(Tactic::Inside) {
                 0.03 + (60.0 - arm.control).max(0.0) * 0.0015
             } else {
                 0.0
@@ -1059,7 +1113,10 @@ impl Game {
             } else {
                 None
             });
-            let (en, ja) = match tactic {
+            let (en, ja) = match def
+                .filter(|t| matches!(t, Tactic::Inside | Tactic::Outside))
+                .or(off)
+            {
                 Some(Tactic::Inside) => (
                     format!("{name} is jammed inside and strikes out."),
                     format!("{name}、内角をえぐられて空振り三振！"),
@@ -1107,11 +1164,7 @@ impl Game {
             let hr = ((power * power_adj - 35.0) * 0.004 * hr_call).clamp(0.003, 0.24);
             let triple = (b.speed - 50.0).max(0.0) * 0.0015 + 0.01;
             let double = (0.12 + (power * power_adj - 40.0).max(0.0) * 0.003)
-                * if tactic == Some(Tactic::Outside) {
-                    0.75
-                } else {
-                    1.0
-                };
+                * if has(Tactic::Outside) { 0.75 } else { 1.0 };
             let mut runs = 0;
             let (bases, en, ja) = if p < hr {
                 (
@@ -1166,18 +1219,9 @@ impl Game {
             return self.after_play(s);
         }
         // An out in play. Low pitches are beaten into the ground.
-        let ground = self.rng.unit()
-            < if tactic == Some(Tactic::Low) {
-                0.72
-            } else {
-                0.5
-            };
+        let ground = self.rng.unit() < if has(Tactic::Low) { 0.72 } else { 0.5 };
         // The runner going on the pitch takes the double play away.
-        let dp_odds = if tactic == Some(Tactic::Low) {
-            0.45
-        } else {
-            0.3
-        };
+        let dp_odds = if has(Tactic::Low) { 0.45 } else { 0.3 };
         if ground
             && !hit_run
             && self.bases[0].is_some()
@@ -1187,7 +1231,7 @@ impl Game {
             self.outs += 2;
             self.bases[0] = None;
             self.mark_banner = situation;
-            let (en, ja) = if tactic == Some(Tactic::Low) {
+            let (en, ja) = if has(Tactic::Low) {
                 (
                     format!("{name} beats a low one into the ground: double play!"),
                     format!("{name}、低めを打たされてゲッツー！"),
@@ -1207,13 +1251,18 @@ impl Game {
         // and the runner on second may take third.
         if ground && self.outs < 3 && self.bases.iter().any(|x| x.is_some()) {
             let mut runs = 0u8;
-            let held = tactic == Some(Tactic::InfieldIn) && self.bases[2].is_some();
+            let held = has(Tactic::InfieldIn) && self.bases[2].is_some();
             if hit_run {
-                if self.bases[2].take().is_some() {
+                // Everyone moves up, except a man on third held by a drawn-in infield.
+                if !held && self.bases[2].take().is_some() {
                     runs += 1;
                 }
-                self.bases[2] = self.bases[1].take();
-                self.bases[1] = self.bases[0].take();
+                if self.bases[2].is_none() {
+                    self.bases[2] = self.bases[1].take();
+                }
+                if self.bases[1].is_none() {
+                    self.bases[1] = self.bases[0].take();
+                }
             } else if !held {
                 if self.bases[2].is_some() && self.rng.unit() < 0.5 {
                     self.bases[2] = None;
@@ -1649,32 +1698,53 @@ mod tests {
         log
     }
 
-    fn rate(log: &[Play], hit: impl Fn(&Play) -> bool) -> f32 {
-        let pa = log.iter().filter(|p| p.faced_batter()).count().max(1);
-        log.iter().filter(|p| hit(p)).count() as f32 / pa as f32
+    /// The other side's plate appearances (where our fielding calls apply) in games where
+    /// the coach calls `t` before every one.
+    fn calling_them(t: Option<Tactic>, games: u32) -> Vec<Play> {
+        let mut log = Vec::new();
+        for seed in 0..games {
+            let mut g = Game::new(side(52.0, seed), side(52.0, seed + 77), seed % 2 == 0, seed);
+            let mut guard = 0;
+            while !g.over && guard < 4000 {
+                guard += 1;
+                g.call(t);
+                g.step();
+            }
+            let us = g.us;
+            log.extend(g.log.into_iter().filter(|p| p.side as usize != us));
+        }
+        log
+    }
+
+    /// How often `hit` happens in the plate appearances `pick` selects.
+    fn rate(log: &[Play], pick: impl Fn(&Play) -> bool, hit: impl Fn(&Play) -> bool) -> f32 {
+        let pa: Vec<&Play> = log.iter().filter(|p| p.faced_batter() && pick(p)).collect();
+        pa.iter().filter(|p| hit(p)).count() as f32 / pa.len().max(1) as f32
+    }
+
+    /// The plate appearances the coach's call `t` was in force, and the ones with no call
+    /// from either bench.
+    fn with(t: Tactic) -> impl Fn(&Play) -> bool {
+        move |p| p.call == Some(t)
+    }
+
+    fn clean(p: &Play) -> bool {
+        p.call.is_none() && p.their_call.is_none()
     }
 
     #[test]
     fn working_him_inside_strikes_out_more_and_hits_batters() {
-        let plain = calling(None, 60);
-        let inside = calling(Some(Tactic::Inside), 60);
-        let k = |l: &[Play]| rate(l, |p| p.kind == PlayKind::Strikeout);
-        let hbp = |l: &[Play]| rate(l, |p| p.kind == PlayKind::HitByPitch);
-        assert!(
-            k(&inside) > k(&plain) + 0.01,
-            "{} vs {}",
-            k(&inside),
-            k(&plain)
-        );
-        assert!(
-            hbp(&inside) > hbp(&plain) * 3.0,
-            "{} vs {}",
-            hbp(&inside),
-            hbp(&plain)
-        );
-        // The play remembers the call, and a hit batsman is not an at bat.
-        assert!(inside.iter().any(|p| p.call == Some(Tactic::Inside)));
-        let hbp_play = inside
+        // The same batters with and without the call.
+        let log = calling_them(Some(Tactic::Inside), 100);
+        let base = calling_them(None, 100);
+        let inside = with(Tactic::Inside);
+        let k_in = rate(&log, &inside, |p| p.kind == PlayKind::Strikeout);
+        let k_base = rate(&base, clean, |p| p.kind == PlayKind::Strikeout);
+        assert!(k_in > k_base + 0.01, "{k_in} vs {k_base}");
+        let hbp_in = rate(&log, &inside, |p| p.kind == PlayKind::HitByPitch);
+        let hbp_base = rate(&base, clean, |p| p.kind == PlayKind::HitByPitch);
+        assert!(hbp_in > hbp_base * 3.0, "{hbp_in} vs {hbp_base}");
+        let hbp_play = log
             .iter()
             .find(|p| p.kind == PlayKind::HitByPitch)
             .expect("a hit batsman");
@@ -1684,32 +1754,37 @@ mod tests {
 
     #[test]
     fn away_and_low_keep_the_ball_in_the_park() {
-        let plain = calling(None, 80);
-        let hr = |l: &[Play]| rate(l, |p| p.kind == PlayKind::Hit(4));
-        let away = calling(Some(Tactic::Outside), 80);
-        let low = calling(Some(Tactic::Low), 80);
+        let away = calling(Some(Tactic::Outside), 120);
+        let low = calling(Some(Tactic::Low), 120);
+        let hr = |log: &[Play], pick: &dyn Fn(&Play) -> bool| {
+            rate(log, pick, |p| p.kind == PlayKind::Hit(4))
+        };
+        let a = with(Tactic::Outside);
+        let l = with(Tactic::Low);
         assert!(
-            hr(&away) < hr(&plain) * 0.8,
+            hr(&away, &a) < hr(&away, &clean) * 0.8,
             "{} vs {}",
-            hr(&away),
-            hr(&plain)
+            hr(&away, &a),
+            hr(&away, &clean)
         );
         assert!(
-            hr(&low) < hr(&plain) * 0.85,
+            hr(&low, &l) < hr(&low, &clean) * 0.85,
             "{} vs {}",
-            hr(&low),
-            hr(&plain)
+            hr(&low, &l),
+            hr(&low, &clean)
         );
-        // Away walks more; low gets more double plays.
-        let bb = |l: &[Play]| rate(l, |p| p.kind == PlayKind::Walk);
-        let dp = |l: &[Play]| rate(l, |p| p.kind == PlayKind::DoublePlay);
-        assert!(bb(&away) > bb(&plain), "{} vs {}", bb(&away), bb(&plain));
-        assert!(
-            dp(&low) > dp(&plain) * 1.2,
-            "{} vs {}",
-            dp(&low),
-            dp(&plain)
-        );
+        // Away walks more; low gets more double plays with a man on first.
+        let bb = |pick: &dyn Fn(&Play) -> bool| rate(&away, pick, |p| p.kind == PlayKind::Walk);
+        assert!(bb(&a) > bb(&clean), "{} vs {}", bb(&a), bb(&clean));
+        let on_first = |p: &Play| p.bases0 & 1 != 0 && p.outs0 < 2;
+        let dp = |pick: &dyn Fn(&Play) -> bool| {
+            rate(
+                &low,
+                |p| pick(p) && on_first(p),
+                |p| p.kind == PlayKind::DoublePlay,
+            )
+        };
+        assert!(dp(&l) > dp(&clean) * 1.2, "{} vs {}", dp(&l), dp(&clean));
         // A strikeout on the outside corner is a called third strike.
         let k = away
             .iter()
@@ -1720,32 +1795,79 @@ mod tests {
 
     #[test]
     fn the_infield_in_holds_the_runner_but_lets_more_through() {
-        let plain = calling(None, 80);
-        let drawn_in = calling(Some(Tactic::InfieldIn), 80);
-        let scored_on_grounder = |l: &[Play]| {
-            l.iter()
-                .filter(|p| p.kind == PlayKind::GroundOut && p.runs > 0)
-                .count()
-        };
-        assert!(scored_on_grounder(&plain) > 5, "ground balls score runs");
-        // Every ground out under the call that had a man on third kept him there.
-        let called: Vec<&Play> = drawn_in
+        let log = calling(Some(Tactic::InfieldIn), 120);
+        let scored_on_grounder = log
+            .iter()
+            .filter(|p| clean(p) && p.kind == PlayKind::GroundOut && p.runs > 0)
+            .count();
+        assert!(scored_on_grounder > 5, "ground balls score runs");
+        // Every ground out under the call kept the man on third there.
+        let called: Vec<&Play> = log
             .iter()
             .filter(|p| p.call == Some(Tactic::InfieldIn) && p.kind == PlayKind::GroundOut)
             .collect();
         assert!(!called.is_empty());
-        assert!(called.iter().all(|p| p.runs == 0));
-        // Hits per plate appearance with a man on third and fewer than two out.
-        let per = |l: &[Play], pick: &dyn Fn(&Play) -> bool| {
-            let pa: Vec<&Play> = l.iter().filter(|p| p.faced_batter() && pick(p)).collect();
-            pa.iter()
-                .filter(|p| matches!(p.kind, PlayKind::Hit(_)))
-                .count() as f32
-                / pa.len().max(1) as f32
+        assert!(
+            called.iter().all(|p| p.runs == 0),
+            "{:?}",
+            called.iter().find(|p| p.runs > 0)
+        );
+        // More hits get through, with a man on third and fewer than two out.
+        let third = |p: &Play| p.bases0 & 4 != 0 && p.outs0 < 2;
+        let hits = |pick: &dyn Fn(&Play) -> bool| {
+            rate(
+                &log,
+                |p| pick(p) && third(p),
+                |p| matches!(p.kind, PlayKind::Hit(_)),
+            )
         };
-        let in_rate = per(&drawn_in, &|p| p.call == Some(Tactic::InfieldIn));
-        let plain_rate = per(&plain, &|p| p.bases0 & 4 != 0 && p.outs0 < 2);
-        assert!(in_rate > plain_rate, "{in_rate} vs {plain_rate}");
+        let drawn_in = with(Tactic::InfieldIn);
+        assert!(
+            hits(&drawn_in) > hits(&clean),
+            "{} vs {}",
+            hits(&drawn_in),
+            hits(&clean)
+        );
+    }
+
+    #[test]
+    fn the_other_bench_makes_its_own_calls() {
+        let mut offense = 0;
+        let mut defense = 0;
+        for seed in 0..40 {
+            let mut g = Game::new(side(52.0, seed), side(52.0, seed + 77), seed % 2 == 0, seed);
+            g.finish();
+            for p in g.log.iter().filter(|p| p.is_pa()) {
+                let Some(t) = p.their_call else { continue };
+                // When we bat they call from the field, when they bat they call the offense.
+                if p.side as usize == g.us {
+                    assert!(!t.offense(), "{t:?} from their field");
+                    assert!(!matches!(t, Tactic::Relief | Tactic::Challenge));
+                    defense += 1;
+                } else {
+                    assert!(t.offense(), "{t:?} from their bench");
+                    assert!(!matches!(t, Tactic::Hit | Tactic::Wait));
+                    offense += 1;
+                }
+                assert_eq!(p.call, None, "the coach called nothing");
+            }
+        }
+        assert!(
+            offense > 20 && defense > 20,
+            "{offense} offense, {defense} defense"
+        );
+    }
+
+    #[test]
+    fn the_coach_calls_only_for_his_own_side() {
+        let mut g = Game::new(side(50.0, 1), side(50.0, 2), true, 1);
+        while g.batting() != g.us {
+            g.step();
+        }
+        g.call(Some(Tactic::Inside));
+        assert_eq!(g.tactic, None, "a fielding call while we bat is dropped");
+        g.call(Some(Tactic::Wait));
+        assert_eq!(g.tactic, Some(Tactic::Wait));
     }
 
     #[test]
@@ -1830,7 +1952,12 @@ mod tests {
                 let mut g = Game::new(side(55.0, seed), side(55.0, seed + 9), true, seed);
                 g.order = order;
                 g.finish();
-                n += g.log.iter().filter(|p| p.ja.contains(ja)).count();
+                // Our side only: the other bench calls its own bunts.
+                n += g
+                    .log
+                    .iter()
+                    .filter(|p| p.side as usize == g.us && p.ja.contains(ja))
+                    .count();
             }
             n
         };
