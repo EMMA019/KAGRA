@@ -1472,6 +1472,33 @@ fn the_runners_on_screen_are_the_ones_on_base() {
     );
 }
 
+/// The nine in the field are nine different players, the pitcher on the mound once.
+#[test]
+fn every_fielder_is_someone_else() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.week = 6;
+    g.begin_week();
+    press(&mut g, hud::Btn::PlayBall);
+    let gm = g.game.as_ref().unwrap();
+    for side in 0..2 {
+        let pitcher = gm.sides[side].arms[0].name.clone();
+        let names: Vec<String> = (0..9)
+            .filter_map(|i| DiamondDays::fielder_name(gm, side, i, &pitcher))
+            .collect();
+        assert_eq!(names.len(), 9, "{names:?}");
+        let mut uniq = names.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), 9, "{names:?}");
+        assert_eq!(names.iter().filter(|n| **n == pitcher).count(), 1);
+        // Everyone in the order is out there.
+        for b in &gm.sides[side].bats {
+            assert!(names.contains(&b.name) || b.name == pitcher, "{}", b.name);
+        }
+    }
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();

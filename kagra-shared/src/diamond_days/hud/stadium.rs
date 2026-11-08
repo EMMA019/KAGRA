@@ -600,19 +600,32 @@ fn fielder_spot(i: usize) -> [f32; 3] {
 }
 
 impl DiamondDays {
-    /// The face of the fielder at position `i` (pitcher first): the pitcher of the play on
-    /// the mound, the side's catcher behind the plate, the rest from the nine. The pitch
+    /// Who plays fielding position `i` (pitcher first): the play's pitcher on the mound,
+    /// then the rest of the nine in order, each once (the pitcher is not in the field
+    /// twice). `None` past the end of a short side.
+    pub(in crate::diamond_days) fn fielder_name(
+        g: &Game,
+        side: usize,
+        i: usize,
+        pitcher: &str,
+    ) -> Option<String> {
+        if i == 0 {
+            return Some(pitcher.to_string());
+        }
+        g.sides[side]
+            .bats
+            .iter()
+            .filter(|b| b.name != pitcher)
+            .nth(i - 1)
+            .map(|b| b.name.clone())
+    }
+
+    /// The face of the fielder at position `i` ([`DiamondDays::fielder_name`]). The pitch
     /// view and the field view use the same faces, so nobody changes at the cut.
     fn fielder_face(&self, g: &Game, side: usize, i: usize, pitcher: &str) -> Face {
-        match i {
-            0 => self.face_for(g, side, pitcher),
-            1 => Face::from_seed(art::hash(&g.sides[side].name) ^ 77),
-            _ => g.sides[side]
-                .bats
-                .get(i)
-                .map(|b| self.face_for(g, side, &b.name))
-                .unwrap_or_else(|| Face::from_seed(i as u64)),
-        }
+        Self::fielder_name(g, side, i, pitcher)
+            .map(|n| self.face_for(g, side, &n))
+            .unwrap_or_else(|| Face::from_seed(i as u64))
     }
 
     /// The band of the screen the 3D picture fills (fractions of the height, from the
