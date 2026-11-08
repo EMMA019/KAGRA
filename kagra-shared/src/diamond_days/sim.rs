@@ -884,7 +884,8 @@ impl Game {
             );
             return true;
         }
-        let coach = self.tactic.take();
+        // A call is for the side it was made for: never one left over from the other half.
+        let coach = self.tactic.take().filter(|t| t.offense() == (s == self.us));
         // The other bench reads the game too: their battery's approach when we bat, their
         // offense when they do (now and then, not every batter).
         let ai = self.ai_call(s);
@@ -917,7 +918,7 @@ impl Game {
                 self.steal_lead(s);
                 // The batter is still up: a call the coach made for him (a walk, inside,
                 // the infield in) still stands when the other bench steals.
-                if coach != Some(Tactic::Steal) {
+                if coach != Some(Tactic::Steal) && self.outs < 3 {
                     self.tactic = coach;
                 }
                 return self.after_play(s);
@@ -1947,6 +1948,52 @@ mod tests {
             }
         }
         assert!(checked > 0, "a steal during a pinch with a call made");
+    }
+
+    #[test]
+    fn a_leftover_fielding_call_never_walks_our_own_batter() {
+        for seed in 0..40 {
+            let mut g = Game::new(side(50.0, seed), side(50.0, seed + 9), seed % 2 == 0, seed);
+            while g.batting() != g.us {
+                g.step();
+            }
+            // As if a pinch call had been carried over from their half.
+            g.tactic = Some(Tactic::Walk);
+            let n = g.log.len();
+            g.step();
+            for p in &g.log[n..] {
+                assert!(!p.en.contains("on purpose"), "seed {seed}: {}", p.en);
+                assert_eq!(p.call, None);
+            }
+        }
+    }
+
+    #[test]
+    fn a_call_never_crosses_to_the_other_half_inning() {
+        // Pinch calls every time, with quick runners on both sides to steal.
+        for seed in 0..300 {
+            let mut g = Game::new(side(85.0, seed), side(85.0, seed + 77), seed % 2 == 0, seed);
+            let mut guard = 0;
+            while !g.over && guard < 4000 {
+                guard += 1;
+                match g.spot() {
+                    Some(Spot::Pinch) => g.call(Some(Tactic::Walk)),
+                    Some(Spot::Chance) => g.call(Some(Tactic::Wait)),
+                    _ => {}
+                }
+                g.step();
+            }
+            for p in g.log.iter().filter(|p| p.is_pa()) {
+                if let Some(t) = p.call {
+                    assert_eq!(
+                        t.offense(),
+                        p.side as usize == g.us,
+                        "seed {seed}: {t:?} on {}",
+                        p.en
+                    );
+                }
+            }
+        }
     }
 
     #[test]
