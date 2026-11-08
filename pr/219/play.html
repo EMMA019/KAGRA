@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="f986eca7247a" />
+  <meta name="kagra-build-id" content="a2d407ec3c72" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -323,13 +323,13 @@
     <div id="boot" data-i18n="boot">読み込み中…</div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=f986eca7247a"></script>
-  <script src="./quality.js?v=f986eca7247a"></script>
-  <script src="./portal.js?v=f986eca7247a"></script>
+  <script src="./i18n.js?v=a2d407ec3c72"></script>
+  <script src="./quality.js?v=a2d407ec3c72"></script>
+  <script src="./portal.js?v=a2d407ec3c72"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=f986eca7247a"></script>
+  <script src="./meta.js?v=a2d407ec3c72"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=f986eca7247a";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=a2d407ec3c72";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -338,6 +338,7 @@
     let canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
     const t = globalThis.kagraT || ((k) => k);
+    let gameTitle = "";
     // ?debug=1 and ?backend= are development tools: they need ?dev=1 as well.
     const dev = params.get("dev") === "1";
     const requestedBackend = (dev ? (params.get("backend") || "auto") : "auto").toLowerCase();
@@ -792,8 +793,10 @@
       }
       // The daily run keeps its own device best, so a daily score never replaces the free-play best.
       if (metaLayer.enabled && metaLayer.dailyInfo().active) bestScope = ".daily";
-      document.title = bundle.title || slug;
-      document.getElementById("title").textContent = bundle.title || slug;
+      // The game's name in the page language (page.title is an i18n key), else the manifest's.
+      gameTitle = (page.title && t(page.title) !== page.title && t(page.title)) || bundle.title || slug;
+      document.title = gameTitle;
+      document.getElementById("title").textContent = gameTitle;
       const files = Array.isArray(bundle.files) ? bundle.files : [];
       session.clearMount();
       let done = 0;
@@ -1228,7 +1231,7 @@
       if (!playing && phase !== "complete") session.showTitle();
       const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
       document.getElementById("phaseLabel").textContent =
-        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
+        `${gameTitle || bundle.title || slug} · ${label} · ${sharedVersion()}`;
       // page.resume: a kept run is continued from the title; a smaller button starts over.
       const keptRun = !!(page.resume && phase !== "complete" && hasKeptRun(slug));
       document.getElementById("start").textContent =

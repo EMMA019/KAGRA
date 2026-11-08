@@ -115,9 +115,10 @@
     "save": true,
     "resume": true,
     "blurb": "blurb.diamond",
+    "title": "title.diamond",
     "url_params": {
       "week": "string"
     }
   },
-  "build": "f986eca7247a"
+  "build": "a2d407ec3c72"
 }
