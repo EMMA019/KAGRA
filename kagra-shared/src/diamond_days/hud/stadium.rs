@@ -868,9 +868,10 @@ impl DiamondDays {
                     target: [0.0, 0.8, -4.6],
                     fov: 30.0,
                 };
-                // After a tournament loss the camera follows the losers to their stands.
+                // After our tournament loss the camera follows us to our stands; on a win
+                // it stays on the plate for the school song.
                 let loser = (0..2).find(|&side| !won(side) && won(1 - side));
-                match loser.filter(|_| cup) {
+                match loser.filter(|&side| cup && side == g.us) {
                     Some(side) if k > 0.6 => {
                         let x = if side == 0 { -1.0 } else { 1.0 };
                         let stands = View {

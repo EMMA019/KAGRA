@@ -2299,6 +2299,13 @@ fn tournament_ceremonies_school_song_stands_and_the_ring() {
         "facing the field: {}",
         head.yaw
     );
+    // The camera stays on them for the song.
+    let cam = &doc.cameras[0];
+    assert!(
+        cam.target[0].abs() < 3.0,
+        "the camera stays on the song: {:?}",
+        cam.target
+    );
     // A tournament loss: off to the stands.
     show(&mut g, lost, 0.85);
     assert!(
