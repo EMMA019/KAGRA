@@ -68,6 +68,9 @@ pub struct Figure<'a> {
     pub mitt: bool,
     /// A bat in the hands (any pose; `Pose::Bat` always has one).
     pub bat: bool,
+    /// Reach the glove hand toward this world point (as far as the arm goes): a catcher
+    /// framing a pitch, a fielder stretching for a throw.
+    pub reach: Option<[f32; 3]>,
 }
 
 impl<'a> Figure<'a> {
@@ -92,6 +95,7 @@ impl<'a> Figure<'a> {
             detail: Detail::Full,
             mitt: false,
             bat: false,
+            reach: None,
         }
     }
 
@@ -123,6 +127,43 @@ impl<'a> Figure<'a> {
     pub fn bat(mut self, bat: bool) -> Self {
         self.bat = bat;
         self
+    }
+
+    pub fn reach(mut self, at: Option<[f32; 3]>) -> Self {
+        self.reach = at;
+        self
+    }
+
+    /// The world to figure space (the inverse of [`Figure::world`]).
+    fn local(&self, p: Vec3) -> Vec3 {
+        let q = Quat::from_rotation_y(-self.yaw) * (p - Vec3::from_array(self.at))
+            / self.height.max(1e-4);
+        if self.lefty {
+            Vec3::new(-q.x, q.y, q.z)
+        } else {
+            q
+        }
+    }
+
+    /// The pose's joints, with the glove hand reaching for [`Figure::reach`].
+    fn rig(&self) -> Rig {
+        let mut r = rig_for(self.pose);
+        if let Some(target) = self.reach {
+            let shoulder = r.hips + torso_rot(&r) * v(0.145, 0.215, 0.0);
+            let want = self.local(Vec3::from_array(target)) - shoulder;
+            let len = want.length().max(1e-4);
+            let arm = 0.28;
+            let hand = shoulder + want / len * len.min(arm);
+            // The elbow bends out and down from the line to the hand.
+            let mid = (shoulder + hand) * 0.5;
+            let slack = (arm * arm - (len.min(arm) * 0.5).powi(2) * 4.0)
+                .max(0.0)
+                .sqrt()
+                * 0.5;
+            r.hand[1] = hand;
+            r.elbow[1] = mid + v(0.06, -1.0, 0.0).normalize() * slack.max(0.02);
+        }
+        r
     }
 
     /// Figure space (body units, +Z forward) to the world.
@@ -440,12 +481,17 @@ fn head_frame(r: &Rig) -> (Vec3, Quat) {
 
 /// The throwing hand in the world (the ball leaves from here on a pitch or a throw).
 pub fn throwing_hand(f: &Figure) -> [f32; 3] {
-    f.world(rig_for(f.pose).hand[0]).to_array()
+    f.world(f.rig().hand[0]).to_array()
+}
+
+/// The glove hand in the world (where a caught ball sits).
+pub fn glove_hand(f: &Figure) -> [f32; 3] {
+    f.world(f.rig().hand[1]).to_array()
 }
 
 /// The far end of the bat in the world, while the figure holds one.
 pub fn bat_tip(f: &Figure) -> [f32; 3] {
-    let r = rig_for(f.pose);
+    let r = f.rig();
     let grip = (r.hand[0] + r.hand[1]) * 0.5;
     f.world(grip + r.bat * BAT_LEN).to_array()
 }
@@ -508,7 +554,7 @@ impl Out<'_, '_> {
 
 /// Build one player into `out` as toon primitives (about 30 close up, 17 far away).
 pub fn build(f: &Figure, out: &mut Vec<WorldProp>) {
-    let r = rig_for(f.pose);
+    let r = f.rig();
     let kit = f.kit;
     let skin = SKINS[f.face.skin as usize % SKINS.len()];
     let hair = HAIRS[f.face.hair_color as usize % HAIRS.len()];
@@ -807,6 +853,34 @@ mod tests {
         };
         let t = throwing_hand(&turned);
         assert!((t[2] + h[2]).abs() < 1e-3 && (t[0] + h[0]).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_catcher_reaches_for_the_pitch() {
+        let face = Face::from_seed(5);
+        let kit = Kit::home([30, 80, 170, 255]);
+        let base = Figure::new("c", [0.0, 0.0, 1.4], std::f32::consts::PI, 1.9, &face, &kit)
+            .pose(Pose::Squat)
+            .mitt(true);
+        let rest = glove_hand(&base);
+        // Low on his glove side: the mitt follows, but no farther than the arm goes.
+        let target = [-0.45, 0.45, 0.95];
+        let reached = glove_hand(&base.reach(Some(target)));
+        let d = |a: [f32; 3], b: [f32; 3]| {
+            ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+        };
+        assert!(
+            d(reached, target) < d(rest, target),
+            "{rest:?} -> {reached:?}"
+        );
+        assert!(d(reached, target) < 0.15, "{reached:?}");
+        let far = glove_hand(&base.reach(Some([5.0, 3.0, -4.0])));
+        let shoulder_ish = [0.0, 0.8, 1.2];
+        assert!(d(far, shoulder_ish) < 0.9, "{far:?}");
+        // A lefty reaches with the other hand, to the mirrored point.
+        let target = [0.45, 0.45, 0.95];
+        let lefty = glove_hand(&base.lefty(true).reach(Some(target)));
+        assert!(d(lefty, target) < 0.15, "{lefty:?}");
     }
 
     #[test]

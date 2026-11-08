@@ -228,7 +228,7 @@ fn stand_picture() -> Option<PicId> {
 
 /// The ballpark around the field: ground, mound, plate, bases, chalk, the fence and its
 /// yellow cap, the foul poles, the stands, the scoreboard and the light towers.
-fn ballpark(out: &mut Vec<WorldProp>, night: bool) {
+fn ballpark(out: &mut Vec<WorldProp>, night: bool, cheer: f32, clock: f32) {
     if let Some(pic) = field_picture() {
         let mut ground = prop(
             "ground",
@@ -418,9 +418,11 @@ fn ballpark(out: &mut Vec<WorldProp>, night: bool) {
         let (run, rise) = (16.0f32, 10.0f32);
         let slope = (run * run + rise * rise).sqrt();
         let pitch = (rise / run).atan();
+        // On a hit the stands jump, block by block.
+        let bounce = cheer * 0.5 * (clock * 11.0 + i as f32 * 1.3).sin().max(0.0);
         let c = [
             mid[0] + out_dir[0] * (run * 0.5 + 0.6),
-            WALL_H + 0.4 + rise * 0.5,
+            WALL_H + 0.4 + rise * 0.5 + bounce,
             mid[2] + out_dir[1] * (run * 0.5 + 0.6),
         ];
         let mut stand = prop(
@@ -654,7 +656,24 @@ impl DiamondDays {
             toon_outline: Some(0.022),
             ..WorldDoc::default()
         };
-        ballpark(&mut doc.props, night);
+        // The crowd goes up on a hit or a run, most for a home run, and settles at the end.
+        let cheer = match self.phase(g, *shown, *t, *asking) {
+            (Phase::Result { k }, Some(i)) => g
+                .log
+                .get(i)
+                .filter(|pl| pl.is_pa() && (pl.runs > 0 || matches!(pl.kind, PlayKind::Hit(_))))
+                .map(|pl| {
+                    let big = if matches!(pl.kind, PlayKind::Hit(4)) {
+                        1.0
+                    } else {
+                        0.6
+                    };
+                    big * (1.0 - ((k - 0.75) * 4.0).max(0.0))
+                })
+                .unwrap_or(0.0),
+            _ => 0.0,
+        };
+        ballpark(&mut doc.props, night, cheer, self.clock);
         let view = self.match_scene(g, *shown, *t, *asking, &mut doc.props);
         let (y0, y1) = self.match_band();
         let v = view.in_band(y0, y1);
@@ -736,6 +755,9 @@ impl DiamondDays {
         let mut windup = 0.0;
         let mut swing: Option<f32> = None;
         let mut ball: Option<[f32; 3]> = None;
+        // Where the catcher sets his mitt, and whether the pitch is in it.
+        let mut mitt: Option<[f32; 3]> = None;
+        let mut in_mitt = false;
         let mut batter_expr = Expr::Serious;
         let mut pitcher_expr = Expr::Fiery;
         let mut walk_k: Option<f32> = None;
@@ -762,6 +784,9 @@ impl DiamondDays {
                 let q = location(pl, i, pitch);
                 let plate = [q[0] * 0.32, 0.82 - q[1] * 0.3, 0.1];
                 let travel = (k - 0.5) / 0.24;
+                if !matches!(pitch, Pitch::InPlay) && travel > 0.2 {
+                    mitt = Some([plate[0], plate[1], 0.95]);
+                }
                 ball = if (0.0..=1.0).contains(&travel) {
                     let mut b = lerp3(release, plate, travel);
                     b[1] += (travel * PI).sin() * 0.35;
@@ -774,6 +799,7 @@ impl DiamondDays {
                         plate[2] + a * 12.0,
                     ])
                 } else if travel > 1.0 && !matches!(pitch, Pitch::InPlay) {
+                    in_mitt = true;
                     Some([plate[0], plate[1], 1.0])
                 } else {
                     None
@@ -848,12 +874,17 @@ impl DiamondDays {
             out,
         );
         let cface = self.fielder_face(g, fld_side, 1, &pitcher);
-        chibi3d::build(
-            &Figure::new("catcher", [0.0, 0.0, 1.35], PI, H, &cface, &ckit)
-                .pose(Pose::Squat)
-                .mitt(true),
-            out,
-        );
+        // He shifts toward the pitch and reaches the mitt to it.
+        let shift = mitt.map(|m| (m[0] * 0.6).clamp(-0.25, 0.25)).unwrap_or(0.0);
+        let catcher = Figure::new("catcher", [shift, 0.0, 1.35], PI, H, &cface, &ckit)
+            .pose(Pose::Squat)
+            .mitt(true)
+            .reach(mitt);
+        chibi3d::build(&catcher, out);
+        if in_mitt {
+            let m = chibi3d::glove_hand(&catcher);
+            ball = Some([m[0], m[1], m[2] - 0.1]);
+        }
         let uface = Face::from_seed(4242);
         chibi3d::build(
             // Over the catcher's shoulder on the batter's side.
@@ -999,10 +1030,30 @@ impl DiamondDays {
             .unwrap_or(7);
         let ids: Vec<String> = (0..9).map(|i| format!("f{i}")).collect();
         let mut caught_at = None;
+        // On a ground ball the first baseman takes the bag and the ball is thrown there.
+        let grounder = matches!(
+            pl.kind,
+            PlayKind::GroundOut | PlayKind::DoublePlay | PlayKind::Bunt
+        );
+        let throw_to = (grounder && chaser != 2).then(|| {
+            let b = base(1);
+            [b[0] - 0.5, 0.0, b[2] + 0.5]
+        });
+        let mut first_glove = None;
         for (i, id) in ids.iter().enumerate() {
             let home_spot = fielder_spot(i);
             let face = self.fielder_face(g, fld_side, i, &pl.pitcher);
-            let (p, pose, yaw) = if i == chaser && !matches!(pl.kind, PlayKind::Hit(4)) {
+            let covering = (i == 2).then_some(throw_to).flatten();
+            let (p, pose, yaw) = if let Some(bag) = covering {
+                let go = (k * 2.4).min(1.0);
+                let p = lerp3(home_spot, bag, go);
+                let pose = if go < 1.0 {
+                    Pose::Run(clock * 1.7)
+                } else {
+                    Pose::Ready
+                };
+                (p, pose, face_toward(p, [land[0], 0.0, land[2]]))
+            } else if i == chaser && !matches!(pl.kind, PlayKind::Hit(4)) {
                 // Out: he gets there. A hit: it gets past him.
                 let reach = if out_play { 1.0 } else { 0.72 };
                 let goal = lerp3(home_spot, [land[0], 0.0, land[2]], reach);
@@ -1027,6 +1078,10 @@ impl DiamondDays {
                 f.kit = ckit;
                 f = f.mitt(true);
             }
+            if covering.is_some() {
+                f = f.reach(caught_at.map(|c| [c[0], 1.0, c[2]]));
+                first_glove = Some(chibi3d::glove_hand(&f));
+            }
             chibi3d::build(&f, out);
         }
         // The batter runs it out: round the bases on a hit, to first on anything else.
@@ -1034,10 +1089,11 @@ impl DiamondDays {
             PlayKind::Hit(n) => n.min(4) as f32,
             _ => 1.0,
         };
-        let pace = if matches!(pl.kind, PlayKind::Hit(4)) {
-            0.9
-        } else {
-            1.3
+        // A home run is a trot; on an out the throw just beats him to first.
+        let pace = match pl.kind {
+            PlayKind::Hit(4) => 0.9,
+            PlayKind::Hit(_) => 1.3,
+            _ => 1.05,
         };
         let prog = (k * pace * bases_got.max(1.0)).min(bases_got);
         let bp = on_paths(prog);
@@ -1073,8 +1129,15 @@ impl DiamondDays {
             out,
         );
         // The ball (in the glove once caught), and its shadow on the grass.
-        let ball = match caught_at {
-            Some(c) if kk >= 1.0 => [c[0], 1.0, c[2]],
+        let throw = ((k - 0.74) / 0.2).clamp(0.0, 1.0);
+        let ball = match (caught_at, first_glove) {
+            // Fielded and thrown across to first.
+            (Some(c), Some(to)) if kk >= 1.0 && throw > 0.0 => {
+                let mut b = lerp3([c[0], 1.2, c[2]], to, throw);
+                b[1] += (throw * PI).sin() * 1.6;
+                b
+            }
+            (Some(c), _) if kk >= 1.0 => [c[0], 1.0, c[2]],
             _ => [ground[0], y, ground[2]],
         };
         push_ball(out, ball, 0.42);
@@ -1138,7 +1201,7 @@ mod tests {
     #[test]
     fn the_stands_share_one_picture() {
         let mut props = Vec::new();
-        ballpark(&mut props, false);
+        ballpark(&mut props, false, 0.0, 0.0);
         assert!(props.iter().any(|p| p.texture.is_some()));
         let doc = WorldDoc {
             version: 1,

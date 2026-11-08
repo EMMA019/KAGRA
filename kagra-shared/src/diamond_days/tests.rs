@@ -1363,7 +1363,7 @@ fn match_in_3d_to_png() {
             .find(|p| p.id == id)
             .map(|p| p.position)
     };
-    let (mut pitch, mut field, mut idle) = (false, false, false);
+    let (mut pitch, mut field, mut idle, mut grounder) = (false, false, false, false);
     for _ in 0..60000 {
         match g.mode {
             Mode::Match {
@@ -1391,7 +1391,22 @@ fn match_in_3d_to_png() {
                 field = true;
             }
         }
-        if pitch && field {
+        // A ground ball on its way across to first.
+        let kind = match (&g.mode, g.game.as_ref()) {
+            (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => {
+                gm.log.get(shown - 1).map(|p| p.kind)
+            }
+            _ => None,
+        };
+        if let (false, Some(sim::PlayKind::GroundOut), Some(b), Some(_)) =
+            (grounder, kind, find(&g, "ball"), shadow)
+        {
+            if b[0] > 8.0 && b[1] > 1.5 {
+                shot(&g, "3d_grounder");
+                grounder = true;
+            }
+        }
+        if pitch && field && grounder {
             break;
         }
     }
