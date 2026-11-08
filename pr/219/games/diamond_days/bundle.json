@@ -113,10 +113,11 @@
     "pause": true,
     "fixed_step": true,
     "save": true,
+    "resume": true,
     "blurb": "blurb.diamond",
     "url_params": {
       "week": "string"
     }
   },
-  "build": "a828bb12dd1e"
+  "build": "4cc10f69ae49"
 }
