@@ -1629,6 +1629,31 @@ fn opening_a_kept_run_says_where_it_stands_first() {
         tap(&mut h, 195.0, 400.0);
     }
     assert_eq!(h.mode, Mode::Plan);
+    // Camp and exam weeks say so, and open on them after the tap.
+    for (week, says, title) in [
+        (board::CAMP_WEEK, "夏合宿", None),
+        (board::EXAM_WEEK, "テスト週間", Some("テスト")),
+    ] {
+        let mut h = world_with(kept(week), None);
+        let _ = h.hud(W, H, false);
+        h.confirm();
+        assert_eq!(h.notes[0].title_ja, "おかえりなさい、監督");
+        assert!(
+            h.notes[0].lines[1].1.contains(says),
+            "{:?}",
+            h.notes[0].lines
+        );
+        tap(&mut h, 195.0, 400.0);
+        if let Some(t) = title {
+            assert_eq!(h.notes.first().map(|n| n.title_ja.as_str()), Some(t));
+        } else {
+            assert!(
+                h.mode == Mode::Notice || matches!(h.mode, Mode::CampTalk { .. }),
+                "camp opens: {:?}",
+                h.mode
+            );
+        }
+    }
     // `?week=` does not move a kept run.
     let mut h = world_with(kept(2), Some(6));
     h.confirm();

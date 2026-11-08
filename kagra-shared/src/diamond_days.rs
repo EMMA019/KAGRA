@@ -684,7 +684,22 @@ impl DiamondDays {
             ),
             format!("{y}年目 {m}月 第{wk}週、{w}勝{l}敗。前回の続きからです。"),
         )];
+        // What the week opens on, in the order `begin_week` takes them.
+        let camp = self.s.week == board::CAMP_WEEK && self.s.camp_year != self.s.year;
+        let exams = self.s.week == board::EXAM_WEEK && self.s.exam_year != self.s.year;
         lines.push(match self.game_this_week() {
+            _ if self.s.epilogue => (
+                "A milestone: time to decide what comes next.".into(),
+                "ひと区切りの時です。これからを決めましょう。".into(),
+            ),
+            _ if camp => (
+                "This week is summer camp.".into(),
+                "今週は夏合宿です。".into(),
+            ),
+            _ if exams => (
+                "This week is exam week.".into(),
+                "今週はテスト週間です。".into(),
+            ),
             Some(f) => {
                 let (en, ja) = Self::fixture_name(f);
                 (
