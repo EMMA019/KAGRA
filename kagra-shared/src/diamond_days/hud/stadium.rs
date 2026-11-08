@@ -605,8 +605,12 @@ pub(in crate::diamond_days) enum Finale {
     /// The home side won it in its last turn at bat: `hero` drove the run in, and his
     /// bench pours out to him.
     WalkOff { hero: String },
-    /// Both nines line up across the plate and bow.
+    /// Both nines line up across the plate and bow; in a tournament the winners then
+    /// sing their school song facing the field, and the losers run to their stands.
     LineUp,
+    /// We won a tournament outright (not by a walk-off): everyone runs to the mound and
+    /// makes a ring, fingers to the sky.
+    Crown,
 }
 
 /// A bow over `k` 0..1: up, held a moment, back up (0 upright, 1 the deepest point).
@@ -633,13 +637,30 @@ impl DiamondDays {
         let last = &g.log[at];
         // A walk-off ends on the play itself: one shout after it, the home side ahead.
         let walk_off = last.side == 1 && last.runs > 0 && g.runs(1) > g.runs(0) && at + 2 == shown;
+        let title =
+            self.cup_game().is_some_and(|f| f.is_final()) && g.runs(g.us) > g.runs(1 - g.us);
         Some(if walk_off {
             Finale::WalkOff {
                 hero: last.batter.clone(),
             }
+        } else if title {
+            Finale::Crown
         } else {
             Finale::LineUp
         })
+    }
+
+    /// We bat with a runner in scoring position: the band plays the chance theme.
+    pub(in crate::diamond_days) fn our_chance(
+        g: &Game,
+        pl: &crate::diamond_days::sim::Play,
+    ) -> bool {
+        pl.is_pa() && pl.side as usize == g.us && pl.bases0 & 0b110 != 0
+    }
+
+    /// The tournament game on screen, if this game is one.
+    pub(in crate::diamond_days) fn cup_game(&self) -> Option<crate::diamond_days::board::Fixture> {
+        self.game_this_week().filter(|f| f.is_cup())
     }
 
     /// A side's uniform (caps, not helmets).
@@ -770,8 +791,11 @@ impl DiamondDays {
             }
             Finale::LineUp => {
                 // Two rows in front of the plate, facing each other (the visitors on the
-                // third-base side), the umpire at the plate. They bow together, then the
-                // winners jump.
+                // third-base side), the umpire at the plate. They bow together. In a
+                // tournament the winners then turn to the field for their school song and
+                // the losers run to their stands to bow; after a practice game the winners
+                // just jump.
+                let cup = self.cup_game().is_some();
                 let won = |side: usize| g.runs(side) > g.runs(1 - side);
                 let ids: Vec<Vec<String>> = (0..2)
                     .map(|s| (0..9).map(|j| format!("row{s}-{j}")).collect())
@@ -782,18 +806,36 @@ impl DiamondDays {
                     let yaw = if side == 0 { FRAC_PI_2 } else { -FRAC_PI_2 };
                     for (j, b) in g.sides[side].bats.iter().take(9).enumerate() {
                         let face = self.face_for(g, side, &b.name);
-                        let after = k > 0.62;
-                        let mut p = [x, 0.0, -1.6 - j as f32 * 0.95];
-                        let (pose, expr) = if !after {
+                        let after = ((k - 0.6) / 0.4).clamp(0.0, 1.0);
+                        let home = [x, 0.0, -1.6 - j as f32 * 0.95];
+                        let mut p = home;
+                        let mut facing = yaw;
+                        let (pose, expr) = if k <= 0.6 {
                             (Pose::Bow(bow_at(k, 0.14)), Expr::Serious)
+                        } else if won(side) && cup {
+                            // The school song: facing the field, standing tall.
+                            facing = PI;
+                            (Pose::Stand, Expr::Smile)
                         } else if won(side) {
                             p[1] = hop(j + side * 9);
                             (Pose::Cheer, Expr::Happy)
+                        } else if cup {
+                            // Off to their own stands, then a deep bow.
+                            let stands = [x.signum() * 24.0, 0.0, 2.0 - j as f32 * 1.1];
+                            let run = (after / 0.6).min(1.0);
+                            p = lerp3(home, stands, 1.0 - (1.0 - run).powi(2));
+                            if run < 1.0 {
+                                facing = face_toward(home, stands);
+                                (Pose::Run(clock * 1.8 + j as f32 * 0.3), Expr::Sad)
+                            } else {
+                                facing = face_toward(stands, [x.signum() * 40.0, 0.0, 8.0]);
+                                (Pose::Bow(bow_at((after - 0.6) * 1.2, 0.0)), Expr::Sad)
+                            }
                         } else {
                             (Pose::Bow(0.4), Expr::Sad)
                         };
                         chibi3d::build(
-                            &Figure::new(&ids[j], p, yaw, H, &face, &kit)
+                            &Figure::new(&ids[j], p, facing, H, &face, &kit)
                                 .pose(pose)
                                 .expr(expr)
                                 .lefty(lefty(&b.name))
@@ -824,6 +866,82 @@ impl DiamondDays {
                 View {
                     eye: [0.0, 8.0 - push * 1.2, -25.0 + push * 3.0],
                     target: [0.0, 0.8, -4.6],
+                    fov: 30.0,
+                }
+            }
+            Finale::Crown => {
+                // Everyone sprints from where they stood to the mound and makes a ring
+                // round the pitcher, jumping, fingers to the sky; the other nine stand by
+                // their bench with their heads down.
+                let us = g.us;
+                let kit = self.side_kit(g, us);
+                let mound = [0.0, MOUND_TOP, MOUND_Z];
+                let pitcher = g
+                    .log
+                    .iter()
+                    .rev()
+                    .find(|q| q.is_pa() && q.side as usize != us)
+                    .map(|q| q.pitcher.clone())
+                    .unwrap_or_default();
+                let run = (k / 0.3).min(1.0);
+                let e = 1.0 - (1.0 - run).powi(2);
+                let ids: Vec<String> = (0..9).map(|i| format!("ring{i}")).collect();
+                for (i, id) in ids.iter().enumerate() {
+                    let face = self.fielder_face(g, us, i, &pitcher);
+                    let a = i as f32 / 8.0 * std::f32::consts::TAU + 0.3;
+                    let goal = if i == 0 {
+                        mound
+                    } else {
+                        [a.cos() * 1.6, MOUND_TOP, MOUND_Z + a.sin() * 1.6]
+                    };
+                    let mut p = lerp3(fielder_spot(i), goal, e);
+                    let (pose, yaw) = if run < 1.0 && i > 0 {
+                        (
+                            Pose::Run(clock * 1.8 + i as f32 * 0.3),
+                            face_toward(fielder_spot(i), goal),
+                        )
+                    } else {
+                        p[1] += hop(i) * 1.2;
+                        (
+                            Pose::Cheer,
+                            face_toward(goal, mound) + if i == 0 { PI } else { 0.0 },
+                        )
+                    };
+                    chibi3d::build(
+                        &Figure::new(id, p, yaw, H, &face, &kit)
+                            .pose(pose)
+                            .expr(Expr::Happy)
+                            .lefty(lefty(&pitcher) && i == 0)
+                            .glove(false)
+                            .detail(Detail::Far),
+                        out,
+                    );
+                }
+                let them = 1 - us;
+                let tkit = self.side_kit(g, them);
+                let bench_x: f32 = if them == 0 { -14.0 } else { 14.0 };
+                let ids: Vec<String> = (0..9).map(|j| format!("lost{j}")).collect();
+                for (j, b) in g.sides[them].bats.iter().take(9).enumerate() {
+                    let face = self.face_for(g, them, &b.name);
+                    let p = [
+                        bench_x + (j % 3) as f32 * bench_x.signum() * 1.0,
+                        0.0,
+                        -2.0 - (j / 3) as f32 * 1.2,
+                    ];
+                    chibi3d::build(
+                        &Figure::new(&ids[j], p, face_toward(p, mound), H, &face, &tkit)
+                            .pose(Pose::Bow(0.5))
+                            .expr(Expr::Sad)
+                            .glove(false)
+                            .detail(Detail::Far),
+                        out,
+                    );
+                }
+                // From behind home, low, the ring against the outfield and the stands.
+                let push = k.min(1.0);
+                View {
+                    eye: [0.0, 5.5 + push * 1.0, 4.0 - push * 4.0],
+                    target: [0.0, 1.2, MOUND_Z],
                     fov: 30.0,
                 }
             }
@@ -915,6 +1033,13 @@ impl DiamondDays {
                     };
                     big * (1.0 - ((k - 0.75) * 4.0).max(0.0))
                 })
+                .unwrap_or(0.0),
+            // Our chance: the band strikes up the chance theme and the stands sway.
+            (Phase::Pitch { .. }, Some(i)) => g
+                .log
+                .get(i)
+                .filter(|pl| Self::our_chance(g, pl))
+                .map(|_| 0.3)
                 .unwrap_or(0.0),
             _ => 0.0,
         };

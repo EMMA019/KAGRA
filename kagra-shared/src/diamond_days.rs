@@ -884,7 +884,67 @@ impl DiamondDays {
         } else {
             0.0
         } + if self.s.studied { 3.0 } else { 0.0 };
-        Side::rival(&mut self.rng, &en, &ja, (level - ease).clamp(28.0, 92.0))
+        let mut side = Side::rival(&mut self.rng, &en, &ja, (level - ease).clamp(28.0, 92.0));
+        // The rival ace takes the ball against us.
+        if let Some((ai, name)) = self.rival_ace() {
+            if ai == idx {
+                let grade = self.s.year.clamp(1, 3) as f32;
+                if let Some(arm) = side.arms.first_mut() {
+                    let old = std::mem::replace(&mut arm.name, name.to_string());
+                    arm.velo = 134.0 + grade * 7.0;
+                    arm.control = 50.0 + grade * 9.0;
+                    arm.breaking = 52.0 + grade * 9.0;
+                    arm.endurance += 15.0;
+                    arm.abil |= team::BIT_PINCH;
+                    for b in side.bats.iter_mut().filter(|b| b.name == old) {
+                        b.name = name.to_string();
+                    }
+                }
+            }
+        }
+        side
+    }
+
+    /// The rival ace: the monster at the strongest academy on the circuit, a first-year
+    /// in the first year of a chapter and a year older every year after. (School, name.)
+    pub(crate) fn rival_ace(&self) -> Option<(usize, &'static str)> {
+        const NAMES: [&str; 5] = ["神崎", "氷室", "鷹野", "不破", "黒崎"];
+        let i = self
+            .s
+            .rivals
+            .iter()
+            .position(|s| s.name_ja == "星見学園")
+            .or_else(|| {
+                (0..self.s.rivals.len()).max_by(|a, b| {
+                    self.s.rivals[*a]
+                        .strength
+                        .total_cmp(&self.s.rivals[*b].strength)
+                })
+            })?;
+        Some((i, NAMES[(self.chapter() as usize - 1) % NAMES.len()]))
+    }
+
+    /// Where the rival ace waits in this draw, in a line (if he is on our path).
+    fn rival_ace_line(&self, f: Fixture) -> Option<(String, String)> {
+        let (ai, name) = self.rival_ace()?;
+        let at = self.s.cup_path.iter().position(|&i| i as usize == ai)?;
+        let school = &self.s.rivals[ai];
+        let (rn, rn_ja) = f.at(at as u8 + 1).round_name();
+        let velo = 134 + self.s.year.clamp(1, 3) as u32 * 7;
+        Some(match self.s.year {
+            1 => (
+                format!("{} has a first-year ace they call a monster: {name}. If we keep winning, the {rn}.", school.name),
+                format!("{}には、1年生でエースナンバーを背負う怪物がいる。名前は{name}。勝ち上がれば{rn_ja}で当たる。", school.name_ja),
+            ),
+            2 => (
+                format!("{name} is a second-year now, up to {velo} km/h. He waits in the {rn}."),
+                format!("{name}は2年生になり、球速は{velo}キロ。{rn_ja}で待っている。"),
+            ),
+            _ => (
+                format!("{name}'s last summer too. {velo} km/h. The {rn}."),
+                format!("{name}にとっても最後の夏。{velo}キロの怪物が{rn_ja}で待っている。"),
+            ),
+        })
     }
 
     /// Who we meet in a fixture: the tournament's draw, or this week's practice school.
@@ -949,6 +1009,11 @@ impl DiamondDays {
             )),
             Fixture::Practice => {}
         }
+        if !matches!(f, Fixture::National(_) | Fixture::Spring(_)) {
+            if let Some(l) = self.rival_ace_line(f) {
+                lines.push(l);
+            }
+        }
         if let Some(c) = self.captain_line() {
             lines.push(c);
         }
@@ -982,12 +1047,8 @@ impl DiamondDays {
                 None => path.push(AWAY + r),
             }
         }
-        // The best school on the circuit is in our half: we meet it late.
-        if let Some(top) = (0..n).max_by(|a, b| {
-            self.s.rivals[*a]
-                .strength
-                .total_cmp(&self.s.rivals[*b].strength)
-        }) {
+        // The rival ace's school is in our half: we meet it late.
+        if let Some((top, _)) = self.rival_ace() {
             let late = (rounds as usize).saturating_sub(2);
             if let Some(at) = path.iter().position(|&i| i as usize == top) {
                 if at < late {
@@ -1106,6 +1167,7 @@ impl DiamondDays {
             self.s.losses += 1;
             crate::mixer::cue_sfx("lose");
         }
+        let faced = self.rival_idx;
         if let Some(i) = self.rival_idx.take() {
             if let Some(school) = self.s.rivals.get_mut(i) {
                 school.met = school.met.saturating_add(1);
@@ -1140,6 +1202,21 @@ impl DiamondDays {
                 .cup_scores
                 .push((us.min(255) as u8, them.min(255) as u8));
             self.s.studied = false;
+        }
+        if let (Some((ai, name)), Some(i)) = (self.rival_ace(), faced) {
+            if ai == i {
+                lines.push(if won {
+                    (
+                        format!("We beat the monster! {name} looks up at the sky, cap in hand."),
+                        format!("怪物・{name}を打ち崩した！{name}は帽子を取って空を見上げた。"),
+                    )
+                } else {
+                    (
+                        format!("{name}, from the mound: \"Come back next year.\""),
+                        format!("{name}「……また来いよ」マウンドの上で、怪物が笑った。"),
+                    )
+                });
+            }
         }
         let (r, last) = (f.round(), f.is_final());
         match f {
@@ -1559,6 +1636,7 @@ impl DiamondDays {
                 "You: \"Hold your heads up. You left this summer to the ones behind you.\"".into(),
                 "監督「胸を張れ。お前たちの夏は、ちゃんと後輩に残った」".into(),
             ));
+            let kotori_leaves = self.s.year >= self.spec.years && self.chapter() == 1;
             crate::mixer::cue_sfx("event");
             self.note("Farewell, seniors", "3年生 引退", lines);
             if let Some(note) = self.notes.last_mut() {
@@ -1576,6 +1654,26 @@ impl DiamondDays {
                 note.roles = leaving.iter().map(|p| p.role).collect();
             }
             self.s.seniors.extend(leaving);
+            if kotori_leaves {
+                self.note(
+                    "A letter from Kotori",
+                    "ことりの手紙",
+                    vec![
+                        (
+                            "Coach, thank you for three years. My summer is over too.".into(),
+                            "監督へ。三年間、本当にありがとうございました。私の夏も、今日で終わりです。".into(),
+                        ),
+                        (
+                            "The first day you came, there were twelve of us and no summer wins. Look at us now.".into(),
+                            "監督が来た日、部員は12人で、夏は一度も勝てなかったんですよ。今のみんなを見てください。".into(),
+                        ),
+                        (
+                            "I'll keep coming as an old girl to keep your scorebook. Please keep taking them further.".into(),
+                            "これからはOGとして、スコアをつけに来ますね。もっと上へ、連れていってあげてください。".into(),
+                        ),
+                    ],
+                );
+            }
         }
         // Nine and a spare, whatever it takes.
         let short = 10usize.saturating_sub(self.s.team.players.len());
@@ -2243,6 +2341,22 @@ impl DiamondDays {
                 ),
             )],
         );
+        if self.chapter() == 1 {
+            let line = match self.s.year {
+                2 => Some((
+                    "Kotori is a second-year now. \"This year, further up!\"",
+                    "ことりも2年生。「今年こそ、もっと上へ！」",
+                )),
+                3 => Some((
+                    "Kotori's third year: her last summer is coming too.",
+                    "ことりは3年生。彼女にとっても、最後の夏がやってくる。",
+                )),
+                _ => None,
+            };
+            if let (Some((en, ja)), Some(n)) = (line, self.notes.last_mut()) {
+                n.lines.push((en.into(), ja.into()));
+            }
+        }
         let fresh = names(&self.s.team, 1);
         if let Some(n) = self.notes.last_mut() {
             n.faces = fresh;

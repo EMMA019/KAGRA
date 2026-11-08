@@ -167,6 +167,20 @@ Three autumn wins put the club on the list for the **Blossom Invitational** (春
 in March, two make it a coin toss; the answer comes on selection day in January. It is
 not a licensed event name.
 
+## The story of the first chapter
+
+Original characters, told in the notes as the year goes:
+
+- **Kotori** (七瀬ことり), the manager, starts as a first-year the day the coach arrives
+  and grows a year with the club. Her own summer ends with the third year's: a letter
+  to the coach, and she stays on as an old girl to keep the scorebook.
+- **The founding captain**, a third-year: his last summer is the coach's first. The goal
+  that year is one summer win, after ten years without one.
+- **The rival ace** (神崎 at 星見学園; later chapters bring a new name): a first-year
+  monster in year 1, a year older and faster every year (141, 148, 155 km/h). The draw
+  puts his school in our half, in the semifinal; the summer opening names where he
+  waits, and beating him (or losing to him) gets its line.
+
 ## School life, thinly
 
 - **Exams.** The old exam event, and a fixed week in January. Mood drops. One or two
@@ -225,6 +239,13 @@ on the broadcast, and leaving the result opens a green curtain with 練習に戻
    heads down (サヨナラ！); any other end lines both nines up in two rows in front of the
    plate, the umpire at the plate, and they bow together, then the winners jump and the
    losers hang their heads (ゲームセット). Paper falls on our wins.
+   Tournament ceremonies, at the last line of a tournament game: after the bow the
+   winners turn to the field for their school song (ours with words of our own, a line
+   at a time: 「朝日に映える 学び舎の」…), and the losers run to their own stands and
+   bow (「ありがとうございました！」). Winning a final (not by a walk-off) is the ring at
+   the mound: the whole nine sprint in, jump, fingers to the sky, 優勝！ with paper
+   falling. With a runner in scoring position for us, the brass band plays the chance
+   theme (♪ チャンステーマ ♪) and the stands sway.
 3. **The result.** Win or loss, the final line score, the player of the game (a chibi
    cheering, with his line), the game experience the club earned (practice points: batting
    for every one of the nine, more per hit; pitching for whoever pitched, more for

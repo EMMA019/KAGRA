@@ -235,7 +235,10 @@ impl DiamondDays {
         let secs = if t.is_finite() { t.min(hold) } else { hold };
         let k = secs / hold.max(0.05);
         let we_won = g.runs(g.us) > g.runs(1 - g.us);
+        let cup = self.cup_game();
+        let crowned = we_won && cup.is_some_and(|c| c.is_final());
         let (title, col) = match f {
+            _ if crowned => (self.tr("CHAMPIONS!", "優勝！"), art::GOLD),
             super::stadium::Finale::WalkOff { .. } if we_won => {
                 (self.tr("WALK-OFF!", "サヨナラ！"), art::GOLD)
             }
@@ -243,7 +246,9 @@ impl DiamondDays {
                 self.tr("WALK-OFF LOSS", "サヨナラ負け…"),
                 [170, 200, 255, 255],
             ),
-            super::stadium::Finale::LineUp => (self.tr("GAME SET", "ゲームセット"), WHITE),
+            super::stadium::Finale::LineUp | super::stadium::Finale::Crown => {
+                (self.tr("GAME SET", "ゲームセット"), WHITE)
+            }
         };
         if we_won {
             p.sunburst(
@@ -270,22 +275,81 @@ impl DiamondDays {
             3.0,
             TextAlign::Center,
         );
-        if let Some(pl) = g.log.get(shown - 1) {
-            let txt = if ja { &pl.ja } else { &pl.en };
-            let one: String = wrap(txt, 16.0, 340.0)
-                .into_iter()
-                .next()
-                .unwrap_or_default();
+        // Under the title: the tournament won, the school song, the greeting to the
+        // stands, or the shout of the last line.
+        let (line, line_ja) = self.finale_caption(g, f, k, cup, we_won);
+        let say = if ja { line_ja } else { line };
+        for (i, one) in wrap(&say, 16.0, 340.0).into_iter().take(2).enumerate() {
             p.text_outlined(
                 &one,
                 200.0,
-                mid + 40.0,
+                mid + 40.0 + i as f32 * 22.0,
                 16.0,
-                WHITE,
+                if crowned { [255, 236, 170, 255] } else { WHITE },
                 [16, 18, 30, 255],
                 2.0,
                 TextAlign::Center,
             );
+        }
+    }
+
+    /// The line under the title at the end of a game: the tournament won, the school song
+    /// after a tournament win (ours with its words), the walk to the stands after a loss,
+    /// or the game's last shout.
+    fn finale_caption(
+        &self,
+        g: &Game,
+        f: super::stadium::Finale,
+        k: f32,
+        cup: Option<board::Fixture>,
+        we_won: bool,
+    ) -> (String, String) {
+        let shout = || {
+            g.log
+                .last()
+                .map(|pl| (pl.en.clone(), pl.ja.clone()))
+                .unwrap_or_default()
+        };
+        let Some(c) = cup else { return shout() };
+        let (name, name_ja) = c.cup_name();
+        if we_won && c.is_final() {
+            return (format!("{name}: champions!"), format!("{name_ja}、優勝！"));
+        }
+        if !matches!(f, super::stadium::Finale::LineUp) || k <= 0.6 {
+            return shout();
+        }
+        if we_won {
+            // Our school song: words of our own, a line at a time.
+            let school = self.school_ja().trim_end_matches("高校").to_string();
+            let words = [
+                (
+                    "Morning light upon our hill",
+                    "朝日に映える 学び舎の".to_string(),
+                ),
+                (
+                    "Young hearts that chase the white ball",
+                    "白き球追う 若人よ".to_string(),
+                ),
+                (
+                    "Our school, our pride",
+                    format!("ああ{school} われらが{school}"),
+                ),
+            ];
+            let i = (((k - 0.6) / 0.4) * 3.0).min(2.0) as usize;
+            let (en, ja) = &words[i];
+            (format!("♪ School song: {en} ♪"), format!("♪ 校歌「{ja}」♪"))
+        } else {
+            let them = &g.sides[1 - g.us];
+            (
+                format!(
+                    "{} sing their song. We run to our stands: \"Thank you!\"",
+                    them.name
+                ),
+                format!(
+                    "{}の校歌が流れる。応援席へ走り、「ありがとうございました！」",
+                    them.name_ja
+                ),
+            )
         }
     }
 
@@ -573,6 +637,22 @@ impl DiamondDays {
                 [r[0] + r[2] - 74.0, r[1] + r[3] - 92.0, 66.0, 84.0],
                 &marks,
             );
+        }
+        // Our chance: the brass band's chance theme, swaying in the corner.
+        if let (Some(pl), Phase::Pitch { .. }) = (pa, phase) {
+            if Self::our_chance(g, pl) {
+                let sway = (self.clock * 6.0).sin();
+                p.text_outlined(
+                    self.tr("♪ Chance theme! ♪", "♪ チャンステーマ ♪"),
+                    r[0] + r[2] - 12.0,
+                    r[1] + 10.0 + sway * 2.0,
+                    15.0,
+                    [255, 220, 120, 255],
+                    [60, 20, 20, 255],
+                    2.0,
+                    TextAlign::Right,
+                );
+            }
         }
         // The calls in force for this batter: ours, and what the other bench called.
         if let (Some(pl), Phase::Pitch { .. } | Phase::Result { .. }) = (pa, phase) {

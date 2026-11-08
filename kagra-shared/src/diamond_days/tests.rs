@@ -1961,6 +1961,24 @@ fn big_moments_in_3d_to_png() {
             shot(&mut g, x, n, hold * 0.32, "3d_bow_low");
         }
     }
+    // The ceremonies of a tournament: the school song, the stands, the ring at the mound.
+    let won = games.iter().find(|x| {
+        x.runs(x.us) > x.runs(1 - x.us)
+            && matches!(g.finale(x, x.log.len()), Some(hud::Finale::LineUp))
+    });
+    let lost = games.iter().find(|x| x.runs(x.us) < x.runs(1 - x.us));
+    for (x, cup, k, name) in [
+        (won, Fixture::Summer(3), 0.85, "3d_song"),
+        (lost, Fixture::Summer(3), 0.97, "3d_stands"),
+        (won, Fixture::Summer(6), 0.7, "3d_crown"),
+    ] {
+        let Some(x) = x else { continue };
+        g.s.cup = Some(cup);
+        g.game = Some(x.clone());
+        let hold = g.line_time(x.log.len());
+        shot(&mut g, x, x.log.len(), hold * k, name);
+    }
+    g.s.cup = None;
 }
 
 /// Drive the screens with the first choice everywhere until `stop` holds (notes are read
@@ -2222,4 +2240,172 @@ fn season_screens_to_png() {
     );
     run(&mut g, 1.5);
     shot(&g, "s5_captain");
+}
+
+/// The ceremonies: a tournament win plays the school song (ours with its words) while
+/// the winners face the field; a loss runs to the stands; winning a final makes a ring at
+/// the mound; and our chance strikes up the band.
+#[test]
+fn tournament_ceremonies_school_song_stands_and_the_ring() {
+    let mut g = on_game_day();
+    let games = games_to_the_end(&g, 0..200, false);
+    let texts = |g: &DiamondDays| -> Vec<String> {
+        all_texts(&g.hud(W, H, false))
+            .map(|t| t.text.clone())
+            .collect()
+    };
+    let show = |g: &mut DiamondDays, x: &sim::Game, k: f32| {
+        g.game = Some(x.clone());
+        let n = x.log.len();
+        let t = g.line_time(n) * k;
+        g.mode = Mode::Match {
+            shown: n,
+            t,
+            asking: None,
+        };
+    };
+    let won_plain = games
+        .iter()
+        .find(|x| {
+            x.runs(x.us) > x.runs(1 - x.us)
+                && matches!(g.finale(x, x.log.len()), Some(hud::Finale::LineUp))
+        })
+        .expect("a win that ends on a bow");
+    let lost = games
+        .iter()
+        .find(|x| x.runs(x.us) < x.runs(1 - x.us))
+        .expect("a loss");
+    // A tournament win, not the final: the school song, the winners facing the field.
+    g.s.cup = Some(Fixture::Summer(3));
+    show(&mut g, won_plain, 0.85);
+    assert!(
+        texts(&g).iter().any(|t| t.contains("校歌")),
+        "{:?}",
+        texts(&g)
+    );
+    let doc = g.match_world();
+    let ours = g.s.team.players.len().min(9);
+    assert!(ours > 0);
+    let row = format!("row{}-0:", won_plain.us);
+    // The head turns with the body: the biggest ball of the figure.
+    let head = doc
+        .props
+        .iter()
+        .filter(|p| p.id.starts_with(&row) && p.model == "sphere")
+        .max_by(|a, b| a.scale[0].total_cmp(&b.scale[0]))
+        .unwrap();
+    assert!(
+        (head.yaw.abs() - std::f32::consts::PI).abs() < 0.3,
+        "facing the field: {}",
+        head.yaw
+    );
+    // A tournament loss: off to the stands.
+    show(&mut g, lost, 0.85);
+    assert!(
+        texts(&g).iter().any(|t| t.contains("応援席")),
+        "{:?}",
+        texts(&g)
+    );
+    let doc = g.match_world();
+    let row = format!("row{}-0:", lost.us);
+    let ran = doc
+        .props
+        .iter()
+        .filter(|p| p.id.starts_with(&row))
+        .map(|p| p.position[0].abs())
+        .fold(0.0f32, f32::max);
+    assert!(ran > 10.0, "they ran to their stands: {ran}");
+    // Winning the final: everyone at the mound in a ring, the title on top.
+    g.s.cup = Some(Fixture::Summer(6));
+    show(&mut g, won_plain, 0.8);
+    assert_eq!(
+        g.finale(won_plain, won_plain.log.len()),
+        Some(hud::Finale::Crown)
+    );
+    assert!(texts(&g).iter().any(|t| t == "優勝！"));
+    let doc = g.match_world();
+    let near_mound = (0..9)
+        .filter(|i| {
+            doc.props
+                .iter()
+                .filter(|p| p.id.starts_with(&format!("ring{i}:")))
+                .any(|p| (p.position[0]).hypot(p.position[2] + 18.44) < 3.0)
+        })
+        .count();
+    assert_eq!(near_mound, 9, "the whole nine at the mound");
+    // Our chance: the band plays.
+    g.s.cup = None;
+    let (x, i) = games
+        .iter()
+        .find_map(|x| {
+            x.log
+                .iter()
+                .position(|q| {
+                    q.is_pa()
+                        && q.side as usize == x.us
+                        && q.bases0 & 0b110 != 0
+                        && !q.pitches().is_empty()
+                })
+                .map(|i| (x, i))
+        })
+        .expect("a chance of ours");
+    g.game = Some(x.clone());
+    g.mode = Mode::Match {
+        shown: i + 1,
+        t: 0.1,
+        asking: None,
+    };
+    assert!(texts(&g).iter().any(|t| t.contains("チャンステーマ")));
+}
+
+/// The rival ace waits late in our prefectural draw, a year older and faster every year,
+/// and the draw says so.
+#[test]
+fn the_rival_ace_waits_in_our_half_and_grows() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let (ai, name) = g.rival_ace().expect("a rival ace");
+    assert_eq!(g.s.rivals[ai].name_ja, "星見学園");
+    let mut velo = Vec::new();
+    for year in 1..=3u8 {
+        g.s.year = year;
+        g.notes.clear();
+        g.s.cup = None;
+        g.s.week = 13;
+        g.s.summer_in = true;
+        g.s.seeded = false;
+        g.mode = Mode::Plan;
+        g.begin_week();
+        let at = g.s.cup_path.iter().position(|&i| i as usize == ai);
+        assert_eq!(at, Some(4), "the semifinal of six rounds");
+        let said: Vec<String> = g
+            .notes
+            .iter()
+            .flat_map(|n| n.lines.iter().map(|l| l.1.clone()))
+            .collect();
+        assert!(said.iter().any(|l| l.contains(name)), "{said:?}");
+        let side = g.rival_side(Fixture::Summer(5), ai);
+        assert_eq!(side.arms[0].name, name);
+        assert!(side.bats.iter().any(|b| b.name == name), "he bats too");
+        velo.push(side.arms[0].velo);
+    }
+    assert!(velo[0] < velo[1] && velo[1] < velo[2], "{velo:?}");
+}
+
+/// Kotori grows a year with the club, and her own summer ends with the third year's.
+#[test]
+fn kotoris_last_summer_ends_with_a_letter() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.year = g.spec.years;
+    g.notes.clear();
+    g.retire_seniors();
+    assert!(g.notes.iter().any(|n| n.title == "A letter from Kotori"));
+    // Only in the first chapter's third year.
+    let mut h = started();
+    tap(&mut h, 195.0, 400.0);
+    h.s.year = 2;
+    h.notes.clear();
+    h.retire_seniors();
+    assert!(!h.notes.iter().any(|n| n.title == "A letter from Kotori"));
 }
