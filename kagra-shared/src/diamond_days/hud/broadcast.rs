@@ -43,7 +43,7 @@ fn team_axes(side: &Side) -> [f32; 5] {
 
 /// Where the latest line of a game is on screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Phase {
+pub(super) enum Phase {
     /// Between plate appearances (or a line of words): the next batter waits.
     Idle,
     /// Pitch `i` of the plate appearance, `k` 0..1 through it.
@@ -75,7 +75,7 @@ fn hash(s: &str, i: usize) -> u64 {
 }
 
 /// Where pitch `i` of `play` crossed the plate (zone units; inside -1..1 is a strike).
-fn location(play: &Play, i: usize, pitch: Pitch) -> P {
+pub(super) fn location(play: &Play, i: usize, pitch: Pitch) -> P {
     let h = hash(&play.en, i);
     let f = |s: u32| ((h >> s) & 0xff) as f32 / 255.0;
     match pitch {
@@ -125,7 +125,46 @@ fn outs_from(kind: PlayKind) -> u8 {
     }
 }
 
-fn in_play(kind: PlayKind) -> bool {
+/// A small strike zone panel: the zone in thirds, and a numbered dot where each pitch
+/// crossed (gold for strikes, blue for balls). Zone units run -1..1 inside the box.
+fn draw_zone(p: &mut Painter, r: [f32; 4], marks: &[(P, bool)]) {
+    let [x, y, w, h] = r;
+    p.panel(x, y, w, h, 8.0, [14, 18, 34, 190], [10, 12, 24, 190], 0.0);
+    // The zone sits inside with room for balls around it.
+    let (zw, zh) = (w * 0.5, h * 0.5);
+    let (zx, zy) = (x + (w - zw) * 0.5, y + (h - zh) * 0.5);
+    let box_ = [[zx, zy], [zx + zw, zy], [zx + zw, zy + zh], [zx, zy + zh]];
+    p.fill(&box_, Paint::Solid([255, 255, 255, 26]));
+    for i in 1..3 {
+        let fx = zx + zw * i as f32 / 3.0;
+        let fy = zy + zh * i as f32 / 3.0;
+        p.line(&[[fx, zy], [fx, zy + zh]], 0.8, [255, 255, 255, 70]);
+        p.line(&[[zx, fy], [zx + zw, fy]], 0.8, [255, 255, 255, 70]);
+    }
+    p.outline(&box_, 1.4, [255, 255, 255, 190]);
+    for (n, (q, strike)) in marks.iter().enumerate() {
+        let c = [
+            (zx + zw * (0.5 + q[0] * 0.5)).clamp(x + 6.0, x + w - 6.0),
+            (zy + zh * (0.5 + q[1] * 0.5)).clamp(y + 6.0, y + h - 6.0),
+        ];
+        let col = if *strike {
+            [255, 206, 60, 255]
+        } else {
+            [110, 196, 255, 255]
+        };
+        p.dot(c[0], c[1], 6.0, col);
+        p.text(
+            &format!("{}", n + 1),
+            c[0],
+            c[1] - 5.5,
+            9.0,
+            [20, 22, 36, 255],
+            TextAlign::Center,
+        );
+    }
+}
+
+pub(super) fn in_play(kind: PlayKind) -> bool {
     matches!(
         kind,
         PlayKind::Hit(_)
@@ -138,7 +177,7 @@ fn in_play(kind: PlayKind) -> bool {
 }
 
 impl DiamondDays {
-    fn phase(
+    pub(super) fn phase(
         &self,
         g: &Game,
         shown: usize,
@@ -174,7 +213,7 @@ impl DiamondDays {
         (Phase::Result { k }, Some(i))
     }
 
-    fn face_for(&self, g: &Game, side: usize, name: &str) -> Face {
+    pub(super) fn face_for(&self, g: &Game, side: usize, name: &str) -> Face {
         if side == g.us {
             self.club_face(name)
         } else {
@@ -305,10 +344,13 @@ impl DiamondDays {
         let ja = self.lang_ja;
         let hh = p.st.h;
         let [x0, y0, w, h] = p.st.screen;
-        p.fill(
-            &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
-            Paint::vertical(y0, y0 + h, [30, 40, 74, 255], [12, 16, 32, 255]),
-        );
+        // The 3D game shows through the band between the scoreboard and the lower panel
+        // (`stadium`); the HUD paints only above and below it.
+        let r = broadcast_rect(hh);
+        let bg = Paint::vertical(y0, y0 + h, [30, 40, 74, 255], [12, 16, 32, 255]);
+        let band = |a: f32, b: f32| [[x0, a], [x0 + w, a], [x0 + w, b], [x0, b]];
+        p.fill(&band(y0, r[1]), bg);
+        p.fill(&band(r[1] + r[3], y0 + h), bg);
         let colors = [self.side_color(g, 0), self.side_color(g, 1)];
         let (phase, line) = self.phase(g, shown, t, asking);
         let play = line.and_then(|i| g.log.get(i));
@@ -386,125 +428,10 @@ impl DiamondDays {
         }
         self.draw_scoreboard(p, g, 8.0, as_of);
 
-        // The broadcast picture.
-        let r = broadcast_rect(hh);
-        let night = matches!(board::month(self.s.week), 1 | 2 | 10..=12);
-        let field_view =
-            matches!((pa, phase), (Some(pl), Phase::Result { .. }) if in_play(pl.kind));
-        p.shadow(r[0], r[1], r[2], r[3], 6.0, 10.0, 120);
-        if field_view {
-            let pl = pa.expect("a play");
-            let k = if let Phase::Result { k } = phase {
-                k
-            } else {
-                1.0
-            };
-            let cheer = matches!(pl.kind, PlayKind::Hit(_)) || pl.runs > 0;
-            let home = art::game_field(p, r, false, cheer, self.clock);
-            for (dist, ang) in art::FIELDERS {
-                let c = art::field_pt(home, dist, ang);
-                art::figure(p, c, colors[fld_side], 9.0, false);
-            }
-            for b in 0..3 {
-                if bases & (1 << b) != 0 {
-                    let c = art::field_pt(
-                        home,
-                        if b == 1 { 38.8 } else { 27.4 },
-                        [45.0, 0.0, -45.0][b],
-                    );
-                    art::figure(p, [c[0] + 6.0, c[1] - 4.0], colors[bat_side], 9.0, false);
-                }
-            }
-            art::ball_flight(p, home, pl.kind, pl.dir, (k * 1.4).min(1.0));
-        } else {
-            let (windup, swing, ball, marks) = match (pa, phase) {
-                (Some(pl), Phase::Pitch { i, k }) => {
-                    let pitch = pitches[i];
-                    let windup = if k < 0.5 {
-                        k / 0.5 * 0.68
-                    } else {
-                        0.68 + ((k - 0.5) / 0.3).min(1.0) * 0.32
-                    };
-                    let swings = matches!(pitch, Pitch::Swinging | Pitch::Foul | Pitch::InPlay);
-                    let swing = if swings {
-                        ((k - 0.5) / 0.32).clamp(0.0, 1.0)
-                    } else {
-                        -1.0
-                    };
-                    let travel = (k - 0.42) / 0.3;
-                    let q = location(pl, i, pitch);
-                    let ball = if (0.0..=1.0).contains(&travel) {
-                        Some((travel, q))
-                    } else if matches!(pitch, Pitch::Foul) && travel > 1.0 && k < 0.95 {
-                        // Fouled back over the screen.
-                        let a = (travel - 1.0) * 3.0;
-                        Some((1.0, [q[0] - a * 1.5, q[1] - a * 4.0]))
-                    } else {
-                        None
-                    };
-                    let mut marks: Vec<(P, bool)> = (0..i)
-                        .map(|j| {
-                            let q = location(pl, j, pitches[j]);
-                            (q, is_strike(pitches[j], q))
-                        })
-                        .collect();
-                    if travel > 1.0 && !matches!(pitch, Pitch::Foul | Pitch::InPlay) {
-                        marks.push((q, is_strike(pitch, q)));
-                    }
-                    (windup, swing, ball, marks)
-                }
-                (Some(pl), Phase::Result { .. }) => {
-                    let swing = if pl.kind == PlayKind::Strikeout {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    (1.0, swing, None, Vec::new())
-                }
-                _ => (0.0, -1.0, None, Vec::new()),
-            };
-            let pitcher_face = self.face_for(g, fld_side, &pitcher);
-            let batter_face = self.face_for(g, bat_side, &batter);
-            let catcher_face = Face::from_seed(art::hash(&g.sides[fld_side].name) ^ 77);
-            let number = g.sides[bat_side]
-                .bats
-                .iter()
-                .position(|b| b.name == batter)
-                .map(|i| i as u8 + 1);
-            art::pitch_view(
-                p,
-                r,
-                &art::PitchScene {
-                    night,
-                    clock: self.clock,
-                    field: (colors[fld_side], fld_side == 0),
-                    bat: (colors[bat_side], bat_side == 0),
-                    pitcher: &pitcher_face,
-                    windup,
-                    batter: &batter_face,
-                    swing,
-                    number,
-                    catcher: &catcher_face,
-                    ball,
-                    marks: &marks,
-                    cheer: matches!(
-                        (pa, phase),
-                        (Some(pl), Phase::Result { .. })
-                            if pl.runs > 0 || matches!(pl.kind, PlayKind::Hit(_) | PlayKind::Strikeout)
-                    ),
-                },
-            );
+        // Gold rules along the edges of the picture.
+        for y in [r[1], r[1] + r[3]] {
+            p.fill(&band(y - 1.5, y + 1.5), Paint::Solid([210, 170, 70, 255]));
         }
-        p.outline(
-            &[
-                [r[0], r[1]],
-                [r[0] + r[2], r[1]],
-                [r[0] + r[2], r[1] + r[3]],
-                [r[0], r[1] + r[3]],
-            ],
-            3.0,
-            [12, 14, 26, 255],
-        );
 
         // The count box, top left of the picture.
         self.draw_count(
@@ -516,6 +443,25 @@ impl DiamondDays {
             outs,
             bases,
         );
+        // The strike zone, small in the corner: where each pitch of this turn crossed.
+        if let (Some(pl), Phase::Pitch { i, k }) = (pa, phase) {
+            let mut marks: Vec<(P, bool)> = (0..i)
+                .filter(|j| !matches!(pitches[*j], Pitch::InPlay))
+                .map(|j| {
+                    let q = location(pl, j, pitches[j]);
+                    (q, is_strike(pitches[j], q))
+                })
+                .collect();
+            if k > 0.74 && !matches!(pitches[i], Pitch::InPlay) {
+                let q = location(pl, i, pitches[i]);
+                marks.push((q, is_strike(pitches[i], q)));
+            }
+            draw_zone(
+                p,
+                [r[0] + r[2] - 74.0, r[1] + r[3] - 92.0, 66.0, 84.0],
+                &marks,
+            );
+        }
         if velo > 0.0 {
             if let (Some(_), Phase::Pitch { k, .. }) = (pa, phase) {
                 if k > 0.55 {

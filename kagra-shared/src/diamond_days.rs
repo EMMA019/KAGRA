@@ -203,7 +203,7 @@ struct Report {
 }
 
 /// How long one pitch takes on screen (seconds at normal speed).
-pub(crate) const PITCH_SECS: f32 = 0.45;
+pub(crate) const PITCH_SECS: f32 = 0.7;
 
 /// A message on the notice card.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1797,6 +1797,16 @@ impl DiamondDays {
     // ---- sim
 
     fn step_sim(&mut self, dt: f32) {
+        self.step_play(dt);
+        // The 3D world under the match HUD follows the game on screen.
+        if matches!(self.mode, Mode::Match { .. }) {
+            self.doc = self.match_world();
+        } else if !self.doc.props.is_empty() {
+            self.doc = WorldDoc::default();
+        }
+    }
+
+    fn step_play(&mut self, dt: f32) {
         self.clock += dt;
         self.pops.tick(dt);
         if let Some(t) = self.transition.as_mut() {

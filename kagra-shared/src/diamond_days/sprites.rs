@@ -69,14 +69,9 @@ pub fn country(p: &mut Painter, x: f32, y: f32, w: f32, h: f32) {
     cover(p, COUNTRY, [x, y, w, h], [0.5, 1.0]);
 }
 
-/// A graded sky plate. `night` is the moonless plate; day is the blue-hour one.
-pub fn sky(p: &mut Painter, night: bool, x: f32, y: f32, w: f32, h: f32) {
-    cover(
-        p,
-        if night { SKY_NIGHT } else { SKY_DAY },
-        [x, y, w, h],
-        [0.5, 0.5],
-    );
+/// A graded sky plate (the moonless one at night), for the backdrop round the 3D ballpark.
+pub fn sky_picture(night: bool) -> Option<PicId> {
+    pics()[if night { SKY_NIGHT } else { SKY_DAY }]
 }
 
 pub fn ball(p: &mut Painter, x: f32, y: f32, size: f32) {

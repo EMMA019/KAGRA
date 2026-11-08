@@ -1316,6 +1316,88 @@ fn a_starter_taken_out_keeps_his_line() {
     panic!("no game with a pinch hit for a starter who had batted");
 }
 
+/// The game in 3D with the HUD over it, rendered offscreen (a GPU or lavapipe):
+/// `KAGRA_SHOTS3D=<dir> cargo test --features render --lib match_in_3d -- --nocapture`.
+#[cfg(feature = "render")]
+#[test]
+fn match_in_3d_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS3D") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let shot = |g: &DiamondDays, name: &str| {
+        let hud = g.hud(W, H, false);
+        let t0 = std::time::Instant::now();
+        let doc = g.document().clone();
+        let rgba = crate::render::render_world_doc_with_hud(&doc, W, H, &hud).unwrap();
+        eprintln!(
+            "{name}: {} props, rendered in {:?}",
+            doc.props.len(),
+            t0.elapsed()
+        );
+        let mut c = crate::raster2d::Canvas::new(W, H, [0, 0, 0, 255]);
+        c.rgba = rgba;
+        c.save_png(&dir.join(format!("{name}.png"))).unwrap();
+    };
+    let night = std::env::var("KAGRA_NIGHT").is_ok();
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    // A spring game by day, an autumn one under the lights.
+    let weeks: Vec<u8> = if night { (25..=36).collect() } else { vec![6] };
+    for w in weeks {
+        g.s.week = w;
+        g.begin_week();
+        if g.mode == Mode::MatchIntro {
+            break;
+        }
+        g.mode = Mode::Plan;
+    }
+    press(&mut g, hud::Btn::PlayBall);
+    run(&mut g, 0.6);
+    let find = |g: &DiamondDays, id: &str| {
+        g.document()
+            .props
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.position)
+    };
+    let (mut pitch, mut field, mut idle) = (false, false, false);
+    for _ in 0..60000 {
+        match g.mode {
+            Mode::Match {
+                asking: Some(_), ..
+            } => {
+                if !idle {
+                    shot(&g, "3d_idle");
+                    idle = true;
+                }
+                press(&mut g, hud::Btn::Call(None));
+            }
+            Mode::Match { .. } => g.tick(DT),
+            _ => break,
+        }
+        let shadow = find(&g, "ball-shadow");
+        if let (false, Some(b), None) = (pitch, find(&g, "ball"), shadow) {
+            if b[2] < -6.0 && b[2] > -12.0 {
+                shot(&g, "3d_pitch");
+                pitch = true;
+            }
+        }
+        if let (false, Some(b), Some(_)) = (field, find(&g, "ball"), shadow) {
+            if b[1] > 6.0 {
+                shot(&g, "3d_field");
+                field = true;
+            }
+        }
+        if pitch && field {
+            break;
+        }
+    }
+    assert!(pitch && field, "pitch {pitch} field {field}");
+}
+
 #[test]
 fn an_old_save_without_a_record_still_loads() {
     let g = started();

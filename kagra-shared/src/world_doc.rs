@@ -410,6 +410,10 @@ pub struct WorldProp {
     pub roughness: f32,
     /// Unlit HDR add so a lamp or a coin can bloom on purpose. None = 0.
     /// The color is `emissive_color`, or the albedo when that is omitted.
+    /// Above 0.3 the prop draws as a glow strip: pulled toward the camera in depth (it
+    /// shows through things just in front of it) and casting no shadow. Keep a solid
+    /// thing that must sort with its neighbours (a sign, a ball, a backdrop) at 0.3 or
+    /// less.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive: Option<f32>,
     /// Linear 0..1 RGB. None = use the albedo as the glow color.
@@ -1842,7 +1846,7 @@ impl WorldDoc {
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
         }
         let tex_base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
-        for (i, prop) in self.textured_props().into_iter().enumerate() {
+        for (i, prop) in self.textured_slots().into_iter().enumerate() {
             if let Some(mesh) = textured_prop_mesh(prop) {
                 out.push((MeshId(tex_base + i as u32), mesh));
             }
@@ -1863,7 +1867,7 @@ impl WorldDoc {
 
     /// The toon primitives follow the glTF slots and the textured props.
     fn toon_base(&self) -> u32 {
-        MESH_GLTF_BASE + self.gltf_slots().len() as u32 + self.textured_props().len() as u32
+        MESH_GLTF_BASE + self.gltf_slots().len() as u32 + self.textured_slots().len() as u32
     }
 
     /// Outline width (meters) and shadow tone of `toon` props.
@@ -1954,9 +1958,8 @@ impl WorldDoc {
                 GltfSlot::Skinned { spec, part, .. } => parts.push(format!("s:{spec}:{part}")),
             }
         }
-        for prop in self.textured_props() {
-            let tex = prop_texture_path(prop).unwrap_or("");
-            parts.push(format!("t:{}:{tex}", prop.id));
+        for prop in self.textured_slots() {
+            parts.push(format!("t:{}", texture_slot_key(prop)));
         }
         for prop in &self.props {
             if prop_has_maps(prop) {
@@ -2080,11 +2083,27 @@ impl WorldDoc {
 
     fn texture_mesh_ids(&self) -> HashMap<String, MeshId> {
         let base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
+        let mut slots: HashMap<String, MeshId> = HashMap::new();
         let mut out = HashMap::new();
-        for (i, prop) in self.textured_props().into_iter().enumerate() {
-            out.insert(prop.id.clone(), MeshId(base + i as u32));
+        for prop in self.textured_props() {
+            let n = slots.len() as u32;
+            let id = *slots
+                .entry(texture_slot_key(prop))
+                .or_insert(MeshId(base + n));
+            out.insert(prop.id.clone(), id);
         }
         out
+    }
+
+    /// One textured prop for each distinct mesh: props with the same shape, picture,
+    /// tiling and maps share one GPU mesh (a ring of stands, a row of signs), in the order
+    /// they first appear.
+    fn textured_slots(&self) -> Vec<&WorldProp> {
+        let mut seen = std::collections::HashSet::new();
+        self.textured_props()
+            .into_iter()
+            .filter(|p| seen.insert(texture_slot_key(p)))
+            .collect()
     }
 
     fn vegetation_lod_radius(&self) -> f32 {
@@ -2487,6 +2506,24 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let file = candidates.iter().find(|p| crate::assets::is_file(p))?;
     let bytes = crate::assets::read_bytes(file).ok()?;
     crate::gltf_load::decode_png(&bytes).ok()
+}
+
+/// What makes a textured prop's mesh: its shape, picture, tiling and surface maps.
+fn texture_slot_key(prop: &WorldProp) -> String {
+    let shape = match prop.model.to_ascii_lowercase().as_str() {
+        "plane" | "water" => "plane",
+        "sprite" | "quad" => "quad",
+        "sphere" | "cylinder" | "capsule" => "cylinder",
+        _ => "box",
+    };
+    format!(
+        "{shape}|{}|{:?}|{}|{}|{}",
+        prop_texture_path(prop).unwrap_or(""),
+        prop.uv_scale,
+        prop.roughness_map.as_deref().unwrap_or(""),
+        prop.metalness_map.as_deref().unwrap_or(""),
+        prop.emissive_map.as_deref().unwrap_or(""),
+    )
 }
 
 fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
@@ -4755,6 +4792,44 @@ mod tests {
                 .all(|i| i.material != Material::Toon),
             "Crest Isle must not pick up walker MToon"
         );
+    }
+
+    #[test]
+    fn props_with_one_picture_share_one_mesh() {
+        let px = crate::image2d::register_rgba(2, 2, vec![200; 16]).unwrap();
+        let tex = crate::image2d::texture_spec(px);
+        let mut doc = WorldDoc {
+            version: 1,
+            ..Default::default()
+        };
+        for i in 0..6 {
+            doc.props.push(WorldProp {
+                id: format!("stand{i}"),
+                kind: "prop".into(),
+                model: "plane".into(),
+                position: [i as f32 * 4.0, 0.0, 0.0],
+                scale: [3.0, 1.0, 3.0],
+                enabled: true,
+                texture: Some(tex.clone()),
+                uv_scale: Some([2.0, 1.0]),
+                ..Default::default()
+            });
+        }
+        let ids = doc.texture_mesh_ids();
+        let first = ids["stand0"];
+        assert!(ids.values().all(|id| *id == first), "{ids:?}");
+        let meshes = doc.compile_meshes();
+        let textured: Vec<_> = meshes.iter().filter(|(_, m)| m.albedo.is_some()).collect();
+        assert_eq!(textured.len(), 1);
+        assert_eq!(
+            textured[0].1.albedo.as_ref().unwrap().width,
+            4,
+            "tiled twice"
+        );
+        // Moving a stand does not change what the GPU holds.
+        let key = doc.gpu_mesh_key();
+        doc.props[3].position[1] = 2.0;
+        assert_eq!(doc.gpu_mesh_key(), key);
     }
 
     #[test]

@@ -150,13 +150,21 @@ on the broadcast, and leaving the result opens a green curtain with 練習に戻
 1. **Game day.** The tournament ribbon, both school crests, team grades, the record between
    the two schools, our starting nine with faces. The coach can change the order, then
    presses Play Ball.
-2. **The game, from behind the plate.** A broadcast picture: the stands, the outfield, the
-   fielders, the pitcher on the mound (his own face), the batter from behind with his
-   number, the catcher, the strike zone. Every plate appearance is shown pitch by pitch,
-   with balls, strikes and outs on a TV count box and the speed of the pitch. The pitches
-   are drawn from the play (a strikeout ends on a swinging third strike, a walk on ball
-   four), so the picture never changes a result. When the ball is hit, the picture
-   switches to the field from above with the ball's flight and the runners. Chances and
+2. **The game, in 3D.** A high-school ballpark (`hud/stadium.rs`): a dark dirt infield and
+   dirt foul ground, grass mown in stripes, chalk, a green fence with a yellow cap, stands
+   packed with fans, foul poles, a scoreboard, light towers lit for autumn and winter games,
+   the sky plates standing round it. Both nines are 3D chibi players (`game_core::chibi3d`,
+   toon primitives with outlines; home whites and road greys in the school colour, batting
+   helmets, the catcher's gear, an umpire). The camera sits high behind the catcher: the
+   pitcher's whole motion on the mound, the ball's flight to the plate, the batter's swing
+   (about one in four bats and throws left, for looks). Every plate appearance is shown
+   pitch by pitch (0.7 s a pitch), with balls, strikes and outs on a TV count box, the speed
+   of the pitch, and a small strike zone with a numbered dot where each pitch crossed. The
+   pitches are drawn from the play (a strikeout ends on a swinging third strike, a walk on
+   ball four), so the picture never changes a result. When the ball is in play the camera
+   cuts to a high view behind home that follows the ball: the nearest fielder runs for it
+   (and gets there on an out), the batter runs it out round the bases, the runners go.
+   The HUD paints only above and below the picture (`View::in_band`). Chances and
    pinches stop for the coach's call as before. A tap skips to the result; double speed
    and "to the end" are buttons.
    The coach can also call any batter: the 作戦 button asks for the next plate appearance,
@@ -222,7 +230,7 @@ and is kept if you stay.
   a kind and a direction), the scoreboard, the pitcher's and the batter's faces, the
   play-by-play, the calls in a popup, and the trait shout when one fires. The roster
   and a player's page show faces, grades, mood, stamina, and traits. Paper, ink, and
-  the orange accent are the same on every card. The 3D world is only a sky colour.
+  the orange accent are the same on every card.
   Look at every screen without a GPU:
   `KAGRA_SHOTS=dir cargo test -p kagra-shared --lib diamond_days::tests::screens_to_png`.
 - Also in: the editable order, pinch hit / pinch run / a defensive change, the ten
@@ -237,5 +245,11 @@ and is kept if you stay.
   green/gold buttons on the roster and the milestone, Kenney stars for reputation and
   medals on the career card. The pixel stadium is not used; it would sit
   unmodified against the illustrated field. No paid art.
+- Round 6 (3D): the game itself moved into 3D on new engine parts: toon primitives with
+  outlines, 3D chibi players, pictures baked at run time on 3D props (the field, the
+  stands), a camera framed for a band of the screen. The 2D broadcast picture is gone.
+  Look at it with a GPU or lavapipe:
+  `KAGRA_SHOTS3D=dir cargo test --features render --lib match_in_3d -- --nocapture`
+  (`KAGRA_NIGHT=1` for a game under the lights).
 - Still to come: a balance pass. Hit and UI sounds already use the files the other
   games ship.

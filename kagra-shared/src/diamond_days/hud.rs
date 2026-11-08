@@ -4,6 +4,7 @@
 //! the roster and one player's page.
 
 mod broadcast;
+mod stadium;
 
 use super::art::{self, INK, INK_SOFT, ORANGE, OURS, WHITE};
 use super::board::{self, Fixture, Square};
