@@ -1612,7 +1612,18 @@ impl DiamondDays {
                 .partition(|p| p.grade >= 3);
         self.s.team.players = staying;
         self.s.team.clear_lineup();
-        self.s.captain.clear();
+        // The captain and number 1 are named by the coach (the founding pair by role).
+        let captain = std::mem::take(&mut self.s.captain);
+        let ace = self.s.team.number_one.clone();
+        let part = |p: &team::Player| {
+            if p.role == Role::Captain || (!captain.is_empty() && p.family == captain) {
+                Role::Captain
+            } else if p.role == Role::Ace || (!ace.is_empty() && p.family == ace) {
+                Role::Ace
+            } else {
+                Role::Regular
+            }
+        };
         self.s.team.number_one.clear();
         self.s.need_captain = true;
         if !leaving.is_empty() {
@@ -1622,7 +1633,7 @@ impl DiamondDays {
                 format!("{}の夏が終わった。3年生{n}人が引退する。", self.school_ja()),
             )];
             for p in leaving.iter().take(6) {
-                let (en, ja) = farewell(p);
+                let (en, ja) = farewell(p, part(p));
                 lines.push((
                     format!("{}: \"{en}\"", p.family),
                     format!("{}「{ja}」", p.family),
@@ -1647,7 +1658,7 @@ impl DiamondDays {
                 note.captions = leaving
                     .iter()
                     .map(|p| {
-                        let (en, ja) = senior_title(p);
+                        let (en, ja) = senior_title(p, part(p));
                         (en.to_string(), ja.to_string())
                     })
                     .collect();
@@ -3261,7 +3272,7 @@ impl DiamondDays {
 
 /// What a third-year says when his summer ends (by his part in the club; the rest pick
 /// one of a few lines by name).
-fn farewell(p: &team::Player) -> (&'static str, &'static str) {
+fn farewell(p: &team::Player, part: Role) -> (&'static str, &'static str) {
     const LINES: [(&str, &str); 6] = [
         (
             "Three years of baseball. I was lucky.",
@@ -3285,7 +3296,7 @@ fn farewell(p: &team::Player) -> (&'static str, &'static str) {
             "次は応援席から声を出すからな",
         ),
     ];
-    match p.role {
+    match part {
         Role::Captain => (
             "Thanks for following me. It's yours now.",
             "みんな、ついてきてくれてありがとう。あとは頼んだぞ",
@@ -3303,8 +3314,8 @@ fn farewell(p: &team::Player) -> (&'static str, &'static str) {
 }
 
 /// The line under a retiring third-year's face.
-fn senior_title(p: &team::Player) -> (&'static str, &'static str) {
-    match p.role {
+fn senior_title(p: &team::Player, part: Role) -> (&'static str, &'static str) {
+    match part {
         Role::Captain => ("Captain", "主将"),
         Role::Ace => ("Ace", "エース"),
         _ => (p.pos.short(false), p.pos.short(true)),

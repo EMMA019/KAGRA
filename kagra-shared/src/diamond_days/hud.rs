@@ -2183,6 +2183,15 @@ impl DiamondDays {
                 .iter()
                 .find(|s| s.name == *name || s.name_ja == g.sides[side].name_ja)
                 .map(|s| [s.color[0], s.color[1], s.color[2], 255])
+                .or_else(|| {
+                    // A school from another prefecture on our draw keeps its colour.
+                    self.s
+                        .cup_path
+                        .iter()
+                        .map(|&i| self.path_school(i))
+                        .find(|(en, _, _)| en == name)
+                        .map(|(_, _, c)| c)
+                })
                 .unwrap_or_else(|| art::team_color(name))
         }
     }

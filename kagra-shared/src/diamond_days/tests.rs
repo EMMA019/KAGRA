@@ -2409,3 +2409,57 @@ fn kotoris_last_summer_ends_with_a_letter() {
     h.retire_seniors();
     assert!(!h.notes.iter().any(|n| n.title == "A letter from Kotori"));
 }
+
+/// The captain the coach named is the captain at his farewell, and number 1 is the ace.
+#[test]
+fn the_named_captain_and_number_one_say_goodbye_as_such() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let thirds: Vec<usize> = (0..g.s.team.players.len())
+        .filter(|&i| {
+            g.s.team.players[i].grade == 3 && g.s.team.players[i].role == team::Role::Regular
+        })
+        .collect();
+    let i = *thirds.first().expect("a third-year with no founding role");
+    let fam = g.s.team.players[i].family.clone();
+    for p in &mut g.s.team.players {
+        if p.role == team::Role::Captain {
+            p.role = team::Role::Regular;
+        }
+    }
+    g.s.captain = fam.clone();
+    g.notes.clear();
+    g.retire_seniors();
+    let n = g
+        .notes
+        .iter()
+        .find(|n| n.title == "Farewell, seniors")
+        .unwrap();
+    let k = n.faces.iter().position(|(f, _)| *f == fam).unwrap();
+    assert_eq!(n.captions[k].1, "主将");
+    assert!(n
+        .lines
+        .iter()
+        .any(|l| l.1.starts_with(&fam) && l.1.contains("あとは頼んだ")));
+}
+
+/// A school from another prefecture shows on game day with its own name and colour.
+#[test]
+fn a_school_from_elsewhere_shows_on_game_day() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.notes.clear();
+    g.s.cup = Some(Fixture::National(1));
+    g.s.cup_path = (0..5).map(|r| AWAY + 3 + r).collect();
+    g.prepare_game(Fixture::National(1));
+    assert_eq!(g.mode, Mode::MatchIntro);
+    let (en, _, _) = g.path_school(AWAY + 3);
+    g.transition = None;
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.contains(&en), "{en} in {texts:?}");
+    // Its crest and name, not the stand-in for an unknown school.
+    assert!(!texts.iter().any(|t| t == "Rival"), "{texts:?}");
+    assert!(texts.iter().any(|t| *t == en[..1]), "the crest letter");
+}

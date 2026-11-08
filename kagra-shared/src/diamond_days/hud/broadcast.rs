@@ -1473,15 +1473,11 @@ impl DiamondDays {
             color,
         );
         let rival = self.rival_idx.and_then(|i| self.s.rivals.get(i));
-        let (them_en, them_ja, them_col) = rival
-            .map(|s| {
-                (
-                    s.name.clone(),
-                    s.name_ja.clone(),
-                    [s.color[0], s.color[1], s.color[2], 255],
-                )
-            })
-            .unwrap_or_else(|| ("Rival".into(), "相手校".into(), [170, 50, 60, 255]));
+        // A circuit school, or one from another prefecture (the nationals, March).
+        let (them_en, them_ja, them_col) = match self.rival_idx {
+            Some(i) => self.path_school(i.min(255) as u8),
+            None => ("Rival".into(), "相手校".into(), [170, 50, 60, 255]),
+        };
         let us_name = if ja {
             self.school_ja()
         } else {
@@ -1568,7 +1564,9 @@ impl DiamondDays {
         }
         // Strength and the record between us.
         let ours = grade(self.s.team.strength().round() as u8);
-        let theirs = grade(rival.map(|s| s.strength.round() as u8).unwrap_or(50));
+        // A school from elsewhere is as strong as the round it plays in.
+        let away = board::rival_level(f, self.s.year).round() as u8;
+        let theirs = grade(rival.map(|s| s.strength.round() as u8).unwrap_or(away));
         for (cx, g) in [(104.0, ours), (296.0, theirs)] {
             p.text(
                 self.tr("TEAM", "戦力"),
