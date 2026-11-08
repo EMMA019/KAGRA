@@ -472,80 +472,200 @@ fn inside(p: P, poly: &[P]) -> bool {
 
 // ---- the board -------------------------------------------------------------------------------
 
-/// Where each of `n` squares sits round the board rectangle (centres): a square in every
-/// corner and the rest spaced evenly along the sides. Square 0 is the bottom middle; the ring
-/// goes round counter-clockwise on screen (right, up, left, down).
-pub fn tile_centers(r: [f32; 4], n: usize, tw: f32, th: f32) -> Vec<P> {
-    let (x0, y0) = (r[0] + tw * 0.5, r[1] + th * 0.5);
-    let (x1, y1) = (r[0] + r[2] - tw * 0.5, r[1] + r[3] - th * 0.5);
-    let (w, h) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
-    // nx squares along the top and bottom, ny down the sides, corners shared: 2nx + 2ny - 4 = n.
-    let half = n.div_ceil(2) + 2;
-    let nx = ((half as f32 * w / (w + h)).round() as usize).clamp(2, half.saturating_sub(2).max(2));
-    let ny = half.saturating_sub(nx).max(2);
-    let mut pts = Vec::with_capacity(2 * (nx + ny));
-    for i in 0..nx - 1 {
-        pts.push([x0 + w * i as f32 / (nx - 1) as f32, y1]);
+/// A square's picture: a bat for batting, a ball for pitching, a glove, running
+/// chevrons, a dumbbell, a moon for rest, "!" for an event, a star for spirit, a lens for
+/// scouting. `s` is the icon's size (design units).
+pub fn square_icon(p: &mut Painter, c: P, s: f32, sq: Square, ink: Rgba) {
+    let [x, y] = c;
+    match sq {
+        Square::Train(Drill::Batting) => {
+            p.line(
+                &[[x - s * 0.42, y + s * 0.38], [x - s * 0.12, y + s * 0.08]],
+                s * 0.12,
+                ink,
+            );
+            p.line(
+                &[[x - s * 0.12, y + s * 0.08], [x + s * 0.36, y - s * 0.4]],
+                s * 0.24,
+                ink,
+            );
+            p.dot(x + s * 0.3, y + s * 0.28, s * 0.15, WHITE);
+            p.outline(
+                &vector::circle(x + s * 0.3, y + s * 0.28, s * 0.15),
+                s * 0.05,
+                ink,
+            );
+        }
+        Square::Train(Drill::Pitching) => {
+            let r = s * 0.42;
+            p.dot(x, y, r, WHITE);
+            p.outline(&vector::circle(x, y, r), s * 0.06, ink);
+            // The seams: two arcs bowing in from either side.
+            let pi = std::f32::consts::PI;
+            for (cx, a) in [(x - r * 1.3, 0.0f32), (x + r * 1.3, pi)] {
+                let seam = vector::arc(cx, y, r * 0.95, r * 0.95, a - 0.62, a + 0.62, 10);
+                p.line(&seam, s * 0.06, [220, 60, 60, 255]);
+            }
+        }
+        Square::Train(Drill::Fielding) => {
+            p.fill_ink(
+                &vector::ellipse(x, y + s * 0.05, s * 0.38, s * 0.42),
+                [196, 126, 58, 255],
+                ink,
+                s * 0.05,
+            );
+            for k in 0..3 {
+                let fx = x - s * 0.16 + k as f32 * s * 0.16;
+                p.line(
+                    &[[fx, y - s * 0.3], [fx, y + s * 0.05]],
+                    s * 0.05,
+                    shade([196, 126, 58, 255], -0.4),
+                );
+            }
+            p.fill_ink(
+                &vector::ellipse(x + s * 0.36, y + s * 0.02, s * 0.12, s * 0.2),
+                [196, 126, 58, 255],
+                ink,
+                s * 0.05,
+            );
+        }
+        Square::Train(Drill::Running) => {
+            for k in 0..3 {
+                let ox = x - s * 0.36 + k as f32 * s * 0.28;
+                p.line(
+                    &[[ox, y - s * 0.3], [ox + s * 0.22, y], [ox, y + s * 0.3]],
+                    s * 0.12,
+                    ink,
+                );
+            }
+        }
+        Square::Train(Drill::Strength) => {
+            p.line(&[[x - s * 0.42, y], [x + s * 0.42, y]], s * 0.1, ink);
+            for d in [-1.0f32, 1.0] {
+                p.fill(
+                    &vector::rounded_rect(
+                        x + d * s * 0.3 - s * 0.08,
+                        y - s * 0.28,
+                        s * 0.16,
+                        s * 0.56,
+                        s * 0.04,
+                    ),
+                    Paint::Solid(ink),
+                );
+                p.fill(
+                    &vector::rounded_rect(
+                        x + d * s * 0.44 - s * 0.05,
+                        y - s * 0.18,
+                        s * 0.1,
+                        s * 0.36,
+                        s * 0.03,
+                    ),
+                    Paint::Solid(ink),
+                );
+            }
+        }
+        Square::Rest => {
+            let moon = vector::circle(x - s * 0.06, y + s * 0.04, s * 0.34);
+            p.fill(&moon, Paint::Solid([255, 230, 140, 255]));
+            p.fill(
+                &vector::circle(x + s * 0.08, y - s * 0.06, s * 0.28),
+                Paint::Solid([150, 220, 230, 255]),
+            );
+            p.text(
+                "z",
+                x + s * 0.3,
+                y - s * 0.62,
+                s * 0.42,
+                ink,
+                crate::scene::TextAlign::Center,
+            );
+        }
+        Square::Event => {
+            p.fill_ink(
+                &vector::circle(x, y, s * 0.42),
+                [255, 214, 90, 255],
+                ink,
+                s * 0.05,
+            );
+            p.text(
+                "!",
+                x,
+                y - s * 0.34,
+                s * 0.62,
+                ink,
+                crate::scene::TextAlign::Center,
+            );
+        }
+        Square::Spirit => {
+            p.fill_ink(
+                &vector::star(x, y, s * 0.48, s * 0.22, 5),
+                [255, 236, 120, 255],
+                ink,
+                s * 0.05,
+            );
+        }
+        Square::Scout => {
+            p.outline(
+                &vector::circle(x - s * 0.08, y - s * 0.08, s * 0.26),
+                s * 0.1,
+                ink,
+            );
+            p.line(
+                &[[x + s * 0.12, y + s * 0.12], [x + s * 0.4, y + s * 0.4]],
+                s * 0.14,
+                ink,
+            );
+        }
     }
-    for i in 0..ny - 1 {
-        pts.push([x1, y1 - h * i as f32 / (ny - 1) as f32]);
-    }
-    for i in 0..nx - 1 {
-        pts.push([x1 - w * i as f32 / (nx - 1) as f32, y0]);
-    }
-    for i in 0..ny - 1 {
-        pts.push([x0, y0 + h * i as f32 / (ny - 1) as f32]);
-    }
-    let start = ((nx - 1) / 2).min(pts.len().saturating_sub(1));
-    pts.rotate_left(start);
-    pts.truncate(n);
-    pts
 }
 
-/// One square of the board.
-pub fn tile(p: &mut Painter, c: P, tw: f32, th: f32, sq: Square, label: &str, here: bool) {
+/// One square on the road: a rounded stone in its colour with its picture and its name,
+/// lit when the coach stands on it.
+pub fn road_tile(p: &mut Painter, c: P, tw: f32, th: f32, sq: Square, label: &str, here: bool) {
     let col = square_color(sq);
     let (x, y) = (c[0] - tw * 0.5, c[1] - th * 0.5);
-    let light = col[0] as u32 + col[1] as u32 + col[2] as u32 > 600;
-    p.shadow(x, y, tw, th, 9.0, 5.0, 60);
-    let rr = vector::rounded_rect(x, y, tw, th, 9.0);
+    if here {
+        p.glow(c[0], c[1], tw * 0.95, [255, 236, 150, 170]);
+    }
+    p.shadow(x, y + 2.0, tw, th, 10.0, 5.0, 70);
+    let rr = vector::rounded_rect(x, y, tw, th, 10.0);
     p.fill(
         &rr,
-        Paint::vertical(y, y + th, shade(col, 0.25), shade(col, -0.08)),
+        Paint::vertical(y, y + th, shade(col, 0.3), shade(col, -0.06)),
+    );
+    // The name on a pale strip at the foot.
+    p.fill(
+        &vector::rounded_rect(x + 3.0, y + th - 19.0, tw - 6.0, 16.0, 6.0),
+        Paint::Solid([255, 255, 255, 215]),
     );
     p.fill(
-        &vector::rounded_rect(x + 3.0, y + 2.0, tw - 6.0, th * 0.4, 7.0),
-        Paint::Solid([255, 255, 255, 50]),
+        &vector::rounded_rect(x + 4.0, y + 3.0, tw - 8.0, th * 0.28, 7.0),
+        Paint::Solid([255, 255, 255, 60]),
     );
     p.outline(
         &rr,
-        if here { 3.0 } else { 1.5 },
-        if here { WHITE } else { shade(col, -0.32) },
+        if here { 3.0 } else { 1.6 },
+        if here {
+            [255, 214, 90, 255]
+        } else {
+            shade(col, -0.35)
+        },
     );
-    let tc = if light { INK } else { WHITE };
-    let size = if label.chars().count() > 3 {
-        10.5
-    } else if label.chars().count() > 2 {
-        12.0
-    } else {
-        14.0
-    };
-    if !light {
-        p.text(
-            label,
-            c[0] + 0.6,
-            c[1] - size * 0.58 + 1.0,
-            size,
-            shade(col, -0.5),
-            crate::scene::TextAlign::Center,
-        );
-    }
+    let ink = shade(col, -0.62);
+    square_icon(
+        p,
+        [c[0], y + (th - 19.0) * 0.5 + 1.0],
+        (th - 19.0) * 0.62,
+        sq,
+        ink,
+    );
+    let size = if label.chars().count() > 3 { 9.5 } else { 11.0 };
     p.text(
         label,
         c[0],
-        c[1] - size * 0.58,
+        y + th - 17.5 + (14.0 - size) * 0.5,
         size,
-        tc,
+        INK,
         crate::scene::TextAlign::Center,
     );
 }

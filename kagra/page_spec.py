@@ -20,6 +20,7 @@ branches in the page. The manifest now says what the game wants and the page onl
       "resume": true,          # the save is a run in progress: つづきから / はじめから on the title
       "theme": "hop",          # html[data-theme] for the page's per-game CSS
       "blurb": "hop.blurb",    # i18n key of the title-card blurb (swipe games)
+      "title": "title.diamond", # i18n key of the game's name on the page (else the manifest title)
       "default_quality": "mobile",                      # world.quality when the link sets none
       "quality_words": {"safe": "low", "mid": "mobile", "max": "high"},  # ?quality= words
       "url_params": {"fx": ["low", "mid", "high"], "skin": "string", "fx_post": "bool"}
@@ -55,7 +56,7 @@ FLAGS = (
 PICTURE = ("low", "mobile", "high")
 QUALITY_WORDS = ("safe", "mid", "max")
 PARAM_KINDS = ("string", "bool")
-KEYS = set(FLAGS) | {"theme", "blurb", "default_quality", "quality_words", "url_params"}
+KEYS = set(FLAGS) | {"theme", "blurb", "title", "default_quality", "quality_words", "url_params"}
 
 
 class PageError(ValueError):
@@ -84,7 +85,7 @@ def normalize_page(raw: Any) -> dict[str, Any]:
                 raise PageError(f"page.{flag} must be true or false")
             if raw[flag]:
                 out[flag] = True
-    for key in ("theme", "blurb"):
+    for key in ("theme", "blurb", "title"):
         if key in raw:
             out[key] = _name(raw[key], key)
     if "default_quality" in raw:

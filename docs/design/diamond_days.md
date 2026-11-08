@@ -13,8 +13,10 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
 
 1. **Pick a card.** You hold five cards, each with a number of steps (1 to 6) and
    sometimes a theme ("Batting focus": batting squares give double this week).
-2. **Move on the board.** The coach token walks that many squares around a ring of
-   twenty squares laid around the diamond.
+2. **Move on the board.** The board is a road of squares running to the right under
+   the school's practice ground (a loop of twenty, drawn as a straight road). The coach
+   stands near the left; the six squares ahead carry their step numbers, lit where a
+   card in hand lands, and as he walks the road slides by.
 3. **The square happens.**
    - Training squares (Batting, Pitching, Fielding, Running, Strength): every player
      gains practice points in that area, more when in good condition, less when tired.

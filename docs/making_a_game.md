@@ -101,7 +101,7 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 "page": {"best": true, "lang": true, "pause": true, "fixed_step": true, "blurb": "blurb.stick"}
 ```
 
-`audio`、`save`（`KitHost::save_json` の進み具合を端末に保存）、`resume`（`save` が途中の一周のゲーム向け: タイトルが「つづきから」になり、確認してから消す「はじめから」が出る）、`one_button`、`music_sync`、`revive`、`direct`、`tagline`、`theme`、
+`audio`、`title`（ページに出すゲーム名の i18n キー。言語ごとの名前）、`save`（`KitHost::save_json` の進み具合を端末に保存）、`resume`（`save` が途中の一周のゲーム向け: タイトルが「つづきから」になり、確認してから消す「はじめから」が出る）、`one_button`、`music_sync`、`revive`、`direct`、`tagline`、`theme`、
 `default_quality`、`quality_words`、`url_params` もある。`play.html` に
 ゲーム名やジャンルで分岐を書かない（`tests/test_page_spec.py` が止める）。
 

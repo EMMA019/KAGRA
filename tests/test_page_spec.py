@@ -92,3 +92,13 @@ def test_page_resume_offers_continue_and_a_new_game():
     # Leaving the page saves the run; after starting over nothing is written back.
     assert "erased = true" in html and "|| erased ||" in html
 
+
+
+def test_page_title_names_the_game_in_the_page_language():
+    assert normalize_page({"title": "title.diamond"}) == {"title": "title.diamond"}
+    with pytest.raises(PageError, match="page.title"):
+        normalize_page({"title": "two words"})
+    html = PLAY.read_text(encoding="utf-8")
+    assert "page.title" in html and "t(page.title)" in html, "the page reads the name's key"
+    i18n = (ROOT / "scripts" / "preview_site" / "i18n.js").read_text(encoding="utf-8")
+    assert i18n.count('"title.diamond"') == 2, "the name in English and Japanese"

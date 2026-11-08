@@ -338,6 +338,7 @@
     let canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
     const t = globalThis.kagraT || ((k) => k);
+    let gameTitle = "";
     // ?debug=1 and ?backend= are development tools: they need ?dev=1 as well.
     const dev = params.get("dev") === "1";
     const requestedBackend = (dev ? (params.get("backend") || "auto") : "auto").toLowerCase();
@@ -792,8 +793,10 @@
       }
       // The daily run keeps its own device best, so a daily score never replaces the free-play best.
       if (metaLayer.enabled && metaLayer.dailyInfo().active) bestScope = ".daily";
-      document.title = bundle.title || slug;
-      document.getElementById("title").textContent = bundle.title || slug;
+      // The game's name in the page language (page.title is an i18n key), else the manifest's.
+      gameTitle = (page.title && t(page.title) !== page.title && t(page.title)) || bundle.title || slug;
+      document.title = gameTitle;
+      document.getElementById("title").textContent = gameTitle;
       const files = Array.isArray(bundle.files) ? bundle.files : [];
       session.clearMount();
       let done = 0;
@@ -1228,7 +1231,7 @@
       if (!playing && phase !== "complete") session.showTitle();
       const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
       document.getElementById("phaseLabel").textContent =
-        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
+        `${gameTitle || bundle.title || slug} · ${label} · ${sharedVersion()}`;
       // page.resume: a kept run is continued from the title; a smaller button starts over.
       const keptRun = !!(page.resume && phase !== "complete" && hasKeptRun(slug));
       document.getElementById("start").textContent =

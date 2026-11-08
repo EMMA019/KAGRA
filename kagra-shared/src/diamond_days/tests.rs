@@ -538,7 +538,8 @@ fn screens_to_png() {
     for _ in 0..3 {
         play_week(&mut g);
     }
-    run(&mut g, 0.5);
+    // Past the curtain that opens back onto the board.
+    run(&mut g, 1.6);
     shot(&g, "02_plan");
     press(&mut g, hud::Btn::Card(0));
     run(&mut g, 0.3);
@@ -550,9 +551,12 @@ fn screens_to_png() {
         run(&mut g, 0.1);
     }
     shot(&g, "04_week_notice");
-    while g.mode == Mode::Notice {
-        tap(&mut g, 195.0, 400.0);
-    }
+    // Back on the board in a quiet week (week 4 opens the spring tournament).
+    g.notes.clear();
+    g.s.cup = None;
+    g.game = None;
+    g.s.week = 2;
+    g.mode = Mode::Plan;
     press(&mut g, hud::Btn::Roster);
     shot(&g, "05_roster");
     press(&mut g, hud::Btn::RosterDown);
@@ -2487,4 +2491,44 @@ fn a_school_from_elsewhere_shows_on_game_day() {
     // Its crest and name, not the stand-in for an unknown school.
     assert!(!texts.iter().any(|t| t == "Rival"), "{texts:?}");
     assert!(texts.iter().any(|t| *t == en[..1]), "the crest letter");
+}
+
+/// The board is a road running to the right: the squares ahead carry their step
+/// numbers, so a card's number is where it lands; walking slides the road along.
+#[test]
+fn the_board_is_a_road_with_the_steps_ahead_numbered() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    g.notes.clear();
+    g.mode = Mode::Plan;
+    g.transition = None;
+    let texts = |g: &DiamondDays| -> Vec<String> {
+        all_texts(&g.hud(W, H, false))
+            .map(|t| t.text.clone())
+            .collect()
+    };
+    let now = texts(&g);
+    for d in 1..=6 {
+        assert!(now.contains(&d.to_string()), "step {d} in {now:?}");
+    }
+    // The six squares ahead are on screen by name, in order.
+    let n = g.spec.ring.len();
+    for d in 1..=6 {
+        let sq = g.spec.ring[(g.s.pos + d) % n];
+        assert!(
+            now.iter().any(|t| t == hud::square_label(sq, true)),
+            "{:?} ahead",
+            sq
+        );
+    }
+    assert!(now.iter().any(|t| t.contains("カードの数字")));
+    // Walking: the numbers go, the steps left show.
+    press(&mut g, hud::Btn::Card(0));
+    assert!(matches!(g.mode, Mode::Walk { .. }));
+    let walking = texts(&g);
+    assert!(walking
+        .iter()
+        .any(|t| t.starts_with("あと") && t.ends_with("マス")));
+    assert!(!walking.iter().any(|t| t.contains("カードの数字")));
 }

@@ -236,9 +236,10 @@ impl DiamondDays {
                     }
                     b.push((Btn::Back, [24.0, hh - 80.0, 352.0, 48.0]));
                 } else {
-                    b.push((Btn::Stay, [24.0, hh * 0.48, 352.0, 52.0]));
-                    b.push((Btn::MoveSchool, [24.0, hh * 0.48 + 62.0, 352.0, 52.0]));
-                    b.push((Btn::EndStory, [24.0, hh * 0.48 + 124.0, 352.0, 52.0]));
+                    let y = hh * 0.47 + 34.0;
+                    b.push((Btn::Stay, [24.0, y, 352.0, 50.0]));
+                    b.push((Btn::MoveSchool, [24.0, y + 80.0, 352.0, 50.0]));
+                    b.push((Btn::EndStory, [24.0, y + 160.0, 352.0, 50.0]));
                 }
             }
             Mode::Match { asking, .. } => match asking {
@@ -403,7 +404,13 @@ impl DiamondDays {
                 self.draw_lineup(&mut p, *pick, &l);
             }
             Mode::Epilogue { schools } => {
-                art::backdrop(&mut p, month, self.clock);
+                // The ballpark at dusk behind the milestone.
+                art::ballpark(&mut p, self.clock);
+                let [x0, y0, w, h] = p.st.screen;
+                p.fill(
+                    &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
+                    Paint::vertical(y0, y0 + h, [10, 14, 34, 120], [10, 14, 34, 215]),
+                );
                 self.draw_epilogue(&mut p, *schools, &l);
             }
             Mode::Player(i) => {
@@ -477,12 +484,23 @@ impl DiamondDays {
                 3.5,
                 TextAlign::Center,
             );
+            // The display face in gold, ringed in dark so it reads on the sky.
+            for (dx, dy) in [(-1.6, 0.0), (1.6, 0.0), (0.0, -1.6), (0.0, 1.6), (1.2, 1.8)] {
+                p.text_display(
+                    "DIAMOND DAYS",
+                    200.0 + dx,
+                    y + 72.0 + dy,
+                    22.0,
+                    [60, 34, 24, 255],
+                    TextAlign::Center,
+                );
+            }
             p.text_display(
                 "DIAMOND DAYS",
                 200.0,
                 y + 72.0,
                 22.0,
-                [255, 190, 96, 255],
+                [255, 206, 110, 255],
                 TextAlign::Center,
             );
         } else {
@@ -497,7 +515,7 @@ impl DiamondDays {
                 TextAlign::Center,
             );
         }
-        p.text_shadow(
+        p.text_outlined(
             self.tr(
                 "Summer after summer. Your calls.",
                 "— 何度でも夏を、きみの采配で —",
@@ -506,7 +524,8 @@ impl DiamondDays {
             y + 108.0,
             16.0,
             WHITE,
-            [20, 24, 50, 200],
+            [20, 30, 70, 255],
+            2.4,
             TextAlign::Center,
         );
         // A kept run waits: say where it stopped.
@@ -930,36 +949,21 @@ impl DiamondDays {
         );
     }
 
-    fn board_rect(&self, hh: f32) -> [f32; 4] {
+    /// The practice ground (top) and the road the coach walks (below it), above Kotori
+    /// and the cards.
+    fn board_layout(&self, hh: f32) -> ([f32; 4], [f32; 4]) {
         let y_m = hh - 112.0 - 100.0;
-        [10.0, 124.0, 380.0, (y_m - 132.0).max(250.0)]
+        let road = [10.0, y_m - 128.0, 380.0, 120.0];
+        let ground = [10.0, 124.0, 380.0, (road[1] - 8.0 - 124.0).max(110.0)];
+        (ground, road)
     }
 
+    /// The week's board: the club at practice on the school's ground, and under it the
+    /// road of squares running to the right. The coach stands near the left; the squares
+    /// ahead carry their step numbers (a card's number is where it lands), and as he walks
+    /// the road slides by.
     fn draw_board(&self, p: &mut Painter) {
-        let r = self.board_rect(p.st.h);
-        p.panel_bordered(
-            r[0],
-            r[1],
-            r[2],
-            r[3],
-            24.0,
-            [130, 190, 112, 255],
-            [98, 160, 88, 255],
-            [255, 255, 255, 150],
-            2.5,
-            12.0,
-        );
-        let (tw, th) = (54.0, 42.0);
-        let inner = [r[0] + 8.0, r[1] + 8.0, r[2] - 16.0, r[3] - 16.0];
-        let n = self.spec.ring.len();
-        let centers = art::tile_centers(inner, n, tw, th);
-        // The school's practice ground in the middle: the club at their drills.
-        let field = [
-            inner[0] + tw + 8.0,
-            inner[1] + th + 8.0,
-            inner[2] - 2.0 * tw - 16.0,
-            inner[3] - 2.0 * th - 16.0,
-        ];
+        let (ground, road) = self.board_layout(p.st.h);
         let team = &self.s.team;
         let mut crew: Vec<_> = team
             .players
@@ -976,36 +980,82 @@ impl DiamondDays {
                 .map(|pl| (pl.menu, art::player_face(pl), Expr::Sad))
                 .collect();
         }
-        art::school_ground(p, field, &crew, self.clock);
-        let here = self.s.pos;
-        for (i, c) in centers.iter().enumerate() {
+        art::school_ground(p, ground, &crew, self.clock);
+
+        // The road: a dirt path between two strips of grass.
+        let [rx, ry, rw, rh] = road;
+        p.shadow(rx, ry, rw, rh, 16.0, 8.0, 70);
+        p.fill(
+            &vector::rounded_rect(rx, ry, rw, rh, 16.0),
+            Paint::vertical(ry, ry + rh, [118, 178, 96, 255], [86, 146, 72, 255]),
+        );
+        let (py, ph) = (ry + 30.0, 72.0);
+        p.fill(
+            &vector::rounded_rect(rx + 6.0, py, rw - 12.0, ph, 12.0),
+            Paint::vertical(py, py + ph, [214, 176, 128, 255], [186, 146, 100, 255]),
+        );
+        for y in [py + 2.0, py + ph - 2.0] {
+            p.line(
+                &[[rx + 12.0, y], [rx + rw - 12.0, y]],
+                1.5,
+                [255, 255, 255, 120],
+            );
+        }
+        let n = self.spec.ring.len().max(1);
+        let here = self.s.pos % n;
+        let pitch = 62.0;
+        let (tw, th) = (54.0, 60.0);
+        let x_here = rx + 50.0;
+        let cy = py + ph * 0.5;
+        let walking = matches!(self.mode, Mode::Walk { .. });
+        let k = if walking {
+            self.hop.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let slide = k * k * (3.0 - 2.0 * k) * pitch;
+        // The steps a card can take, brighter where a card in hand lands.
+        let in_hand = |d: usize| self.s.hand.iter().any(|c| c.steps as usize == d);
+        p.clip_layer([rx + 2.0, ry, rw - 4.0, rh]);
+        for d in -1i32..=7 {
+            let i = (here as i32 + d).rem_euclid(n as i32) as usize;
+            let x = x_here + d as f32 * pitch - slide;
             let sq = self.spec.ring[i];
-            let label = square_label(sq, self.lang_ja);
-            art::tile(
+            art::road_tile(
                 p,
-                *c,
+                [x, cy],
                 tw,
                 th,
                 sq,
-                label,
-                i == here && matches!(self.mode, Mode::Plan),
+                square_label(sq, self.lang_ja),
+                d == 0 && !walking,
             );
-        }
-        // The coach: on his square, or hopping to the next.
-        let (pos, lift) = match &self.mode {
-            Mode::Walk { .. } => {
-                let a = centers[here % n];
-                let b = centers[(here + 1) % n];
-                let k = self.hop.clamp(0.0, 1.0);
-                let e = k * k * (3.0 - 2.0 * k);
-                (
-                    [a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e],
-                    (k * std::f32::consts::PI).sin() * 16.0,
-                )
+            if (1..=6).contains(&d) && matches!(self.mode, Mode::Plan) {
+                let lit = in_hand(d as usize);
+                p.dot(
+                    x,
+                    ry + 15.0,
+                    10.0,
+                    if lit {
+                        [255, 196, 60, 255]
+                    } else {
+                        [40, 70, 50, 200]
+                    },
+                );
+                p.text(
+                    &d.to_string(),
+                    x,
+                    ry + 7.0,
+                    13.0,
+                    if lit { INK } else { [210, 230, 210, 255] },
+                    TextAlign::Center,
+                );
             }
-            _ => (centers[here % n], 0.0),
-        };
-        art::coach_token(p, pos, 46.0, lift);
+        }
+        p.layer();
+        // The coach: on his square, hopping as the road slides.
+        let lift = (k * std::f32::consts::PI).sin() * 18.0;
+        art::coach_token(p, [x_here, cy - 6.0], 48.0, lift);
         if let Mode::Walk { left, .. } = &self.mode {
             let txt = if self.lang_ja {
                 format!("あと{left}マス")
@@ -1013,21 +1063,26 @@ impl DiamondDays {
                 format!("{left} to go")
             };
             p.panel(
-                r[0] + r[2] * 0.5 - 60.0,
-                r[1] + r[3] - 64.0,
-                120.0,
-                30.0,
-                15.0,
-                [255, 255, 255, 230],
-                [246, 240, 228, 230],
-                6.0,
+                rx + rw - 128.0,
+                ry + 4.0,
+                118.0,
+                24.0,
+                12.0,
+                [255, 255, 255, 235],
+                [246, 240, 228, 235],
+                4.0,
             );
+            p.text(&txt, rx + rw - 69.0, ry + 8.0, 14.0, INK, TextAlign::Center);
+        } else if matches!(self.mode, Mode::Plan) {
             p.text(
-                &txt,
-                r[0] + r[2] * 0.5,
-                r[1] + r[3] - 58.0,
-                15.0,
-                INK,
+                self.tr(
+                    "A card moves you its number of squares",
+                    "カードの数字のマスだけ進みます",
+                ),
+                rx + rw * 0.5,
+                py + ph + 3.0,
+                11.0,
+                [236, 248, 230, 255],
                 TextAlign::Center,
             );
         }
@@ -1208,7 +1263,7 @@ impl DiamondDays {
         let [x0, y0, w, h] = p.st.screen;
         p.fill(
             &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
-            Paint::Solid([12, 16, 34, 150]),
+            Paint::Solid([12, 16, 34, 185]),
         );
         // The first line is drawn at 18: wrap the first paragraph at that size so it fits.
         let lines: Vec<String> = n
@@ -1841,6 +1896,45 @@ impl DiamondDays {
         }
         let (face, outfit) = art::manager();
         p.portrait(280.0, 110.0, 90.0, &face, Expr::Smile, &outfit, 1.0);
+        // The three ways on, each with what it means.
+        if !schools {
+            let top = hh * 0.47;
+            p.text_outlined(
+                self.tr("What next?", "これからどうする？"),
+                200.0,
+                top,
+                18.0,
+                WHITE,
+                [16, 18, 30, 255],
+                2.0,
+                TextAlign::Center,
+            );
+            for (b, r) in &l.buttons {
+                let what = match *b {
+                    Btn::Stay => self.tr(
+                        "Same school: fame and the grounds carry over; new first-years arrive.",
+                        "評判も練習場もそのまま。次の新入生がやってくる。",
+                    ),
+                    Btn::MoveSchool => self.tr(
+                        "A weaker school, from the start. The old one stays on the schedule.",
+                        "弱い学校で一からやり直す。今の学校は対戦相手になる。",
+                    ),
+                    Btn::EndStory => self.tr(
+                        "End the career here and keep the record.",
+                        "監督人生をここで終えて、通算成績を残す。",
+                    ),
+                    _ => continue,
+                };
+                p.text(
+                    what,
+                    200.0,
+                    r[1] + r[3] + 6.0,
+                    12.0,
+                    [226, 232, 246, 255],
+                    TextAlign::Center,
+                );
+            }
+        }
         for (b, r) in &l.buttons {
             let [x, y, w, h] = *r;
             let (label, col) = match *b {
@@ -2197,7 +2291,7 @@ impl DiamondDays {
     }
 }
 
-fn square_label(sq: Square, ja: bool) -> &'static str {
+pub(in crate::diamond_days) fn square_label(sq: Square, ja: bool) -> &'static str {
     match (sq, ja) {
         (Square::Event, true) => "イベント",
         (Square::Train(d), false) => drill_label(d, false),

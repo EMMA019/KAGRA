@@ -21,6 +21,7 @@
     "blurb": "blurb.diamond",
     "url_params": {
       "week": "string"
-    }
+    },
+    "title": "title.diamond"
   }
 }
