@@ -3022,6 +3022,15 @@ impl DiamondDays {
         self.quiet = false;
     }
 
+    /// Close every notice waiting, then go on as the last tap would.
+    fn skip_notes(&mut self) {
+        let n = self.notes.len();
+        if n > 1 {
+            self.notes.drain(..n - 1);
+        }
+        self.tap_notice();
+    }
+
     fn tap_notice(&mut self) {
         if !self.notes.is_empty() {
             self.notes.remove(0);
@@ -3358,6 +3367,7 @@ impl DiamondDays {
             hud::Btn::EndStory => self.finish_run(),
             hud::Btn::Skip => self.skip_game(),
             hud::Btn::ToChange => self.skip_to_change(),
+            hud::Btn::SkipNotes => self.skip_notes(),
             hud::Btn::RosterUp => self.roster.nudge(-(hud::ROW_H + 4.0) * 3.0),
             hud::Btn::RosterDown => self.roster.nudge((hud::ROW_H + 4.0) * 3.0),
         }

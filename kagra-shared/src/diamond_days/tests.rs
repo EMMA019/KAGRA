@@ -2729,3 +2729,41 @@ fn back_closes_the_screen_on_top() {
     g.pause_run();
     assert!(!g.on_key(back, true), "paused: the shell resumes");
 }
+
+/// Several notices waiting can be closed at once; one alone has only the tap.
+#[test]
+fn queued_notices_close_at_once() {
+    let mut g = started();
+    g.set_lang("ja");
+    assert_eq!(g.mode, Mode::Notice);
+    let has = |g: &DiamondDays| {
+        g.hud_buttons(W as f32, H as f32)
+            .iter()
+            .any(|(b, _)| *b == hud::Btn::SkipNotes)
+    };
+    for k in 0..3 {
+        g.note(&format!("Note {k}"), &format!("お知らせ{k}"), vec![]);
+    }
+    assert!(g.notes.len() >= 4);
+    assert!(has(&g));
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(
+        texts.iter().any(|t| t.starts_with("まとめて送る")),
+        "{texts:?}"
+    );
+    if let Ok(dir) = std::env::var("KAGRA_SHOTS") {
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join("01b_notices_phone.png"))
+            .unwrap();
+    }
+    let week = g.s.week;
+    press(&mut g, hud::Btn::SkipNotes);
+    assert!(g.notes.is_empty() || g.s.week != week, "all closed");
+    assert_ne!(g.mode, Mode::Notice);
+    // A single notice: only the tap.
+    g.note("One", "ひとつ", vec![]);
+    g.mode = Mode::Notice;
+    assert!(!has(&g));
+}

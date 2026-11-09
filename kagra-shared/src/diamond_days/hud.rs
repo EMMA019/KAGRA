@@ -40,6 +40,8 @@ pub enum Btn {
     Skip,
     /// Play on to the end of this half-inning (a call still stops it).
     ToChange,
+    /// Close every notice waiting, not one at a time.
+    SkipNotes,
     /// A player's page: raise a stat, spend everything, change the practice menu, back.
     Raise(Stat),
     AutoRaise,
@@ -185,6 +187,11 @@ impl DiamondDays {
                 push_choices(&mut b, hh, board::camp_talk().choices.len());
             }
             Mode::Bracket => push_choices(&mut b, hh, 3),
+            Mode::Notice if self.notes.len() > 1 => {
+                if let Some((y, tall)) = self.notice_box(hh) {
+                    b.push((Btn::SkipNotes, [214.0, y + tall - 82.0, 146.0, 36.0]));
+                }
+            }
             Mode::Decide(d) => {
                 let n = match d {
                     super::Decide::Ace => self.ace_candidates().len(),
@@ -1273,8 +1280,39 @@ impl DiamondDays {
         }
     }
 
+    /// The notice's lines as drawn: the first paragraph wraps at its bigger size.
+    fn notice_lines(&self, n: &super::Note) -> Vec<String> {
+        n.lines
+            .iter()
+            .enumerate()
+            .flat_map(|(i, (en, jp))| {
+                wrap(
+                    if self.lang_ja { jp } else { en },
+                    if i == 0 { 18.0 } else { 16.0 },
+                    312.0,
+                )
+            })
+            .collect()
+    }
+
+    /// The first notice's panel on a stage `stage_h` tall: its top and its height.
+    fn notice_box(&self, stage_h: f32) -> Option<(f32, f32)> {
+        let n = self.notes.first()?;
+        let lines = self.notice_lines(n).len();
+        // Faces in rows of four under the lines (who graduates, who joins).
+        let faces_h = n.faces.len().min(12).div_ceil(4) as f32 * 92.0;
+        // Lines from 46 below the top; the manager and the prompt take the last 104.
+        let tall = (46.0 + lines as f32 * 25.0 + faces_h + 112.0)
+            .max(220.0)
+            .min(stage_h - 80.0);
+        Some(((stage_h - tall) * 0.5, tall))
+    }
+
     fn draw_notice(&self, p: &mut Painter) {
         let Some(n) = self.notes.first() else { return };
+        let Some((y, tall)) = self.notice_box(p.st.h) else {
+            return;
+        };
         let ja = self.lang_ja;
         p.layer();
         let [x0, y0, w, h] = p.st.screen;
@@ -1282,27 +1320,8 @@ impl DiamondDays {
             &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
             Paint::Solid([12, 16, 34, 185]),
         );
-        // The first line is drawn at 18: wrap the first paragraph at that size so it fits.
-        let lines: Vec<String> = n
-            .lines
-            .iter()
-            .enumerate()
-            .flat_map(|(i, (en, jp))| {
-                wrap(
-                    if ja { jp } else { en },
-                    if i == 0 { 18.0 } else { 16.0 },
-                    312.0,
-                )
-            })
-            .collect();
-        // Faces in rows of four under the lines (who graduates, who joins).
-        let face_rows = n.faces.len().min(12).div_ceil(4);
-        let faces_h = face_rows as f32 * 92.0;
-        // Lines from 46 below the top; the manager and the prompt take the last 104.
-        let tall = (46.0 + lines.len() as f32 * 25.0 + faces_h + 112.0)
-            .max(220.0)
-            .min(p.st.h - 80.0);
-        let y = (p.st.h - tall) * 0.5;
+        let lines = self.notice_lines(n);
+        let faces_h = n.faces.len().min(12).div_ceil(4) as f32 * 92.0;
         p.panel(
             20.0,
             y,
@@ -1391,6 +1410,25 @@ impl DiamondDays {
                 14.0,
                 ORANGE,
                 TextAlign::Right,
+            );
+        }
+        // More cards waiting: close them all at once.
+        let more = self.notes.len() - 1;
+        if more > 0 {
+            let label = if ja {
+                format!("まとめて送る（あと{more}）")
+            } else {
+                format!("Skip all ({more} more)")
+            };
+            p.button(
+                214.0,
+                y + tall - 82.0,
+                146.0,
+                36.0,
+                &label,
+                13.0,
+                [110, 116, 140, 255],
+                true,
             );
         }
     }
