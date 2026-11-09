@@ -693,6 +693,31 @@ impl Game {
         self.line[side].iter().map(|&r| r as u32).sum()
     }
 
+    /// The home side led after the top of the last inning and never batted in it: the
+    /// board shows an X there, not a 0.
+    pub fn home_sat_out(&self) -> bool {
+        self.over
+            && self.runs(1) > self.runs(0)
+            && self
+                .log
+                .iter()
+                .rev()
+                .find(|q| q.is_pa())
+                .is_some_and(|q| q.side == 0)
+    }
+
+    /// What a board shows for one side's inning `k` (0-based): runs, or the X.
+    pub fn cell(&self, side: usize, k: usize) -> Option<String> {
+        let v = self.line[side].get(k)?;
+        Some(
+            if side == 1 && k + 1 == self.line[1].len() && self.home_sat_out() {
+                "X".to_string()
+            } else {
+                v.to_string()
+            },
+        )
+    }
+
     pub fn won(&self) -> Option<bool> {
         self.over
             .then(|| self.runs(self.us) > self.runs(1 - self.us))
@@ -1692,6 +1717,7 @@ impl Game {
     }
 
     /// Play to the end (tests, and the "skip" button).
+    #[cfg(test)]
     pub fn finish(&mut self) {
         let mut guard = 0;
         while self.step() && guard < 2000 {

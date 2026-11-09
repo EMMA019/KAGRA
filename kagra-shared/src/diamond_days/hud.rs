@@ -38,6 +38,8 @@ pub enum Btn {
     /// No more calls this game.
     Auto,
     Skip,
+    /// Play on to the end of this half-inning (a call still stops it).
+    ToChange,
     /// A player's page: raise a stat, spend everything, change the practice menu, back.
     Raise(Stat),
     AutoRaise,
@@ -242,7 +244,7 @@ impl DiamondDays {
                     b.push((Btn::EndStory, [24.0, y + 160.0, 352.0, 50.0]));
                 }
             }
-            Mode::Match { asking, .. } => match asking {
+            Mode::Match { asking, shown, .. } => match asking {
                 Some(spot) => {
                     let g = self.game.as_ref();
                     let panel = self.call_panel(hh);
@@ -299,9 +301,15 @@ impl DiamondDays {
                     ));
                 }
                 None => {
-                    b.push((Btn::Speed, [10.0, hh - 62.0, 120.0, 46.0]));
-                    b.push((Btn::Orders, [140.0, hh - 62.0, 120.0, 46.0]));
-                    b.push((Btn::Skip, [270.0, hh - 62.0, 120.0, 46.0]));
+                    b.push((Btn::Speed, [10.0, hh - 62.0, 86.0, 46.0]));
+                    // On the last moment only the way to the result is left.
+                    if self.at_finale(shown) {
+                        b.push((Btn::Skip, [198.0, hh - 62.0, 192.0, 46.0]));
+                    } else {
+                        b.push((Btn::Orders, [104.0, hh - 62.0, 86.0, 46.0]));
+                        b.push((Btn::ToChange, [198.0, hh - 62.0, 92.0, 46.0]));
+                        b.push((Btn::Skip, [298.0, hh - 62.0, 92.0, 46.0]));
+                    }
                 }
             },
             Mode::MatchIntro => {
@@ -1074,6 +1082,14 @@ impl DiamondDays {
                 4.0,
             );
             p.text(&txt, rx + rw - 69.0, ry + 8.0, 14.0, INK, TextAlign::Center);
+            p.text(
+                self.tr("Tap to skip the walk", "タップでスキップ"),
+                rx + rw * 0.5,
+                py + ph + 3.0,
+                11.0,
+                [236, 248, 230, 255],
+                TextAlign::Center,
+            );
         } else if matches!(self.mode, Mode::Plan) {
             p.text(
                 self.tr(

@@ -478,8 +478,13 @@ impl DiamondDays {
                         Some(a) => a.side == side && k + 1 == a.inning as usize,
                         None => k + 1 == cells && !g.over && (side == 0) == g.top,
                     };
+                    let txt = if as_of.is_none() {
+                        g.cell(side, k).unwrap_or_default()
+                    } else {
+                        v.to_string()
+                    };
                     p.text(
-                        &v.to_string(),
+                        &txt,
                         10.0 + name_w + (k as f32 + 0.5) * cell,
                         yy,
                         14.0,
@@ -1121,9 +1126,25 @@ impl DiamondDays {
                             rr[1],
                             rr[2],
                             rr[3],
-                            self.tr("TO THE END", "試合終了まで"),
-                            14.0,
+                            if self.at_finale(shown) {
+                                self.tr("TO THE RESULT", "結果へ")
+                            } else {
+                                self.tr("TO THE END", "試合終了まで")
+                            },
+                            if self.at_finale(shown) { 16.0 } else { 13.0 },
                             [110, 116, 140, 255],
+                            true,
+                        );
+                    }
+                    Btn::ToChange => {
+                        p.button(
+                            rr[0],
+                            rr[1],
+                            rr[2],
+                            rr[3],
+                            self.tr("NEXT INNING", "チェンジまで"),
+                            13.0,
+                            [96, 120, 160, 255],
                             true,
                         );
                     }
@@ -1138,7 +1159,7 @@ impl DiamondDays {
                             } else {
                                 self.tr("SPEED x1", "倍速 OFF")
                             },
-                            14.0,
+                            13.0,
                             if self.fast {
                                 ORANGE
                             } else {
@@ -1850,8 +1871,9 @@ impl DiamondDays {
             let short: String = name.chars().take(if ja { 4 } else { 9 }).collect();
             p.text(&short, 24.0, yy + 1.0, 12.5, WHITE, TextAlign::Left);
             for (k, v) in rep.line[side].iter().enumerate() {
+                let x = side == 1 && rep.x_last && k + 1 == rep.line[1].len();
                 p.text(
-                    &v.to_string(),
+                    &if x { "X".to_string() } else { v.to_string() },
                     10.0 + name_w + (k as f32 + 0.5) * cell,
                     yy,
                     14.0,

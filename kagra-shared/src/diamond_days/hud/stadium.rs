@@ -34,6 +34,11 @@ const FIELD_X0: f32 = -80.0;
 const FIELD_Z1: f32 = 25.0;
 const FIELD_M: f32 = 160.0;
 const FIELD_PX: u32 = 1024;
+/// The sharper picture of the infield and round home: x -35..35 and z -50..20 (m).
+const INFIELD_X0: f32 = -35.0;
+const INFIELD_Z1: f32 = 20.0;
+const INFIELD_M: f32 = 70.0;
+const INFIELD_PX: u32 = 1024;
 const GRASS: Rgba = [74, 138, 62, 255];
 const GRASS_LIGHT: Rgba = [86, 152, 70, 255];
 const DIRT: Rgba = [112, 84, 64, 255];
@@ -122,23 +127,37 @@ fn prop(
 /// foul ground beside it, the mound, the warning track. Baked once.
 fn field_picture() -> Option<PicId> {
     static PIC: OnceLock<Option<PicId>> = OnceLock::new();
-    *PIC.get_or_init(|| {
-        let n = FIELD_PX as f32;
-        let s = n / FIELD_M;
-        let px = |x: f32, z: f32| -> P { [(x - FIELD_X0) * s, (FIELD_Z1 - z) * s] };
+    *PIC.get_or_init(|| field_art(FIELD_X0, FIELD_Z1, FIELD_M, FIELD_PX))
+}
+
+/// The infield and the ground round home plate again, sharper: the pitch view and a ground
+/// ball look at it from close, so it gets its own picture over the whole-field one.
+fn infield_picture() -> Option<PicId> {
+    static PIC: OnceLock<Option<PicId>> = OnceLock::new();
+    *PIC.get_or_init(|| field_art(INFIELD_X0, INFIELD_Z1, INFIELD_M, INFIELD_PX))
+}
+
+/// The ground art for the square `size` m wide whose top-left corner is world (x0, z1),
+/// `n_px` pixels a side. The stripes and every line are in world metres, so pictures of
+/// different squares line up.
+fn field_art(x0: f32, z1: f32, size: f32, n_px: u32) -> Option<PicId> {
+    {
+        let n = n_px as f32;
+        let s = n / size;
+        let px = |x: f32, z: f32| -> P { [(x - x0) * s, (z1 - z) * s] };
         let mut list = DrawList::default();
         let m = &mut list.mesh;
         let rect = |x0: f32, y0: f32, x1: f32, y1: f32| [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
         vector::fill(m, &rect(0.0, 0.0, n, n), &Paint::Solid(GRASS));
-        // Mown in stripes, 6 m wide, running out to centre.
+        // Mown in stripes, 6 m wide, running out to centre (laid from the whole field's edge).
         for i in 0..(FIELD_M / 6.0) as usize {
             if i % 2 == 0 {
-                let x0 = i as f32 * 6.0 * s;
-                vector::fill(
-                    m,
-                    &rect(x0, 0.0, x0 + 6.0 * s, n),
-                    &Paint::Solid(GRASS_LIGHT),
-                );
+                let wx = FIELD_X0 + i as f32 * 6.0;
+                let (a, b) = (px(wx, 0.0)[0], px(wx + 6.0, 0.0)[0]);
+                if b < 0.0 || a > n {
+                    continue;
+                }
+                vector::fill(m, &rect(a, 0.0, b, n), &Paint::Solid(GRASS_LIGHT));
             }
         }
         // The warning track along the fence.
@@ -176,7 +195,7 @@ fn field_picture() -> Option<PicId> {
         // Where the infield meets the grass, a darker rim.
         let mut rim = vector::arc(mound[0], mound[1], 29.0 * s, 29.0 * s, 0.0, PI * 2.0, 160);
         rim.push(rim[0]);
-        vector::stroke(m, &rim, 2.0, [64, 110, 52, 255]);
+        vector::stroke(m, &rim, (0.3 * s).max(1.5), [64, 110, 52, 255]);
         // Lighter dirt where feet scuff it: the mound and the base paths.
         vector::fill(
             m,
@@ -198,8 +217,8 @@ fn field_picture() -> Option<PicId> {
             &vector::circle(home[0], home[1], 4.0 * s),
             &Paint::Solid(mix(DIRT, DIRT_LIGHT, 0.4)),
         );
-        image2d::bake(&list, FIELD_PX, FIELD_PX).ok()
-    })
+        image2d::bake(&list, n_px, n_px).ok()
+    }
 }
 
 /// A block of the stands: concrete steps and seats with the fans of the crowd sheet on
@@ -243,6 +262,25 @@ fn ballpark(out: &mut Vec<WorldProp>, night: bool, cheer: f32, clock: f32) {
         ground.texture = Some(image2d::texture_spec(pic));
         ground.roughness = 1.0;
         out.push(ground);
+    }
+    if let Some(pic) = infield_picture() {
+        let mut near = prop(
+            "ground-near",
+            "plane",
+            [
+                INFIELD_X0 + INFIELD_M * 0.5,
+                0.01,
+                INFIELD_Z1 - INFIELD_M * 0.5,
+            ],
+            0.0,
+            0.0,
+            [INFIELD_M, 1.0, INFIELD_M],
+            [255, 255, 255],
+            false,
+        );
+        near.texture = Some(image2d::texture_spec(pic));
+        near.roughness = 1.0;
+        out.push(near);
     }
     // Grass beyond the picture, under the stands.
     out.push(prop(
@@ -1607,13 +1645,13 @@ mod tests {
             props,
             ..Default::default()
         };
-        // Every stand shares one mesh, every sky plate another: the field, one block of
-        // stands, the sky.
+        // Every stand shares one mesh, every sky plate another: the field, the sharper
+        // infield over it, one block of stands, the sky.
         let textured = doc
             .compile_meshes()
             .into_iter()
             .filter(|(_, m)| m.albedo.is_some())
             .count();
-        assert_eq!(textured, 3);
+        assert_eq!(textured, 4);
     }
 }

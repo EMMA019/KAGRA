@@ -62,6 +62,16 @@ fn run(g: &mut DiamondDays, secs: f32) {
     }
 }
 
+/// Skip a game to its last moment, then past it to the result.
+fn skip_whole_game(g: &mut DiamondDays) {
+    press(g, hud::Btn::Skip);
+    assert!(
+        matches!(g.mode, Mode::Match { .. }),
+        "the skip stops on the last moment"
+    );
+    press(g, hud::Btn::Skip);
+}
+
 /// Play one week through the screen: clear notices, pick the first card or watch a game
 /// (with orders left to the team), and wait for the next week.
 fn play_week(g: &mut DiamondDays) {
@@ -627,6 +637,8 @@ fn screens_to_png() {
         }
     }
     press(&mut g, hud::Btn::Skip);
+    shot(&g, "09_finale");
+    press(&mut g, hud::Btn::Skip);
     shot(&g, "09_result");
     g.pause();
     shot(&g, "10_pause");
@@ -831,7 +843,7 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     assert_eq!(g.mode, Mode::MatchIntro);
     let rival = g.s.rivals[g.rival_idx.unwrap()].name.clone();
     press(&mut g, hud::Btn::PlayBall);
-    press(&mut g, hud::Btn::Skip);
+    skip_whole_game(&mut g);
     g.notes.clear();
     g.mode = Mode::Plan;
     g.s.year = 2;
@@ -1156,7 +1168,7 @@ fn players_keep_their_numbers_and_the_year_names_its_best() {
     g.s.week = 6;
     g.begin_week();
     press(&mut g, hud::Btn::PlayBall);
-    press(&mut g, hud::Btn::Skip);
+    skip_whole_game(&mut g);
     let rep = g.report.clone().unwrap();
     let ours: u32 = g.s.team.players.iter().map(|p| p.season.hits as u32).sum();
     assert_eq!(
@@ -2571,4 +2583,131 @@ fn the_milestone_notes_fit_the_screen() {
             );
         }
     }
+}
+
+/// "Skip" plays the rest at once, the calls left to the team, and stops on the game's last
+/// moment (the bow, the song, the walk-off) so it is still seen; a second press ends it.
+#[test]
+fn skip_stops_on_the_last_moment_then_ends_the_game() {
+    let mut g = on_game_day();
+    press(&mut g, hud::Btn::Orders);
+    assert!(g.want_call);
+    press(&mut g, hud::Btn::Skip);
+    let Mode::Match {
+        shown,
+        asking: None,
+        t,
+    } = g.mode.clone()
+    else {
+        panic!("still in the game: {:?}", g.mode)
+    };
+    let gm = g.game.as_ref().unwrap();
+    assert!(gm.over);
+    assert_eq!(shown, gm.log.len());
+    assert!(g.finale(gm, shown).is_some(), "on the last moment");
+    assert_eq!(t, 0.0, "it plays from its start");
+    assert!(!g.want_call);
+    assert!(g.report.is_none());
+    press(&mut g, hud::Btn::Skip);
+    assert_eq!(g.mode, Mode::MatchEnd);
+    assert!(g.report.is_some());
+}
+
+/// "To the change" plays on to the next half-inning's first batter, or stops sooner for a
+/// call the coach has to make.
+#[test]
+fn to_change_plays_to_the_next_half_inning() {
+    let mut g = on_game_day();
+    let half = |gm: &Game, shown: usize| {
+        gm.log[..shown]
+            .iter()
+            .rev()
+            .find(|q| q.is_pa())
+            .map(|q| (q.inning, q.side))
+    };
+    let mut changes = 0;
+    for _ in 0..200 {
+        match g.mode.clone() {
+            Mode::Match {
+                asking: Some(_), ..
+            } => g.give_call(None),
+            Mode::Match {
+                shown,
+                asking: None,
+                ..
+            } => {
+                let gm = g.game.as_ref().unwrap();
+                if g.finale(gm, shown).is_some() {
+                    break;
+                }
+                // Before the first batter, the top of the first is on screen.
+                let before = half(gm, shown).or(Some((1, 0)));
+                press(&mut g, hud::Btn::ToChange);
+                let Mode::Match {
+                    shown: now, asking, ..
+                } = g.mode.clone()
+                else {
+                    panic!("left the game: {:?}", g.mode)
+                };
+                let gm = g.game.as_ref().unwrap();
+                if asking.is_some() || g.finale(gm, now).is_some() {
+                    continue;
+                }
+                let line = &gm.log[now - 1];
+                assert!(line.is_pa(), "stops on a batter: {}", line.ja);
+                assert_ne!(Some((line.inning, line.side)), before, "a new half");
+                assert_eq!(
+                    half(gm, now - 1),
+                    before,
+                    "the first batter of the next half"
+                );
+                changes += 1;
+            }
+            _ => break,
+        }
+    }
+    assert!(changes >= 6, "{changes} changes");
+    assert!(g
+        .finale(g.game.as_ref().unwrap(), g.game.as_ref().unwrap().log.len())
+        .is_some());
+}
+
+/// A tap during the walk puts the coach on his square at once.
+#[test]
+fn a_tap_skips_the_walk() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Plan);
+    let steps = g.s.hand[0].steps as usize;
+    press(&mut g, hud::Btn::Card(0));
+    assert!(matches!(g.mode, Mode::Walk { .. }));
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t.contains("Tap to skip")), "{texts:?}");
+    tap(&mut g, 195.0, 300.0);
+    assert!(!matches!(g.mode, Mode::Walk { .. }));
+    assert_eq!(g.s.pos, steps % g.spec.ring.len());
+    assert_eq!(g.s.week, 2, "the week moved on");
+}
+
+/// A home side ahead after the top of the ninth does not bat: its board shows an X there.
+#[test]
+fn the_home_side_that_does_not_bat_gets_an_x() {
+    let g = on_game_day();
+    let games = games_to_the_end(&g, 0..200, false);
+    let mut seen = 0;
+    for x in &games {
+        let last = x.line[1].len() - 1;
+        let cell = x.cell(1, last).unwrap();
+        if x.home_sat_out() {
+            assert_eq!(cell, "X");
+            assert!(x.runs(1) > x.runs(0));
+            seen += 1;
+        } else {
+            assert_ne!(cell, "X");
+        }
+        assert_ne!(x.cell(0, x.line[0].len() - 1).unwrap(), "X");
+    }
+    assert!(seen > 10, "{seen} of {} games", games.len());
 }

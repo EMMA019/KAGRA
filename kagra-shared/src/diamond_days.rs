@@ -207,6 +207,8 @@ struct Report {
     names: [(String, String); 2],
     us: usize,
     line: [Vec<u8>; 2],
+    /// The home side's last inning is an X (it led and did not bat).
+    x_last: bool,
     hits: [u16; 2],
     /// The player of the game (ours): family name and the line under him.
     star: Option<(String, String, String)>,
@@ -410,6 +412,8 @@ pub struct DiamondDays {
     /// The host asked the game to draw its own title, pause and result cards (a native
     /// shell; the web page brings HTML cards).
     own_menu: Cell<bool>,
+    /// Lines are being skipped through: no sounds for each one.
+    quiet: bool,
     /// The rival of the game in progress (not saved: a reload replays the week).
     rival_idx: Option<usize>,
     /// Camp results, told after the optional conversation.
@@ -460,6 +464,7 @@ impl DiamondDays {
             lang_ja: false,
             size: Cell::new((390.0, 844.0)),
             own_menu: Cell::new(false),
+            quiet: false,
             rival_idx: None,
             camp_lines: Vec::new(),
             move_picks: Vec::new(),
@@ -1362,6 +1367,7 @@ impl DiamondDays {
             ],
             us: g.us,
             line: g.line.clone(),
+            x_last: g.home_sat_out(),
             hits: g.hits,
             star,
             exp,
@@ -2040,6 +2046,15 @@ impl DiamondDays {
     }
 
     /// The coach stops on a square: it happens.
+    fn skip_walk(&mut self, left: u8, card: Card) {
+        let n = self.spec.ring.len().max(1);
+        self.hop_from = (self.s.pos + left as usize - 1) % n;
+        self.s.pos = (self.s.pos + left as usize) % n;
+        self.hop = 1.0;
+        crate::mixer::cue_sfx("step");
+        self.land(card);
+    }
+
     fn land(&mut self, card: Card) {
         let sq = self.spec.ring[self.s.pos];
         // A talk waits for the coach's answer (a save meanwhile replays the week).
@@ -2793,6 +2808,14 @@ impl DiamondDays {
         };
         if shown < g.log.len() {
             let line = g.log[shown].clone();
+            if self.quiet {
+                self.mode = Mode::Match {
+                    shown: shown + 1,
+                    t: 0.0,
+                    asking: None,
+                };
+                return;
+            }
             if line.banner.is_some() {
                 crate::mixer::cue_sfx("event");
             }
@@ -2890,12 +2913,90 @@ impl DiamondDays {
         }
     }
 
-    /// Play the rest of the game at once.
+    /// The game's last moment is on screen (the walk-off, the bow, the song).
+    fn at_finale(&self, shown: usize) -> bool {
+        self.game
+            .as_ref()
+            .is_some_and(|g| self.finale(g, shown).is_some())
+    }
+
+    /// Play the rest of the game at once, the coach's calls left to the team, and stop on
+    /// its last line (the walk-off, the bow, the song). Pressed there, the game ends.
     fn skip_game(&mut self) {
-        if let Some(g) = self.game.as_mut() {
-            g.finish();
+        let at_end = match self.mode {
+            Mode::Match { shown, .. } => self.game.is_none() || self.at_finale(shown),
+            _ => true,
+        };
+        if at_end {
+            self.end_game();
+            return;
         }
-        self.end_game();
+        // A call asked for is the team's too.
+        self.want_call = false;
+        self.fast_forward(|this, g, shown| this.finale(g, shown).is_some(), true);
+    }
+
+    /// Play on to the end of this half-inning: the next half's first batter is on screen.
+    /// A chance or a pinch still stops for the coach's call.
+    fn skip_to_change(&mut self) {
+        let Some(g) = self.game.as_ref() else { return };
+        let Mode::Match { shown, .. } = self.mode else {
+            return;
+        };
+        // The half-inning on screen: the line showing (or the last one before it).
+        let half = g.log[..shown.min(g.log.len())]
+            .iter()
+            .rev()
+            .find(|q| q.is_pa())
+            .map(|q| (q.inning, q.side))
+            .unwrap_or((g.inning, if g.top { 0 } else { 1 }));
+        self.fast_forward(
+            move |this, g, shown| {
+                this.finale(g, shown).is_some()
+                    || g.log
+                        .get(shown.wrapping_sub(1))
+                        .is_some_and(|q| q.is_pa() && q.inning > 0 && (q.inning, q.side) != half)
+            },
+            false,
+        );
+    }
+
+    /// Show lines at once until `stop` holds for the line now on screen (it then plays from
+    /// its start), the game ends, or a call is asked for (left to the team when
+    /// `through_calls`, else it stops there for the coach).
+    fn fast_forward(&mut self, stop: impl Fn(&Self, &Game, usize) -> bool, through_calls: bool) {
+        self.quiet = true;
+        for _ in 0..20_000 {
+            let Mode::Match { shown, asking, .. } = self.mode.clone() else {
+                break;
+            };
+            if asking.is_some() {
+                if !through_calls {
+                    break;
+                }
+                // Left to the team, as "play on" would.
+                if let Some(g) = self.game.as_mut() {
+                    g.call(None);
+                }
+                self.mode = Mode::Match {
+                    shown,
+                    t: 0.0,
+                    asking: None,
+                };
+                continue;
+            }
+            let Some(g) = self.game.as_ref() else { break };
+            if shown > 0 && stop(self, g, shown) {
+                self.mode = Mode::Match {
+                    shown,
+                    t: 0.0,
+                    asking: None,
+                };
+                break;
+            }
+            self.advance_game(shown);
+        }
+        self.quiet = false;
     }
 
     fn tap_notice(&mut self) {
@@ -2985,6 +3086,11 @@ impl DiamondDays {
                 }
             }
             Mode::Player(_) => self.mode = Mode::Roster,
+            // A tap skips the walk: the coach is on the square at once.
+            Mode::Walk { left, ref card, .. } => {
+                let card = card.clone();
+                self.skip_walk(left, card)
+            }
             Mode::Match {
                 asking: None,
                 shown,
@@ -3234,6 +3340,7 @@ impl DiamondDays {
             hud::Btn::School(i) => self.continue_move(i as usize),
             hud::Btn::EndStory => self.finish_run(),
             hud::Btn::Skip => self.skip_game(),
+            hud::Btn::ToChange => self.skip_to_change(),
             hud::Btn::RosterUp => self.roster.nudge(-(hud::ROW_H + 4.0) * 3.0),
             hud::Btn::RosterDown => self.roster.nudge((hud::ROW_H + 4.0) * 3.0),
         }
