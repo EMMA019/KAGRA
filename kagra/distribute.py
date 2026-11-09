@@ -47,6 +47,10 @@ class GameManifest:
     platform: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
     page: dict = field(default_factory=dict)
+    # Android: the launcher name on Japanese phones, and the adaptive icon's two layers
+    # ({"foreground": png, "background": png}, square, 432 px for 108 dp at xxxhdpi).
+    title_ja: str = ""
+    icon_layers: dict = field(default_factory=dict)
 
     def version_code(self) -> int:
         return version_code(self.version)
@@ -143,6 +147,8 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
         raise ManifestError(
             f"{path}: meta.rewarded.slot {meta['rewarded']['slot']!r} is not a platform.ads.rewarded slot"
         )
+    title_ja = str(raw.get("title_ja") or "").strip()
+    icon_layers = _icon_layers(raw.get("icon_layers"), repo, path)
     _must_exist(repo / entry, "entry")
     _must_exist(repo / icon, "icon")
     if world:
@@ -160,7 +166,106 @@ def load_manifest(path: Path, repo: Path | None = None) -> GameManifest:
         platform=platform,
         meta=meta,
         page=page,
+        title_ja=title_ja,
+        icon_layers=icon_layers,
     )
+
+
+def _icon_layers(raw: object, repo: Path, path: Path) -> dict:
+    """``icon_layers``: both layers, repo-relative square PNGs of one size."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or set(raw) != {"foreground", "background"}:
+        raise ManifestError(f"{path}: icon_layers needs exactly foreground and background")
+    layers = {key: _repo_relative(str(raw[key]), repo) for key in ("foreground", "background")}
+    sizes = set()
+    for key, rel in layers.items():
+        _must_exist(repo / rel, f"icon_layers.{key}")
+        sizes.add(png_size((repo / rel).read_bytes()))
+    if len(sizes) != 1 or any(w != h for w, h in sizes):
+        raise ManifestError(f"{path}: icon_layers must be two square PNGs of one size, got {sorted(sizes)}")
+    return layers
+
+
+def png_size(png: bytes) -> tuple[int, int]:
+    """(width, height) from a PNG's header."""
+    if not png.startswith(b"\x89PNG\r\n\x1a\n") or png[12:16] != b"IHDR":
+        raise ManifestError("not a PNG")
+    width, height = struct.unpack(">II", png[16:24])
+    return width, height
+
+
+# An Android launcher icon is 48 dp; an adaptive layer is 108 dp. Pixels per dp by bucket.
+_DENSITIES = (("mdpi", 1.0), ("hdpi", 1.5), ("xhdpi", 2.0), ("xxhdpi", 3.0), ("xxxhdpi", 4.0))
+# Every res file write_android_res may write, so a new build first removes the last one's.
+ANDROID_RES_FILES = (
+    *(f"drawable-{name}/ic_launcher.png" for name, _ in _DENSITIES),
+    *(f"drawable-{name}/ic_launcher_foreground.png" for name, _ in _DENSITIES),
+    *(f"drawable-{name}/ic_launcher_background.png" for name, _ in _DENSITIES),
+    "mipmap-anydpi-v26/ic_launcher.xml",
+    "values/kagra_game.xml",
+    "values-ja/kagra_game.xml",
+)
+
+
+def density_for(px: int, dp: int) -> str:
+    """The density bucket where a ``px``-wide picture is ``dp`` wide (the nearest one)."""
+    return min(_DENSITIES, key=lambda d: abs(px - dp * d[1]))[0]
+
+
+def write_android_res(manifest: GameManifest, repo: Path, res: Path) -> tuple[str, str]:
+    """Write the launcher icon (adaptive when the manifest has ``icon_layers``) and the
+    launcher name (Japanese with ``title_ja``) under ``res``. Returns the (icon, label)
+    references for the app manifest."""
+    for rel in ANDROID_RES_FILES:
+        (res / rel).unlink(missing_ok=True)
+
+    def put(rel: str, data: bytes) -> None:
+        target = res / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+    icon = (repo / manifest.icon).read_bytes()
+    put(f"drawable-{density_for(png_size(icon)[0], 48)}/ic_launcher.png", icon)
+    icon_ref = "@drawable/ic_launcher"
+    if manifest.icon_layers:
+        for key in ("foreground", "background"):
+            data = (repo / manifest.icon_layers[key]).read_bytes()
+            put(f"drawable-{density_for(png_size(data)[0], 108)}/ic_launcher_{key}.png", data)
+        put(
+            "mipmap-anydpi-v26/ic_launcher.xml",
+            (
+                '<?xml version="1.0" encoding="utf-8"?>\n'
+                '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                '    <background android:drawable="@drawable/ic_launcher_background" />\n'
+                '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
+                "</adaptive-icon>\n"
+            ).encode("utf-8"),
+        )
+        icon_ref = "@mipmap/ic_launcher"
+    label_ref = manifest.title
+    if manifest.title_ja:
+        for folder, text in (("values", manifest.title), ("values-ja", manifest.title_ja)):
+            put(
+                f"{folder}/kagra_game.xml",
+                (
+                    '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                    f'    <string name="kagra_app_name">{android_string(text)}</string>\n'
+                    "</resources>\n"
+                ).encode("utf-8"),
+            )
+        label_ref = "@string/kagra_app_name"
+    return icon_ref, label_ref
+
+
+def android_string(text: str) -> str:
+    """Text for an Android string resource: XML-escaped, quotes and a leading @ or ?
+    backslashed."""
+    out = text.replace("\\", "\\\\").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    out = out.replace("'", "\\'").replace('"', '\\"')
+    if out[:1] in ("@", "?"):
+        out = "\\" + out
+    return out
 
 
 def manifest_for_game(repo: Path, game: str | Path) -> GameManifest:
@@ -382,10 +487,13 @@ def stage_game(repo: Path, manifest: GameManifest, dest: Path) -> list[str]:
     return sorted(set(copied))
 
 
-def write_android_properties(manifest: GameManifest, path: Path, *, icon_ref: str) -> None:
-    """Gradle が UTF-8 で読む ``key=value``。"""
+def write_android_properties(
+    manifest: GameManifest, path: Path, *, icon_ref: str, label_ref: str | None = None
+) -> None:
+    """Gradle が UTF-8 で読む ``key=value``。``label`` はランチャー名（文字列リソース可）。"""
     lines = [
         f"title={_prop(manifest.title)}",
+        f"label={_prop(label_ref or manifest.title)}",
         f"version_name={_prop(manifest.version)}",
         f"version_code={manifest.version_code()}",
         f"application_id={_prop(manifest.application_id)}",

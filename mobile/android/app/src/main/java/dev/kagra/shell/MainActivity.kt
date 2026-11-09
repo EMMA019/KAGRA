@@ -90,6 +90,12 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                     KagraNative.playtestAction("close")
                     return
                 }
+                // The game first: it closes the screen on top or pauses. On the title it
+                // does not take the key and the app goes back.
+                if (KagraNative.available && KagraNative.pushKey("Back", true)) {
+                    KagraNative.pushKey("Back", false)
+                    return
+                }
                 isEnabled = false
                 onBackPressedDispatcher.onBackPressed()
             }
@@ -170,6 +176,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
         packaged = KagraNative.loadGameFile(world.absolutePath)
         if (packaged) {
+            KagraNative.setLang(Locale.getDefault().language)
             audio = AudioBus(extracted)
         }
         if (!packaged) {

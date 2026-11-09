@@ -4,12 +4,7 @@ use super::*;
 
 impl SurvivorArena {
     pub fn hud(&self, width: u32, height: u32, _menu: bool) -> DrawList {
-        let mut list = DrawList {
-            clear: [0, 0, 0, 0],
-            quads: Vec::new(),
-            texts: Vec::new(),
-            images: Vec::new(),
-        };
+        let mut list = DrawList::default();
         let (w, h) = (width.max(1) as f32, height.max(1) as f32);
         self.size.set((w, h));
         let s = hud_scale(w, h);

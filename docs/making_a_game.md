@@ -48,13 +48,44 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 | 固定ステップの駆動、ヒットストップ、スコア | `game_core::{tick_frame, Kit, Core}` |
 | フローティングのスティック（着地、追従、アナログ、見た目） | `game_core::stick` |
 | 走る・跳ぶ・ダッシュする体（コヨーテタイム、先行入力、すり抜け足場、動く足場） | `game_core::platform` |
+| マス目の移動範囲・経路・射程（タクティクス、パズル） | `game_core::grid` |
+| 物語カード・クリアカード（画面を暗くして中央にカード、見出し、本文、集計の行、点滅する「タップで」、ステージ選択の ◀ ▶） | `hud_kit::{Card, CardStyle, pick_side}`（文章の折り返しだけなら `hud_kit::wrap_text`） |
+| HUD ボタンの当たり判定（描くのと同じ矩形の表で） | `hud_kit::hit` |
+| ステージの解放と記録（端末に保存、最初の物語カードでステージ選択） | `game_core::progress::{Progress, Better}` + `KitHost::save_json` + マニフェストの `page.save` |
+| 会話（顔は図形で描く、表情、口パク、文字送り、選択肢、フラグ、イベント。JSON） | `game_core::dialogue::{Script, Talk}` |
+| 持ち物・お金・装備・ショップ（JSON のアイテム定義、スタック、装備の能力値、売買、保存） | `game_core::items::{ItemBook, Bag, Gear, Shop}` + `hud_kit::Menu` |
+| 物理（横から見た箱とボール：落ちる、転がる、倒れる、積む、崩れる、爆発、眠る） | `game_core::physics2d::{World, Body, Shape}` |
+| キャラの動き（待機・歩き・走り・ジャンプ、攻撃の当たるタイミング、やられ、倒れたまま。リグ付きは glTF クリップ、無しは手続きのポーズ） | `game_core::anim::{Animator, MoveSet}`（KayKit は `MoveSet::kaykit()`） |
+| イージング、トゥイーン、タイマー、行って戻る動き | `game_core::tween::{Ease, Tween, Timer, ping_pong, pulse}` |
+| ダメージ数字や「MISS」が場所から浮かんで消える | `game_core::floats::Floats` |
 | ジャンプ以外のボタン（J/K/Shift、パッド B/X） | `KitHost::buttons` |
-| カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at}` |
+| カメラ（縦でも横でも範囲が収まる）、タップした物・地面 | `game_core::view::{View::frame, project, ground_at, pick}` |
 | 群れの体の動き（ふわふわ、よろよろ、ぴょん、すべり、どしん。JSON で `Motion::parse`） | `game_core::motion` |
 | 敵プール、空間グリッド、出現予算、シード付き乱数 | `game_core::swarm` |
 | 敵の JSON 定義（歩く・飛ぶ・跳ぶ・予告） | `game_core::enemies`（`docs/enemy_kit.md`） |
 | ライフ、ミッション、結果、ゲームの手触り | `game_core::{lives, missions, result, juice, feel}` |
 | 角丸パネル、ゲージ、ボタン | `hud_kit::{round_panel, gauge, pill_button}` |
+| 絵で描く HUD（縦持ちスマホ基準の設計キャンバス、影とグラデのパネル、つやボタン、リボン、ランク札、吹き出し、星、ゲージ） | `hud_art::{Stage, Painter}` |
+| ベクター図形（多角形・曲線の塗り、太さの変わる線、グラデ、光、凸形でのクリップ、ふちのアンチエイリアス） | `vector`（`DrawList.mesh` の三角形） |
+| 重ね順（ポップアップが下の文字を隠す、重なるカード） | `DrawList::layer()` |
+| 四角の中だけに描く（スクロールするリスト、窓）。GPU はシザー、CPU 絵も同じ | `DrawList.clip` / `Painter::clip_layer` |
+| 指で引っぱるリスト（ドラッグ、はじき、端でのびて戻る、動かないタップは選択） | `hud_art::Scroll`（`press` / `drag` / `release` / `step`） |
+| 画面上でポンと出て上がる文字（「+1」「ミート E→D!」） | `hud_art::Pops` |
+| 紙吹雪（点から打ち上げ、または上から降らせる。ひらひら裏返り、紙の速さで落ちて消える。時間から計算するので状態なし、同じシードは同じ絵） | `hud_art::Confetti::{burst, shower}`（`.fade(a)` でまとめて薄く） |
+| 見出しの後ろの放射状の光（回る、先が消える） | `Painter::sunburst(cx, cy, r, rays, turn, color)` |
+| 動かないベクター絵を一度だけ画像に焼く（観客、建物、コマの並んだシート）。毎フレームは三角形 2 枚 | `image2d::bake(&list, w, h)` |
+| スプライトシートのコマ（左上から順、番号は折り返し） | `Painter::image_frame(pic, cols, rows, frame, rect, tint)` |
+| レーダーチャート（軸ごとのラベル、4 段の目盛り、複数チームを半透明で重ねる） | `Painter::radar(cx, cy, r, &labels, &[(&values, color)])` |
+| 場面転換（フェード、カーテン、アイリス。帯のタイトルつき）。画面はすぐ切り替えて、上から開く | `hud_art::Transition::open(Wipe::Curtain, secs, color, "試合の日！")` |
+| 線画の顔（表情 8 種、帽子・髪型 8 種・ユニフォーム、キャッシュ） | `game_core::portrait::{Face, Expr, Outfit, draw}` |
+| 全身のちびキャラ（顔は portrait、体はベクター。立ち・構え・走り・投球・スイング・捕手・バンザイ・礼、正面と背中、背番号） | `game_core::chibi::{draw, Pose, Facing, Kit}`（見本: `cargo run -p kagra-shared --example chibi_sheet`） |
+| 3D のちびキャラ（球・箱・円柱のトゥーン、輪郭線つき。2D の chibi と同じ Pose と Kit、左投げは鏡、遠くは軽い版。投げる手とバットの先の位置。`Pose::Bow(d)` で礼、`.glove(false)` で素手） | `game_core::chibi3d::{build, Figure, Detail, throwing_hand, bat_tip}`（見本: `cargo run -p kagra-shared --features render --example chibi3d_sheet`） |
+| 3D の小物をアニメ調に（陰が 2 段、黒い輪郭線） | `WorldProp::toon = true`、太さと陰の濃さは `WorldDoc::{toon_outline, toon_shade}` |
+| ベクターで描いて焼いた絵を 3D の床や看板に貼る（同じ絵の小物はメッシュ 1 つを共有） | `prop.texture = Some(image2d::texture_spec(pic))` |
+| スコアボードと下のパネルの間の帯にだけ 3D を見せるカメラ、2 つのカメラの間をすべらせる | `View::in_band(y0, y1)` / `View::lerp` |
+| 自分で光る小物（`emissive`）は 0.3 まで。超えると光の帯あつかいで手前に描かれ、影も落とさない | `WorldProp::emissive` |
+| PNG の絵を HUD に貼る（一度登録、アトラスにまとめて GPU で描画、前後の図形と同じ順番。9 分割の枠、はみ出しを切る cover） | `image2d::register_png` → `Painter::{image, image_part, image_cover, nine_slice}` |
+| GPU なしで HUD を PNG に（レビュー、CI） | `raster2d::picture(&list, w, h).save_png(path)` |
 | 出すモデルを最初に宣言（途中で出る・消えるモデルでカクつかない） | `game_core::declare_models` |
 | 角丸・円・リング | `Quad::round` / `Quad::circle` / `Quad::ring` |
 | 数字・タイトル用の書体 | `TextQuad::with_face(TextFace::Display)`（Cinzel） |
@@ -70,9 +101,16 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 "page": {"best": true, "lang": true, "pause": true, "fixed_step": true, "blurb": "blurb.stick"}
 ```
 
-`audio`、`save`（`KitHost::save_json` の進み具合を端末に保存）、`one_button`、`music_sync`、`revive`、`direct`、`tagline`、`theme`、
+`audio`、`title`（ページに出すゲーム名の i18n キー。言語ごとの名前）、`save`（`KitHost::save_json` の進み具合を端末に保存）、`resume`（`save` が途中の一周のゲーム向け: タイトルが「つづきから」になり、確認してから消す「はじめから」が出る）、`one_button`、`music_sync`、`revive`、`direct`、`tagline`、`theme`、
 `default_quality`、`quality_words`、`url_params` もある。`play.html` に
 ゲーム名やジャンルで分岐を書かない（`tests/test_page_spec.py` が止める）。
+
+APK を本編にするなら、マニフェストに `title_ja`（日本語の端末のランチャー名）と
+`icon_layers`（adaptive icon の前と後ろの層）を足す。絵はコードで描ける
+（`diamond_days::art::icon`。型の円からはみ出さないことをテストが見て、`KAGRA_ICON=assets/icons` で PNG を書く）。
+電話の戻るボタンは `Back` キー（`session::BACK_KEY`）で来る。上に開いた画面は
+`on_key` で閉じて `true` を返す。何もしなければシェルが一時停止にする
+（[`docs/distribution.md`](distribution.md)）。
 
 ## 5. 素材
 
@@ -95,6 +133,7 @@ PR を「出せる」と言う前に全部確認する。
 - [ ] モデルの組が途中で変わらない（`declare_models` と、プレイ中に `gpu_mesh_key` が変わらないテスト）
 - [ ] スマホで 60 fps 近い（`?dev=1` の計測。Pixel 10 などの PowerVR は 1.5 倍で描く）
 - [ ] 日本語と英語の両方で文字が欠けない
+- [ ] APK: アイコンと名前（`icon_layers`、`title_ja`）、戻るボタンで落ちない
 - [ ] 圧縮後の読み込みが 3 MB 前後に収まる
 - [ ] 素材の台帳とライセンスチェックが緑
 - [ ] スマホで触った人の感想をもらった（プレビューのリンクを渡す）

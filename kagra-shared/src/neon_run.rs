@@ -1349,12 +1349,7 @@ impl NeonRun {
     }
 
     pub fn hud(&self, width: u32, height: u32) -> DrawList {
-        let mut list = DrawList {
-            clear: [0, 0, 0, 0],
-            quads: Vec::new(),
-            texts: Vec::new(),
-            images: Vec::new(),
-        };
+        let mut list = DrawList::default();
         let w = width.max(1) as f32;
         let h = height.max(1) as f32;
         if self.flow.phase == FlowPhase::Play {

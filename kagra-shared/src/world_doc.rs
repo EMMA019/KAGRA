@@ -227,6 +227,12 @@ pub struct WorldDoc {
     /// so coplanar discs do not z-fight into black streaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_blobs: Option<bool>,
+    /// Outline width of `toon` props in meters. None = 0.018.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toon_outline: Option<f32>,
+    /// How dark the shadow side of a `toon` prop is (0 black .. 1 no shadow). None = 0.68.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toon_shade: Option<f32>,
     /// Fog start in meters. None = 48.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fog_start: Option<f32>,
@@ -404,6 +410,10 @@ pub struct WorldProp {
     pub roughness: f32,
     /// Unlit HDR add so a lamp or a coin can bloom on purpose. None = 0.
     /// The color is `emissive_color`, or the albedo when that is omitted.
+    /// Above 0.3 the prop draws as a glow strip: pulled toward the camera in depth (it
+    /// shows through things just in front of it) and casting no shadow. Keep a solid
+    /// thing that must sort with its neighbours (a sign, a ball, a backdrop) at 0.3 or
+    /// less.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive: Option<f32>,
     /// Linear 0..1 RGB. None = use the albedo as the glow color.
@@ -425,6 +435,11 @@ pub struct WorldProp {
     /// PNG path or `preset:core`. Multiplies the emissive color. Strength is `emissive`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emissive_map: Option<String>,
+    /// Cel shading with a dark outline (a sphere, box, cylinder or cone without a texture
+    /// or glTF): the anime look of a deformed character built from primitives. The
+    /// outline width and shadow tone are the doc's `toon_outline` / `toon_shade`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub toon: bool,
     /// Interaction metadata (talk / use / examine). None = plain scenery.
     /// `on_use` emits an event when the player presses J/attack in reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1265,6 +1280,7 @@ impl WorldDoc {
         }
         let (gltf_ids, walker_gltf_ids) = self.gltf_mesh_ids();
         let tex_ids = self.texture_mesh_ids();
+        let toon_base = self.has_toon().then(|| self.toon_base());
 
         let sky = self.sky.unwrap_or([130, 165, 205, 255]);
         b.push_material(
@@ -1355,7 +1371,9 @@ impl WorldDoc {
                     continue;
                 }
             }
-            let mesh = mesh_for_prop(prop, &gltf_ids, &tex_ids);
+            let toon = toon_base.and_then(|base| toon_mesh(prop).map(|i| MeshId(base + i)));
+            let mesh = toon.unwrap_or_else(|| mesh_for_prop(prop, &gltf_ids, &tex_ids));
+            let mat = if toon.is_some() { Material::Toon } else { mat };
             let has_tex = prop
                 .texture
                 .as_deref()
@@ -1828,12 +1846,66 @@ impl WorldDoc {
             out.push((MeshId(MESH_GLTF_BASE + i as u32), mesh));
         }
         let tex_base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
-        for (i, prop) in self.textured_props().into_iter().enumerate() {
+        for (i, prop) in self.textured_slots().into_iter().enumerate() {
             if let Some(mesh) = textured_prop_mesh(prop) {
                 out.push((MeshId(tex_base + i as u32), mesh));
             }
         }
+        if self.has_toon() {
+            let base = self.toon_base();
+            for (i, mesh) in self.toon_meshes().into_iter().enumerate() {
+                out.push((MeshId(base + i as u32), mesh));
+            }
+        }
         out
+    }
+
+    /// Does any shown prop ask for cel shading?
+    pub fn has_toon(&self) -> bool {
+        self.props.iter().any(|p| p.enabled && p.toon)
+    }
+
+    /// The toon primitives follow the glTF slots and the textured props.
+    fn toon_base(&self) -> u32 {
+        MESH_GLTF_BASE + self.gltf_slots().len() as u32 + self.textured_slots().len() as u32
+    }
+
+    /// Outline width (meters) and shadow tone of `toon` props.
+    pub fn toon_style(&self) -> (f32, f32) {
+        (
+            self.toon_outline.unwrap_or(0.018).clamp(0.0, 0.5),
+            self.toon_shade.unwrap_or(0.68).clamp(0.0, 1.0),
+        )
+    }
+
+    /// Sphere, box, cylinder and cone with the MToon step and an outline (in that order:
+    /// see [`toon_mesh`]).
+    fn toon_meshes(&self) -> Vec<MeshData> {
+        let (outline, tone) = self.toon_style();
+        let shade = crate::scene3d::MtoonShade {
+            // A slightly cool shadow reads as light, not dirt.
+            shade_color: [tone * 0.93, tone * 0.93, (tone * 1.06).min(1.0)],
+            shading_toony: 0.9,
+            shading_shift: 0.05,
+            rim_color: [0.10, 0.10, 0.12],
+            rim_power: 4.0,
+            rim_lift: 0.0,
+            outline_color: [0.07, 0.06, 0.09],
+            outline_width: outline,
+            ..Default::default()
+        };
+        [
+            primitives::sphere_mesh(0.5, 24),
+            primitives::box_mesh(Vec3::ONE),
+            primitives::cylinder_mesh(0.5, 1.0, 20),
+            primitives::cone_mesh(0.5, 1.0, 16),
+        ]
+        .into_iter()
+        .map(|mut m| {
+            m.mtoon = Some(shade);
+            m
+        })
+        .collect()
     }
 
     fn heightfield_mesh(&self) -> MeshData {
@@ -1886,9 +1958,8 @@ impl WorldDoc {
                 GltfSlot::Skinned { spec, part, .. } => parts.push(format!("s:{spec}:{part}")),
             }
         }
-        for prop in self.textured_props() {
-            let tex = prop_texture_path(prop).unwrap_or("");
-            parts.push(format!("t:{}:{tex}", prop.id));
+        for prop in self.textured_slots() {
+            parts.push(format!("t:{}", texture_slot_key(prop)));
         }
         for prop in &self.props {
             if prop_has_maps(prop) {
@@ -1900,6 +1971,10 @@ impl WorldDoc {
                     prop.emissive_map.as_deref().unwrap_or(""),
                 ));
             }
+        }
+        if self.has_toon() {
+            let (w, t) = self.toon_style();
+            parts.push(format!("toon:{w}:{t}"));
         }
         parts.push(format!("lod:{}", self.vegetation_lod_cells()));
         if let Some(l) = &self.mesh_lod {
@@ -2008,11 +2083,27 @@ impl WorldDoc {
 
     fn texture_mesh_ids(&self) -> HashMap<String, MeshId> {
         let base = MESH_GLTF_BASE + self.gltf_slots().len() as u32;
+        let mut slots: HashMap<String, MeshId> = HashMap::new();
         let mut out = HashMap::new();
-        for (i, prop) in self.textured_props().into_iter().enumerate() {
-            out.insert(prop.id.clone(), MeshId(base + i as u32));
+        for prop in self.textured_props() {
+            let n = slots.len() as u32;
+            let id = *slots
+                .entry(texture_slot_key(prop))
+                .or_insert(MeshId(base + n));
+            out.insert(prop.id.clone(), id);
         }
         out
+    }
+
+    /// One textured prop for each distinct mesh: props with the same shape, picture,
+    /// tiling and maps share one GPU mesh (a ring of stands, a row of signs), in the order
+    /// they first appear.
+    fn textured_slots(&self) -> Vec<&WorldProp> {
+        let mut seen = std::collections::HashSet::new();
+        self.textured_props()
+            .into_iter()
+            .filter(|p| seen.insert(texture_slot_key(p)))
+            .collect()
     }
 
     fn vegetation_lod_radius(&self) -> f32 {
@@ -2358,11 +2449,25 @@ fn prop_has_maps(prop: &WorldProp) -> bool {
         || map_spec(&prop.emissive_map).is_some()
 }
 
+/// A prop `texture` of `image2d:<id>`: a picture the kit registered or baked at run time
+/// ([`crate::image2d::texture_spec`]), so a field's chalk and grass can be drawn with the 2D
+/// vector parts and laid on the ground.
+fn image2d_texture(spec: &str) -> Option<crate::image2d::PicId> {
+    spec.strip_prefix("image2d:")?
+        .trim()
+        .parse()
+        .ok()
+        .map(crate::image2d::PicId)
+}
+
 /// Does `load_png_albedo(path)` have a file to read? (No decode.)
 pub fn texture_exists(path: &str) -> bool {
     let spec = path.trim();
     if spec.is_empty() {
         return false;
+    }
+    if let Some(id) = image2d_texture(spec) {
+        return crate::image2d::get(id).is_some();
     }
     [
         PathBuf::from(spec),
@@ -2382,6 +2487,14 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     if spec.is_empty() {
         return None;
     }
+    if let Some(id) = image2d_texture(spec) {
+        let pic = crate::image2d::get(id)?;
+        return Some(crate::scene3d::AlbedoRgba {
+            width: pic.width,
+            height: pic.height,
+            rgba: pic.rgba.as_slice().into(),
+        });
+    }
     let candidates = [
         PathBuf::from(spec),
         PathBuf::from(".").join(spec),
@@ -2393,6 +2506,24 @@ pub fn load_png_albedo(path: &str) -> Option<crate::scene3d::AlbedoRgba> {
     let file = candidates.iter().find(|p| crate::assets::is_file(p))?;
     let bytes = crate::assets::read_bytes(file).ok()?;
     crate::gltf_load::decode_png(&bytes).ok()
+}
+
+/// What makes a textured prop's mesh: its shape, picture, tiling and surface maps.
+fn texture_slot_key(prop: &WorldProp) -> String {
+    let shape = match prop.model.to_ascii_lowercase().as_str() {
+        "plane" | "water" => "plane",
+        "sprite" | "quad" => "quad",
+        "sphere" | "cylinder" | "capsule" => "cylinder",
+        _ => "box",
+    };
+    format!(
+        "{shape}|{}|{:?}|{}|{}|{}",
+        prop_texture_path(prop).unwrap_or(""),
+        prop.uv_scale,
+        prop.roughness_map.as_deref().unwrap_or(""),
+        prop.metalness_map.as_deref().unwrap_or(""),
+        prop.emissive_map.as_deref().unwrap_or(""),
+    )
 }
 
 fn textured_prop_mesh(prop: &WorldProp) -> Option<MeshData> {
@@ -2754,6 +2885,21 @@ fn mesh_for_prop(
         "torus" | "ring" => MESH_TORUS,
         "cone" => MESH_CONE,
         _ => MESH_BOX,
+    }
+}
+
+/// Which toon primitive a `toon` prop draws with (an offset from the doc's toon base), or
+/// `None` when it is not a plain primitive (a texture or a glTF keeps its own mesh).
+fn toon_mesh(prop: &WorldProp) -> Option<u32> {
+    if !prop.toon || prop_texture_path(prop).is_some() || prop_gltf_spec(prop).is_some() {
+        return None;
+    }
+    match prop.model.to_ascii_lowercase().as_str() {
+        "sphere" => Some(0),
+        "box" | "cube" | "" => Some(1),
+        "cylinder" | "capsule" => Some(2),
+        "cone" => Some(3),
+        _ => None,
     }
 }
 
@@ -4646,6 +4792,44 @@ mod tests {
                 .all(|i| i.material != Material::Toon),
             "Crest Isle must not pick up walker MToon"
         );
+    }
+
+    #[test]
+    fn props_with_one_picture_share_one_mesh() {
+        let px = crate::image2d::register_rgba(2, 2, vec![200; 16]).unwrap();
+        let tex = crate::image2d::texture_spec(px);
+        let mut doc = WorldDoc {
+            version: 1,
+            ..Default::default()
+        };
+        for i in 0..6 {
+            doc.props.push(WorldProp {
+                id: format!("stand{i}"),
+                kind: "prop".into(),
+                model: "plane".into(),
+                position: [i as f32 * 4.0, 0.0, 0.0],
+                scale: [3.0, 1.0, 3.0],
+                enabled: true,
+                texture: Some(tex.clone()),
+                uv_scale: Some([2.0, 1.0]),
+                ..Default::default()
+            });
+        }
+        let ids = doc.texture_mesh_ids();
+        let first = ids["stand0"];
+        assert!(ids.values().all(|id| *id == first), "{ids:?}");
+        let meshes = doc.compile_meshes();
+        let textured: Vec<_> = meshes.iter().filter(|(_, m)| m.albedo.is_some()).collect();
+        assert_eq!(textured.len(), 1);
+        assert_eq!(
+            textured[0].1.albedo.as_ref().unwrap().width,
+            4,
+            "tiled twice"
+        );
+        // Moving a stand does not change what the GPU holds.
+        let key = doc.gpu_mesh_key();
+        doc.props[3].position[1] = 2.0;
+        assert_eq!(doc.gpu_mesh_key(), key);
     }
 
     #[test]

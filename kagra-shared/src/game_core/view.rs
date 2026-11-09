@@ -86,6 +86,56 @@ impl View {
         }
     }
 
+    /// The same picture inside a band of the canvas. `self` is the view wanted for the rows
+    /// `y0..y1` (fractions of the canvas height from the top; a scoreboard above and a
+    /// panel below cover the rest). The result is the view to give the renderer for the
+    /// whole canvas: a wider angle, turned so `target` lands in the middle of the band.
+    /// [`View::project`] and [`View::ground_at`] on it use whole-canvas pixels as usual.
+    pub fn in_band(&self, y0: f32, y1: f32) -> Self {
+        let (y0, y1) = (y0.clamp(0.0, 1.0), y1.clamp(0.0, 1.0));
+        let band = (y1 - y0).max(0.05);
+        let t = (self.fov.to_radians() * 0.5).tan() / band;
+        // The band's middle in NDC (+1 is the top edge), and the angle above the axis
+        // that lands there.
+        let yc = 1.0 - (y0 + y1);
+        let a = (yc * t).atan();
+        let (f, _, u) = self.basis();
+        let (s, c) = a.sin_cos();
+        let nf = norm3([
+            f[0] * c - u[0] * s,
+            f[1] * c - u[1] * s,
+            f[2] * c - u[2] * s,
+        ]);
+        let d = dot(sub3(self.target, self.eye), f).max(0.1);
+        Self {
+            eye: self.eye,
+            target: [
+                self.eye[0] + nf[0] * d,
+                self.eye[1] + nf[1] * d,
+                self.eye[2] + nf[2] * d,
+            ],
+            fov: (2.0 * t.atan()).to_degrees(),
+        }
+    }
+
+    /// Ease from `self` to `to` (`k` 0..1): eye and target move in a straight line, the
+    /// angle follows. A broadcast cut that glides instead of jumping.
+    pub fn lerp(&self, to: &View, k: f32) -> Self {
+        let k = k.clamp(0.0, 1.0);
+        let l = |a: [f32; 3], b: [f32; 3]| {
+            [
+                a[0] + (b[0] - a[0]) * k,
+                a[1] + (b[1] - a[1]) * k,
+                a[2] + (b[2] - a[2]) * k,
+            ]
+        };
+        Self {
+            eye: l(self.eye, to.eye),
+            target: l(self.target, to.target),
+            fov: self.fov + (to.fov - self.fov) * k,
+        }
+    }
+
     /// The corners of a ground rectangle `x0..x1` by `z0..z1` at height `y`, for [`View::fit`].
     pub fn ground_box(x0: f32, x1: f32, z0: f32, z1: f32, y: f32) -> [[f32; 3]; 4] {
         [[x0, y, z0], [x1, y, z0], [x0, y, z1], [x1, y, z1]]
@@ -110,6 +160,30 @@ impl View {
         let nx = dot(v, r) / (cz * t * aspect.max(0.2));
         let ny = dot(v, u) / (cz * t);
         Some(((nx * 0.5 + 0.5) * w, (0.5 - ny * 0.5) * h))
+    }
+
+    /// The nearest of `points` to a canvas pixel, within `reach` pixels: what a thumb meant to
+    /// tap. Give each thing's middle (not its feet). `None` when nothing is that close.
+    pub fn pick(
+        &self,
+        points: impl IntoIterator<Item = [f32; 3]>,
+        px: f32,
+        py: f32,
+        w: f32,
+        h: f32,
+        reach: f32,
+    ) -> Option<usize> {
+        let mut best: Option<(usize, f32)> = None;
+        for (i, p) in points.into_iter().enumerate() {
+            let Some((sx, sy)) = self.project(p, w, h) else {
+                continue;
+            };
+            let d = (sx - px).hypot(sy - py);
+            if d < reach && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((i, d));
+            }
+        }
+        best.map(|(i, _)| i)
     }
 
     /// The point at height `ground_y` under a canvas pixel, as world `(x, z)`, or `None` for a
@@ -241,5 +315,52 @@ mod tests {
             v.ground_at(195.0, -4000.0, 390.0, 844.0, 0.0).is_none(),
             "sky"
         );
+    }
+
+    #[test]
+    fn pick_finds_the_nearest_thing_within_reach() {
+        let v = top_down();
+        let things = [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [-3.0, 0.0, 3.0]];
+        let (sx, sy) = v.project(things[1], 390.0, 844.0).unwrap();
+        assert_eq!(v.pick(things, sx + 3.0, sy, 390.0, 844.0, 40.0), Some(1));
+        assert_eq!(v.pick(things, sx + 300.0, sy, 390.0, 844.0, 40.0), None);
+    }
+
+    #[test]
+    fn a_view_in_a_band_shows_its_picture_between_the_panels() {
+        let want = View {
+            eye: [0.0, 3.0, 8.0],
+            target: [0.0, 1.0, -18.0],
+            fov: 24.0,
+        };
+        let (w, h) = (390.0, 844.0);
+        let (y0, y1) = (0.09, 0.62);
+        let v = want.in_band(y0, y1);
+        assert!(
+            v.fov > want.fov * 1.6,
+            "wider for the whole canvas: {}",
+            v.fov
+        );
+        // The target lands in the middle of the band.
+        let (_, sy) = v.project(want.target, w, h).unwrap();
+        assert!((sy / h - (y0 + y1) * 0.5).abs() < 0.01, "{}", sy / h);
+        // The top and bottom of the wanted picture land on the band's edges.
+        let d = 26.0_f32 * 1.0;
+        let up = (want.fov.to_radians() * 0.5).tan() * d;
+        let (f, _, u) = want.basis();
+        let at = |s: f32| {
+            [
+                want.eye[0] + f[0] * d + u[0] * up * s,
+                want.eye[1] + f[1] * d + u[1] * up * s,
+                want.eye[2] + f[2] * d + u[2] * up * s,
+            ]
+        };
+        let (_, top) = v.project(at(1.0), w, h).unwrap();
+        let (_, bottom) = v.project(at(-1.0), w, h).unwrap();
+        assert!((top / h - y0).abs() < 0.02, "top {}", top / h);
+        assert!((bottom / h - y1).abs() < 0.02, "bottom {}", bottom / h);
+        // A glide between two views passes through the middle.
+        let mid = want.lerp(&v, 0.5);
+        assert!((mid.fov - (want.fov + v.fov) * 0.5).abs() < 1e-4);
     }
 }

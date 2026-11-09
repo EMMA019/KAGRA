@@ -530,7 +530,7 @@ fn the_device_keeps_records_and_opens_the_stages_reached() {
     let mut g = running();
     assert_eq!(
         g.save_json().unwrap(),
-        json!({"cleared": 0, "best_secs": []}).to_string()
+        json!({"cleared": 0, "best_secs": [null, null, null, null, null]}).to_string()
     );
     g.t = 41.25;
     g.clear_stage();
@@ -559,8 +559,8 @@ fn the_device_keeps_records_and_opens_the_stages_reached() {
     // A save that does not fit is ignored, not an error.
     world["save"] = json!({"cleared": "lots", "best_secs": [-1, "x"]});
     let g = StationEscape::from_json(&world.to_string()).unwrap();
-    assert_eq!(g.cleared, 0);
-    assert!(g.best_secs.iter().all(|b| b.is_none()));
+    assert_eq!(g.progress.cleared, 0);
+    assert!((0..5).all(|i| g.progress.record(i).is_none()));
 }
 
 #[test]

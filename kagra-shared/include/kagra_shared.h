@@ -80,6 +80,8 @@ int kagra_shared_playtest_pointer(
     float pressure
 );
 int kagra_shared_push_key(SharedSession *ptr, const char *name, int down);
+/* The device language for the game's texts ("ja", "en"). 0 on success. */
+int kagra_shared_set_lang(SharedSession *ptr, const char *lang);
 int kagra_shared_playtest_set_note(SharedSession *ptr, const char *note);
 int kagra_shared_playtest_set_shot_path(SharedSession *ptr, const char *path);
 int kagra_shared_playtest_push_text(SharedSession *ptr, const char *text);

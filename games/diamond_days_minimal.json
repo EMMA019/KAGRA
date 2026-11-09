@@ -1,0 +1,32 @@
+{
+  "title": "Diamond Days",
+  "title_ja": "白球デイズ",
+  "icon": "assets/icons/diamond_days.png",
+  "icon_layers": {
+    "foreground": "assets/icons/diamond_days_front.png",
+    "background": "assets/icons/diamond_days_back.png"
+  },
+  "version": "0.1.0",
+  "entry": "examples/diamond_days_minimal.py",
+  "world": "kagra-shared/tests/fixtures/diamond_days_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-flowerbed-fields"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "save": true,
+    "resume": true,
+    "blurb": "blurb.diamond",
+    "url_params": {
+      "week": "string"
+    },
+    "title": "title.diamond"
+  }
+}

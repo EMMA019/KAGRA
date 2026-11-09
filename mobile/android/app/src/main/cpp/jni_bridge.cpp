@@ -437,6 +437,22 @@ Java_dev_kagra_shell_KagraNative_pushKey(JNIEnv *env, jobject, jstring name, jbo
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_dev_kagra_shell_KagraNative_setLang(JNIEnv *env, jobject, jstring lang) {
+#if KAGRA_HAS_SHARED
+  if (!g_session || !lang) return JNI_FALSE;
+  const char *c = env->GetStringUTFChars(lang, nullptr);
+  if (!c) return JNI_FALSE;
+  int rc = kagra_shared_set_lang(g_session, c);
+  env->ReleaseStringUTFChars(lang, c);
+  return rc == 0 ? JNI_TRUE : JNI_FALSE;
+#else
+  (void)env;
+  (void)lang;
+  return JNI_FALSE;
+#endif
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_dev_kagra_shell_KagraNative_playtestSetNote(JNIEnv *env, jobject, jstring note) {
 #if KAGRA_HAS_SHARED
   if (!g_session) return JNI_FALSE;

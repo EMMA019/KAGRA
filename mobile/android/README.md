@@ -34,6 +34,9 @@ itch.io への手動アップロードは [docs/distribution.md](../../docs/dist
 
 運転デモに戻すときは `KagraNative.setScene(0)`。
 
+ゲームを読んだあと `KagraNative.setLang(端末の言語)` を呼ぶ（キットの日本語表示）。キットのセーブ
+（`save_json`）は `setSaveRoot` の下に `kit-<genre>.json` として共有コアが書き、次の起動で渡す。
+
 ## KAGRA Dev
 
 `applicationId` は `dev.kagra.devshell`。ゲームは同梱しない。起動画面で master か

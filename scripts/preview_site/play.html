@@ -188,6 +188,10 @@
       min-width: 220px;
     }
     .styled:active { background: #281c40; border-color: #ff78be; transform: translateY(2px); }
+    /* page.resume: the small "start over" under Continue. */
+    #overlay button.quiet { background: rgba(10, 12, 24, 0.55); border: 1px solid rgba(232, 236, 255, 0.45);
+      box-shadow: none; padding: 6px 16px; font-size: 14px; color: #e8ecff; min-width: 0;
+      border-radius: 999px; }
     #gameover {
       margin: 0 0 4px;
       font-size: clamp(30px, 9vw, 44px);
@@ -304,6 +308,7 @@
         </div>
         <p><button id="revive" type="button" class="styled" hidden data-i18n="hop.continue">広告を見てつづける</button></p>
         <p><button id="start" type="button" data-i18n="start">はじめる</button></p>
+        <p><button id="fresh" type="button" class="quiet" hidden data-i18n="start.fresh">はじめから</button></p>
         <div id="syncRow" hidden>
           <div class="sync"><span data-i18n="hop.sync">音ズレ補正</span>
             <button id="syncMinus" type="button" aria-label="-10 ms">−</button><b id="syncVal">0 ms</b>
@@ -333,6 +338,7 @@
     let canvas = document.getElementById("c");
     const params = new URLSearchParams(location.search);
     const t = globalThis.kagraT || ((k) => k);
+    let gameTitle = "";
     // ?debug=1 and ?backend= are development tools: they need ?dev=1 as well.
     const dev = params.get("dev") === "1";
     const requestedBackend = (dev ? (params.get("backend") || "auto") : "auto").toLowerCase();
@@ -661,13 +667,20 @@
     };
     // page.save: what a kit keeps between visits (KitHost::save_json), device only.
     const saveKey = (slug) => `kagra.save.v1.${slug}`;
+    // A save with something in it (a kit that is done keeps "{}").
+    const hasKeptRun = (slug) => {
+      const v = loadSave(slug);
+      return !!v && Object.keys(v).length > 0;
+    };
     const loadSave = (slug) => {
       try { const v = JSON.parse(localStorage.getItem(saveKey(slug)) || "null"); return v && typeof v === "object" ? v : null; } catch { return null; }
     };
     let lastSave = "";
     let saveTick = 0;
+    // Set once the player chose to start over: nothing is written back on the way out.
+    let erased = false;
     const storeSave = (slug) => {
-      if (!page.save || !session.kitSaveJson) return;
+      if (!page.save || erased || !session.kitSaveJson) return;
       let s = "";
       try { s = session.kitSaveJson(); } catch { return; }
       if (!s || s === lastSave) return;
@@ -780,8 +793,10 @@
       }
       // The daily run keeps its own device best, so a daily score never replaces the free-play best.
       if (metaLayer.enabled && metaLayer.dailyInfo().active) bestScope = ".daily";
-      document.title = bundle.title || slug;
-      document.getElementById("title").textContent = bundle.title || slug;
+      // The game's name in the page language (page.title is an i18n key), else the manifest's.
+      gameTitle = (page.title && t(page.title) !== page.title && t(page.title)) || bundle.title || slug;
+      document.title = gameTitle;
+      document.getElementById("title").textContent = gameTitle;
       const files = Array.isArray(bundle.files) ? bundle.files : [];
       session.clearMount();
       let done = 0;
@@ -1216,8 +1231,12 @@
       if (!playing && phase !== "complete") session.showTitle();
       const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
       document.getElementById("phaseLabel").textContent =
-        `${bundle.title || slug} · ${label} · ${sharedVersion()}`;
-      document.getElementById("start").textContent = phase === "complete" ? t("retry") : t("start");
+        `${gameTitle || bundle.title || slug} · ${label} · ${sharedVersion()}`;
+      // page.resume: a kept run is continued from the title; a smaller button starts over.
+      const keptRun = !!(page.resume && phase !== "complete" && hasKeptRun(slug));
+      document.getElementById("start").textContent =
+        phase === "complete" ? t("retry") : keptRun ? t("start.resume") : t("start");
+      document.getElementById("fresh").hidden = playing || !keptRun;
       const death = document.getElementById("death");
       const resultBox = document.getElementById("result");
       const gameover = document.getElementById("gameover");
@@ -1314,7 +1333,14 @@
       stopOverlayEvent(e);
       confirmGame();
     });
-    for (const [id, fn] of [["revive", askRevive], ["syncMinus", () => nudgeSync(-10)], ["syncPlus", () => nudgeSync(10)]]) {
+    // page.resume: erase the kept run (after asking) and load again with none.
+    const startOver = () => {
+      if (!window.confirm(t("start.fresh.ask"))) return;
+      erased = true;
+      try { localStorage.removeItem(saveKey(slug)); } catch {}
+      location.reload();
+    };
+    for (const [id, fn] of [["revive", askRevive], ["fresh", startOver], ["syncMinus", () => nudgeSync(-10)], ["syncPlus", () => nudgeSync(10)]]) {
       const el = document.getElementById(id);
       el.addEventListener("pointerdown", stopOverlayEvent);
       el.addEventListener("pointerup", (e) => { stopOverlayEvent(e); fn(); });

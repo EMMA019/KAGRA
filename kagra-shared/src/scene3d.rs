@@ -1050,7 +1050,7 @@ pub mod primitives {
         for i in 0..segments {
             let a = base_center + 1 + i;
             let b = base_center + 1 + (i + 1) % segments;
-            mesh.indices.extend_from_slice(&[base_center, b, a]);
+            mesh.indices.extend_from_slice(&[base_center, a, b]);
         }
         // 側面
         for i in 0..segments {
@@ -1065,7 +1065,8 @@ pub mod primitives {
             mesh.vertices.push(Vertex3::new(p0, n));
             mesh.vertices.push(Vertex3::new(p1, n));
             mesh.vertices.push(Vertex3::new(apex, n));
-            mesh.indices.extend_from_slice(&[base, base + 1, base + 2]);
+            // Counter-clockwise from outside (the GPU culls back faces).
+            mesh.indices.extend_from_slice(&[base, base + 2, base + 1]);
         }
         mesh
     }
@@ -1092,8 +1093,9 @@ pub mod primitives {
             mesh.vertices.push(Vertex3::with_uv(b1, n, [u1, 1.0]));
             mesh.vertices.push(Vertex3::with_uv(t1, n, [u1, 0.0]));
             mesh.vertices.push(Vertex3::with_uv(t0, n, [u0, 0.0]));
+            // Counter-clockwise from outside (the GPU culls back faces).
             mesh.indices
-                .extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+                .extend_from_slice(&[base, base + 2, base + 1, base, base + 3, base + 2]);
         }
         // 上面・底面
         let top_c = mesh.vertices.len() as u32;
@@ -1119,8 +1121,8 @@ pub mod primitives {
             let b0 = top_c + 3 + i * 2;
             let b1 = top_c + 3 + ((i + 1) % segments) * 2;
             let _ = bot_c;
-            mesh.indices.extend_from_slice(&[top_c, t0, t1]);
-            mesh.indices.extend_from_slice(&[bot_c, b1, b0]);
+            mesh.indices.extend_from_slice(&[top_c, t1, t0]);
+            mesh.indices.extend_from_slice(&[bot_c, b0, b1]);
         }
         mesh
     }
@@ -1188,13 +1190,14 @@ pub mod primitives {
         for y in 0..rings {
             for x in 0..segments {
                 let i = y * stride + x;
+                // Counter-clockwise from outside (the GPU culls back faces).
                 mesh.indices.extend_from_slice(&[
                     i,
-                    i + 1,
                     i + stride,
                     i + 1,
+                    i + 1,
+                    i + stride,
                     i + stride + 1,
-                    i + stride,
                 ]);
             }
         }
@@ -1215,6 +1218,46 @@ mod tests {
             fov_y: FRAC_PI_2,
             near: 0.1,
             far: 100.0,
+        }
+    }
+
+    #[test]
+    fn closed_primitives_face_out() {
+        // Counter-clockwise seen from outside, like glTF: the main pass culls back faces
+        // and the toon outline pass draws only them.
+        use super::primitives::*;
+        for (name, m) in [
+            ("box", box_mesh(Vec3::ONE)),
+            ("sphere", sphere_mesh(0.5, 24)),
+            ("cylinder", cylinder_mesh(0.5, 1.0, 20)),
+            ("cone", cone_mesh(0.5, 1.0, 16)),
+            ("torus", torus_mesh(0.5, 0.075, 48, 20)),
+        ] {
+            let c = m
+                .vertices
+                .iter()
+                .fold(Vec3::ZERO, |a, v| a + Vec3::from_array(v.pos))
+                / m.vertices.len() as f32;
+            let mut out = 0usize;
+            let mut inward = 0usize;
+            for t in m.indices.chunks(3) {
+                let p = |i: u32| Vec3::from_array(m.vertices[i as usize].pos);
+                let (a, b, d) = (p(t[0]), p(t[1]), p(t[2]));
+                let n = (b - a).cross(d - a);
+                if n.length_squared() < 1e-12 {
+                    continue;
+                }
+                let mid = (a + b + d) / 3.0;
+                // The torus's inner ring faces the centre; use the vertex normal there.
+                let away = Vec3::from_array(m.vertices[t[0] as usize].normal);
+                let away = if name == "torus" { away } else { mid - c };
+                if n.dot(away) > 0.0 {
+                    out += 1;
+                } else {
+                    inward += 1;
+                }
+            }
+            assert_eq!(inward, 0, "{name}: {inward} faces wound inward, {out} out");
         }
     }
 

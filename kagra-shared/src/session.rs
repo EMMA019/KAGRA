@@ -17,6 +17,9 @@ use crate::world_play::WorldPlay;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The key name a native shell sends for the phone's back button.
+pub const BACK_KEY: &str = "Back";
+
 #[derive(Clone, Debug, Serialize)]
 pub struct FrameStats {
     pub frame: u64,
@@ -135,6 +138,12 @@ pub struct SharedSession {
     world_meshes: bool,
     /// HTML title / result card is the menu. Skip the in-canvas flow column.
     external_menu: bool,
+    /// A native shell keeps the kit's `save_json` on the device (the web page keeps it
+    /// itself, `page.save`): the game id it is filed under, the last JSON written, and the
+    /// frames since the last check.
+    kit_save_key: String,
+    kit_save_last: Option<String>,
+    kit_save_tick: u32,
     /// Graphics tiers: the game's (or the built-in) definitions, the active tier's name
     /// (`""` = none, `"custom"` = a probe step) and its values.
     quality: crate::quality::QualitySpec,
@@ -177,11 +186,42 @@ impl Default for SharedSession {
             #[cfg(feature = "render")]
             world_meshes: false,
             external_menu: false,
+            kit_save_key: String::new(),
+            kit_save_last: None,
+            kit_save_tick: 0,
             quality: crate::quality::QualitySpec::builtin(),
             quality_name: String::new(),
             quality_tier: None,
         }
     }
+}
+
+/// Where a native shell keeps a kit's save: `kit-<genre>.json` in the save directory.
+fn kit_save_path(genre: &str) -> PathBuf {
+    crate::flow::save_path(&format!("kit-{genre}"))
+}
+
+/// The dump's `genre` (the kit's id), if any.
+fn dump_genre(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    Some(v.get("genre")?.as_str()?.to_string())
+}
+
+/// The dump with the kept save as `save`, when a native shell keeps saves, one is on the
+/// device, and the dump has none of its own. `None`: use the dump as it is.
+fn attach_kit_save(json: &str) -> Option<String> {
+    if !crate::flow::native_saves() {
+        return None;
+    }
+    let mut v: serde_json::Value = serde_json::from_str(json).ok()?;
+    let genre = v.get("genre")?.as_str()?.to_string();
+    if v.get("save").is_some() {
+        return None;
+    }
+    let text = std::fs::read_to_string(kit_save_path(&genre)).ok()?;
+    let save: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.as_object_mut()?.insert("save".into(), save);
+    Some(v.to_string())
 }
 
 /// Neon Run / Neon Cat use `title` / `play` / `pause` / `result`.
@@ -268,8 +308,14 @@ impl SharedSession {
         };
         self.quality_name.clear();
         self.quality_tier = None;
+        // A native shell hands the kit its kept run as `save`, as the web page does.
+        let with_save = attach_kit_save(json);
+        let json = with_save.as_deref().unwrap_or(json);
         if let Some(kit) = crate::kit_host::load(json) {
             let kit = kit?;
+            self.kit_save_key = dump_genre(json).unwrap_or_default();
+            self.kit_save_last = None;
+            self.kit_save_tick = 0;
             let dump = kit.dump_json();
             self.kit = Some(kit);
             self.world = None;
@@ -305,6 +351,29 @@ impl SharedSession {
 
     pub fn pause(&mut self) {
         self.paused = true;
+        // The app may be killed in the background: keep the run now.
+        self.persist_kit_save();
+    }
+
+    /// Write the kit's save (`KitHost::save_json`) when a native shell gave a save root and
+    /// it changed since the last write.
+    pub fn persist_kit_save(&mut self) {
+        if !crate::flow::native_saves() || self.kit_save_key.is_empty() {
+            return;
+        }
+        let Some(json) = self.kit.as_ref().and_then(|k| k.save_json()) else {
+            return;
+        };
+        if self.kit_save_last.as_deref() == Some(json.as_str()) {
+            return;
+        }
+        let path = kit_save_path(&self.kit_save_key);
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if std::fs::write(&path, &json).is_ok() {
+            self.kit_save_last = Some(json);
+        }
     }
 
     pub fn resume(&mut self) {
@@ -644,6 +713,11 @@ impl SharedSession {
                     if let Some(kit) = self.kit.as_mut() {
                         kit.tick(crate::scene::FIXED_DT);
                     }
+                    self.kit_save_tick += 1;
+                    if self.kit_save_tick >= 60 {
+                        self.kit_save_tick = 0;
+                        self.persist_kit_save();
+                    }
                 }
             }
         }
@@ -831,13 +905,33 @@ impl SharedSession {
         self.playtest.on_pointer(ev)
     }
 
+    /// A key from the page or the app. True when it was used. The phone's back button
+    /// comes as [`BACK_KEY`]; when it is not used, the app goes back (leaves).
     pub fn push_key(&mut self, name: &str, down: bool) -> bool {
         if self.playtest.on_key(name, down) {
             return true;
         }
         if self.kind == SceneKind::Kit {
             if let Some(kit) = self.kit.as_mut() {
-                return kit.on_key(name, down);
+                if kit.on_key(name, down) {
+                    return true;
+                }
+                // The phone's back button. A kit that does not take it itself pauses its
+                // run, and back again closes the pause card. Anywhere else (the title, a
+                // kit with no pause card) it is not used and the app goes back.
+                if name == BACK_KEY && down {
+                    match kit.phase_name() {
+                        "play" => {
+                            kit.pause_run();
+                            return kit.phase_name() == "pause";
+                        }
+                        "pause" => {
+                            kit.resume_run();
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         false
@@ -1166,6 +1260,57 @@ impl SharedSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_native_shell_keeps_a_kit_save_and_hands_it_back() {
+        let dir = std::env::temp_dir().join(format!("kagra-kit-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::flow::set_save_root(Some(dir.clone()));
+        let dump = crate::diamond_days::DiamondDays::new(Default::default())
+            .world_value()
+            .to_string();
+        let mut s = SharedSession::default();
+        s.load_game_json(&dump).unwrap();
+        s.kit.as_mut().unwrap().confirm();
+        for _ in 0..90 {
+            s.request_frame();
+        }
+        s.pause();
+        let path = kit_save_path("diamond_days");
+        assert!(path.is_file(), "{path:?}");
+        // A new launch: the kit finds its run waiting on the title.
+        let mut t = SharedSession::default();
+        t.load_game_json(&dump).unwrap();
+        let kept = t.kit.as_ref().unwrap().save_json().unwrap();
+        assert!(kept.contains("\"team\""), "{kept}");
+        crate::flow::set_save_root(None);
+        let _ = std::fs::remove_dir_all(&dir);
+        // Without a save root (the web), nothing is read or written.
+        let mut u = SharedSession::default();
+        u.load_game_json(&dump).unwrap();
+        assert_eq!(u.kit.as_ref().unwrap().save_json().as_deref(), None);
+    }
+    /// The phone's back button pauses a kit's run and resumes it; on the title it is not
+    /// used, so the app leaves.
+    #[test]
+    fn back_pauses_a_kit_and_leaves_from_the_title() {
+        let dump = crate::crate_tower::CrateTower::new(Default::default())
+            .world_value()
+            .to_string();
+        let mut s = SharedSession::default();
+        s.load_game_json(&dump).unwrap();
+        let phase = |s: &SharedSession| s.kit.as_ref().unwrap().phase_name();
+        assert_eq!(phase(&s), "title");
+        assert!(!s.push_key(BACK_KEY, true));
+        s.kit.as_mut().unwrap().confirm();
+        assert_eq!(phase(&s), "play");
+        assert!(s.push_key(BACK_KEY, true));
+        assert!(!s.push_key(BACK_KEY, false), "only the press counts");
+        assert_eq!(phase(&s), "pause");
+        assert!(s.push_key(BACK_KEY, true));
+        assert_eq!(phase(&s), "play");
+    }
+
     use crate::input::PointerPhase;
 
     fn demo2d() -> SharedSession {

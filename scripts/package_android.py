@@ -8,7 +8,7 @@
 1. ``games/<stem>.json`` を読む
 2. ``mobile/android/kagra.game.properties``（表示名、version、applicationId、icon）
 3. ``mobile/android/app/src/main/assets/kagra_root/`` にステージ
-4. ``drawable-mdpi/ic_launcher.png``
+4. ランチャーのアイコン（``icon_layers`` があれば adaptive icon）と名前（``title_ja`` があれば日本語）
 5. 任意で ``scripts/build_android_native.sh``（``--skip-native`` で省略）
 6. ``gradle :app:assembleDebug``。APK はデバッグキーで署名される
 
@@ -33,11 +33,12 @@ from kagra.distribute import (  # noqa: E402
     manifest_for_game,
     stage_game,
     write_android_properties,
+    write_android_res,
 )
 
 ANDROID = ROOT / "mobile" / "android"
 ASSETS = ANDROID / "app" / "src" / "main" / "assets" / "kagra_root"
-ICON = ANDROID / "app" / "src" / "main" / "res" / "drawable-mdpi" / "ic_launcher.png"
+RES = ANDROID / "app" / "src" / "main" / "res"
 PROPS = ANDROID / "kagra.game.properties"
 RELEASE_ENV = (
     "ANDROID_KEYSTORE_BASE64",
@@ -68,9 +69,8 @@ def main(argv: list[str] | None = None) -> int:
     if ASSETS.exists():
         shutil.rmtree(ASSETS)
     rels = stage_game(ROOT, manifest, ASSETS)
-    ICON.parent.mkdir(parents=True, exist_ok=True)
-    ICON.write_bytes((ROOT / manifest.icon).read_bytes())
-    write_android_properties(manifest, PROPS, icon_ref="@drawable/ic_launcher")
+    icon_ref, label_ref = write_android_res(manifest, ROOT, RES)
+    write_android_properties(manifest, PROPS, icon_ref=icon_ref, label_ref=label_ref)
     print(f"staged {len(rels)} files -> {ASSETS}")
     print(f"properties {PROPS}")
 

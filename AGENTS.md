@@ -12,7 +12,7 @@ Android / Windows) runs every game; a game is a **kit** (one Rust file implement
 The owner plays it on a phone and says what feels wrong; agents build, verify and ship.
 
 The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit Swarm
-(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer, in progress). Starter (`kagra-shared/src/starter.rs`) is the template.
+(survivor arena), Lantern Watch (tap defense), Crate Tower (one-button stacker), Station Escape (side-on platformer), Moonlit Tactics (tactics, in progress), Engine Lab (a playground for the shared parts), Diamond Days (baseball manager, in progress). Starter (`kagra-shared/src/starter.rs`) is the template.
 
 ## Rules
 
@@ -20,9 +20,13 @@ The shipped games today: HOP-BEAT (rhythm hop), Neon Cat (lane runner), Moonlit 
    then change the parts marked `GAME:`. The walk-through, the parts to reuse and the ship
    checklist are in [`docs/making_a_game.md`](docs/making_a_game.md). Do not add a genre to
    `WorldPlay` or game branches to `play.html`.
-2. **Reuse the shared parts before writing new ones** (`game_core::{stick, motion, view, platform, swarm,
-   enemies, lives, missions, juice}`, `hud_kit`, rounded `Quad`s, `TextFace::Display`). When a
-   game grows a part another game could use, move it into `game_core` in the same PR series.
+2. **Reuse the shared parts before writing new ones** (`game_core::{stick, motion, view, platform, grid, tween, progress, floats, dialogue, items,
+   physics2d, anim, swarm, enemies, lives, missions, juice, portrait, chibi, chibi3d}`, `hud_kit` (cards, buttons), `hud_art` (a design stage,
+   illustrated panels, glossy buttons, ribbons, chips, bubbles, confetti, light rays, PNG pictures and nine-slice frames via `image2d`),
+   `vector` (fills, strokes, gradients, glows, clipping),
+   rounded `Quad`s, `TextFace::Display`; in 3D, `toon` props for cel shading with an outline
+   and `image2d:` textures for pictures baked at run time). When a game grows a part another game could use, move it into `game_core` in the
+   same PR series. Look at a HUD without a GPU: `raster2d::picture(&list, w, h).save_png(..)`.
 3. **The page reads the manifest, never the genre.** Page features (best score, audio,
    language, pause, fixed 60 Hz step, one-button keys, music sync, revive ad, direct play,
    URL switches) are the manifest's `page` block (`kagra/page_spec.py`).
@@ -92,7 +96,7 @@ Preview links: `https://emma019.github.io/KAGRA/pr/<n>/play.html?game=<slug>`
 
 | What | Where |
 |---|---|
-| Kits (games) | `kagra-shared/src/{starter,lantern_watch,crate_tower,station_escape,survivor_arena,hop_beat,neon_cat}.rs`, registry `kit_host.rs` |
+| Kits (games) | `kagra-shared/src/{starter,lantern_watch,crate_tower,station_escape,moonlit_tactics,survivor_arena,hop_beat,neon_cat}.rs`, registry `kit_host.rs` |
 | Shared game parts | `kagra-shared/src/game_core/`, `hud_kit.rs` |
 | Renderer (wgpu 30; WebGPU, WebGL2, native) | `kagra-shared/src/render/` (2D: rounded quads, glyph atlas) |
 | Fonts | `kagra-shared/src/font.rs` (Public Sans, Zen Maru Gothic, Cinzel; PixelMplus off wasm) |

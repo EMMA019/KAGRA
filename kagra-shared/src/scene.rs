@@ -141,13 +141,237 @@ impl ImageQuad {
     }
 }
 
+/// One corner of a 2D triangle: screen pixels (left-top origin) and an RGBA colour (0..255,
+/// the same space as [`Quad::color`]). Colours interpolate across the triangle.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Vert2 {
+    pub x: f32,
+    pub y: f32,
+    pub color: [u8; 4],
+}
+
+impl Vert2 {
+    pub fn new(x: f32, y: f32, color: [u8; 4]) -> Self {
+        Self { x, y, color }
+    }
+}
+
+/// A picture ([`crate::image2d`]) stretched over a screen rectangle, drawn inside a
+/// [`Mesh2d`] at the point it was added: after the triangles before it, under the ones after.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Sprite2d {
+    pub pic: crate::image2d::PicId,
+    /// Drawn before the mesh vertex with this index (`verts.len()` when it was added).
+    pub at: usize,
+    /// Left, top, width, height in screen pixels.
+    pub rect: [f32; 4],
+    /// The part of the picture shown: u0, v0, u1, v1 (0..1, top-left origin).
+    pub uv: [f32; 4],
+    /// Multiplies the picture (same space as [`Quad::color`]); white keeps it as drawn.
+    pub tint: [u8; 4],
+}
+
+/// One step of a mesh in draw order: a run of triangle vertices, or a picture.
+#[derive(Clone, Copy, Debug)]
+pub enum MeshRun<'a> {
+    Tris(&'a [Vert2]),
+    Sprite(&'a Sprite2d),
+}
+
+/// Coloured triangles in screen pixels: three vertices each, drawn in order, alpha blended.
+/// Per-vertex colours make gradients; a vertex with alpha 0 fades an edge, which is how
+/// [`crate::vector`] anti-aliases fills and strokes and draws soft shadows and glows.
+/// `sprites` are pictures drawn in between, at their `at` vertex.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Mesh2d {
+    pub verts: Vec<Vert2>,
+    pub sprites: Vec<Sprite2d>,
+}
+
+impl Mesh2d {
+    pub fn tri(&mut self, a: Vert2, b: Vert2, c: Vert2) {
+        self.verts.extend([a, b, c]);
+    }
+
+    /// Draw `uv` of picture `pic` over `rect` (x, y, w, h), on top of everything added so far.
+    pub fn sprite(
+        &mut self,
+        pic: crate::image2d::PicId,
+        rect: [f32; 4],
+        uv: [f32; 4],
+        tint: [u8; 4],
+    ) {
+        if rect[2] <= 0.0 || rect[3] <= 0.0 || tint[3] == 0 {
+            return;
+        }
+        // Keep `at` on a triangle boundary so a run never splits a triangle.
+        let at = self.verts.len() - self.verts.len() % 3;
+        self.sprites.push(Sprite2d {
+            pic,
+            at,
+            rect,
+            uv,
+            tint,
+        });
+    }
+
+    /// Triangles, counting each picture as the two it draws.
+    pub fn triangles(&self) -> usize {
+        self.verts.len() / 3 + self.sprites.len() * 2
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.verts.is_empty() && self.sprites.is_empty()
+    }
+
+    /// Triangle runs and pictures in draw order.
+    pub fn runs(&self) -> Vec<MeshRun<'_>> {
+        let mut out = Vec::with_capacity(self.sprites.len() * 2 + 1);
+        let mut from = 0;
+        for s in &self.sprites {
+            let at = s.at.clamp(from, self.verts.len());
+            if at > from {
+                out.push(MeshRun::Tris(&self.verts[from..at]));
+            }
+            out.push(MeshRun::Sprite(s));
+            from = at;
+        }
+        if from < self.verts.len() {
+            out.push(MeshRun::Tris(&self.verts[from..]));
+        }
+        out
+    }
+
+    /// Append `other` scaled by `scale` and moved by (`dx`, `dy`), its alpha times `alpha`
+    /// (0..1). Art built once in unit space (a portrait) is placed this way every frame.
+    pub fn append_placed(&mut self, other: &Mesh2d, dx: f32, dy: f32, scale: f32, alpha: f32) {
+        let a = alpha.clamp(0.0, 1.0);
+        let base = self.verts.len();
+        let fade = |c: [u8; 4]| [c[0], c[1], c[2], (c[3] as f32 * a).round() as u8];
+        self.verts.extend(other.verts.iter().map(|v| Vert2 {
+            x: dx + v.x * scale,
+            y: dy + v.y * scale,
+            color: fade(v.color),
+        }));
+        self.sprites.extend(other.sprites.iter().map(|s| Sprite2d {
+            at: base + s.at,
+            rect: [
+                dx + s.rect[0] * scale,
+                dy + s.rect[1] * scale,
+                s.rect[2] * scale,
+                s.rect[3] * scale,
+            ],
+            tint: fade(s.tint),
+            ..*s
+        }));
+    }
+
+    /// Bounding box (min x, min y, max x, max y), or None when empty.
+    pub fn bounds(&self) -> Option<[f32; 4]> {
+        let corners = self
+            .verts
+            .iter()
+            .map(|v| [v.x, v.y])
+            .chain(self.sprites.iter().flat_map(|s| {
+                [
+                    [s.rect[0], s.rect[1]],
+                    [s.rect[0] + s.rect[2], s.rect[1] + s.rect[3]],
+                ]
+            }));
+        corners.fold(None, |b, [x, y]| {
+            Some(match b {
+                None => [x, y, x, y],
+                Some(b) => [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)],
+            })
+        })
+    }
+}
+
+/// The overlap of two clip rectangles (x, y, w, h); None means unclipped. Rectangles that
+/// do not meet give an empty one (zero size).
+pub fn clip_within(a: Option<[f32; 4]>, b: Option<[f32; 4]>) -> Option<[f32; 4]> {
+    match (a, b) {
+        (None, r) | (r, None) => r,
+        (Some(a), Some(b)) => {
+            let x0 = a[0].max(b[0]);
+            let y0 = a[1].max(b[1]);
+            let x1 = (a[0] + a[2]).min(b[0] + b[2]);
+            let y1 = (a[1] + a[3]).min(b[1] + b[3]);
+            Some([x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0)])
+        }
+    }
+}
+
 /// 1 フレームぶんの描画内容。
+///
+/// Draw order: `mesh`, then `quads`, then `texts`, then each of `layers` the same way
+/// (depth first). A layer is a whole `DrawList` on top of everything before it, so a popup
+/// drawn into a layer covers the text under it, and every `hud_kit` helper draws into a
+/// layer as it does into the base list. A layer's `clear` is ignored.
+///
+/// `clip` keeps a list (and its layers) inside a screen rectangle: a scrolling list, a
+/// window onto a bigger picture.
 #[derive(Clone, Debug, Default)]
 pub struct DrawList {
     pub clear: [u8; 4],
+    /// Draw only inside this screen rectangle (x, y, w, h), within any parent's.
+    pub clip: Option<[f32; 4]>,
+    pub mesh: Mesh2d,
     pub quads: Vec<Quad>,
     pub texts: Vec<TextQuad>,
     pub images: Vec<ImageQuad>,
+    pub layers: Vec<DrawList>,
+}
+
+impl DrawList {
+    /// A new layer on top of everything drawn so far (and of earlier layers).
+    pub fn layer(&mut self) -> &mut DrawList {
+        self.layers.push(DrawList::default());
+        self.layers.last_mut().expect("just pushed")
+    }
+
+    /// The topmost layer: the last layer's topmost layer, or this list when it has none.
+    pub fn top(&mut self) -> &mut DrawList {
+        if self.layers.is_empty() {
+            return self;
+        }
+        self.layers.last_mut().expect("not empty").top()
+    }
+
+    /// Every list in draw order: this one, then its layers depth first.
+    pub fn flatten(&self) -> Vec<&DrawList> {
+        let mut out = vec![self];
+        for l in &self.layers {
+            out.extend(l.flatten());
+        }
+        out
+    }
+
+    /// [`DrawList::flatten`] with the rectangle each list is drawn in: its own `clip` within
+    /// its parents' (None: the whole screen).
+    pub fn flatten_clipped(&self) -> Vec<(&DrawList, Option<[f32; 4]>)> {
+        fn walk<'a>(
+            l: &'a DrawList,
+            outer: Option<[f32; 4]>,
+            out: &mut Vec<(&'a DrawList, Option<[f32; 4]>)>,
+        ) {
+            let clip = clip_within(outer, l.clip);
+            out.push((l, clip));
+            for c in &l.layers {
+                walk(c, clip, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, None, &mut out);
+        out
+    }
+
+    /// Quads, triangles and texts in this list and all its layers (for budgets and tests).
+    pub fn counts(&self) -> (usize, usize, usize) {
+        self.flatten().iter().fold((0, 0, 0), |(q, t, x), l| {
+            (q + l.quads.len(), t + l.mesh.triangles(), x + l.texts.len())
+        })
+    }
 }
 
 /// シェルの実フレームレートに関係なく同じ絵を出すため固定ステップで進める。
