@@ -974,6 +974,9 @@ impl<'a> Painter<'a> {
         } else {
             [240, 240, 244, 220]
         };
+        // A label too long for the button (another language, a narrow row) is drawn
+        // smaller rather than over the rim.
+        let size = fit_size(label, size, w - 2.0 * BUTTON_PAD);
         self.text_shadow(
             label,
             x + w * 0.5,
@@ -1188,6 +1191,19 @@ impl<'a> Painter<'a> {
     ) {
         let (sx, sy, px) = (self.st.x(x), self.st.y(y), size * self.st.k);
         portrait::draw_faded(self.mesh(), sx, sy, px, face, expr, outfit, alpha);
+    }
+}
+
+/// Room kept clear on each side of a [`Painter::button`] label.
+pub const BUTTON_PAD: f32 = 7.0;
+
+/// The text size up to `size` at which `text` fits in `room` (design units).
+pub fn fit_size(text: &str, size: f32, room: f32) -> f32 {
+    let wide = crate::font::measure_text(text, size);
+    if wide > room && wide > 0.0 {
+        size * (room.max(1.0) / wide)
+    } else {
+        size
     }
 }
 
@@ -1475,5 +1491,33 @@ mod tests {
         assert_eq!(list.mesh.sprites.len(), 11 + 4 + 8 + 4 + 4 + 2 + 2);
         let last = list.mesh.sprites.last().unwrap();
         assert_eq!(last.rect, [180.0, 100.0, 20.0, 20.0]);
+    }
+
+    /// A label longer than its button shrinks to fit inside the rim; a short one keeps its
+    /// size.
+    #[test]
+    fn button_labels_fit_their_buttons() {
+        for (label, w) in [("NEXT BATTER", 86.0), ("TO THE END", 92.0), ("GO", 86.0)] {
+            let mut list = DrawList::default();
+            {
+                let mut p = Painter::new(&mut list, Stage::fit(400.0, 720.0, 400.0, 720.0));
+                p.button(10.0, 10.0, w, 46.0, label, 15.0, [60, 110, 200, 255], true);
+            }
+            let t = list
+                .flatten()
+                .into_iter()
+                .flat_map(|l| l.texts.iter())
+                .find(|t| t.text == label)
+                .unwrap()
+                .clone();
+            let wide = crate::font::measure_text(label, t.size);
+            assert!(
+                wide <= w - 2.0 * BUTTON_PAD + 0.01,
+                "{label}: {wide} in {w}"
+            );
+            if label == "GO" {
+                assert_eq!(t.size, 15.0);
+            }
+        }
     }
 }

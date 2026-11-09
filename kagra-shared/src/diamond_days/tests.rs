@@ -2767,3 +2767,35 @@ fn queued_notices_close_at_once() {
     g.mode = Mode::Notice;
     assert!(!has(&g));
 }
+
+/// The match buttons' labels fit inside them in English too (the longer words), with a
+/// call asked for ("NEXT BATTER").
+#[test]
+fn match_button_labels_fit_in_english() {
+    let mut g = on_game_day();
+    g.set_lang("en");
+    // Past the opening iris, as a player sees it.
+    run(&mut g, 1.6);
+    press(&mut g, hud::Btn::Orders);
+    assert!(g.want_call);
+    let list = g.hud(W, H, false);
+    if let Ok(dir) = std::env::var("KAGRA_SHOTS") {
+        crate::raster2d::picture(&list, W, H)
+            .save_png(&std::path::Path::new(&dir).join("07c_match_en_phone.png"))
+            .unwrap();
+    }
+    let texts: Vec<_> = all_texts(&list).cloned().collect();
+    let mut checked = 0;
+    for (b, r) in g.hud_buttons(W as f32, H as f32) {
+        let cx = r[0] + r[2] * 0.5;
+        let label = texts
+            .iter()
+            .filter(|t| (t.x - cx).abs() < 0.5 && t.y >= r[1] && t.y <= r[1] + r[3])
+            .max_by(|a, b| a.size.total_cmp(&b.size));
+        let Some(t) = label else { continue };
+        let wide = crate::font::measure_text(&t.text, t.size);
+        assert!(wide <= r[2], "{b:?} '{}' {wide:.0} > {:.0}", t.text, r[2]);
+        checked += 1;
+    }
+    assert!(checked >= 4, "{checked} labels found");
+}
