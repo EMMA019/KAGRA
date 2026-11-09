@@ -2046,13 +2046,16 @@ impl DiamondDays {
     }
 
     /// The coach stops on a square: it happens.
-    /// Close the screen on top (the roster, a player's page, the order, the bench), as a
-    /// tap off it does. False on a main screen.
+    /// Close the screen on top (the roster, a player's page, the order, the bench), one
+    /// level at a time as the on-screen Back does. False on a main screen.
     fn go_back(&mut self) -> bool {
         match self.mode {
             Mode::Roster => self.mode = Mode::Plan,
             Mode::Player(_) => self.mode = Mode::Roster,
-            Mode::Lineup { .. } => {
+            // Picking a player for a slot: back to the order, not out of it.
+            Mode::Lineup { pick: Some(_) } => self.mode = Mode::Lineup { pick: None },
+            Mode::Epilogue { schools: true } => self.mode = Mode::Epilogue { schools: false },
+            Mode::Lineup { pick: None } => {
                 self.mode = if std::mem::take(&mut self.lineup_from_intro) {
                     Mode::MatchIntro
                 } else {

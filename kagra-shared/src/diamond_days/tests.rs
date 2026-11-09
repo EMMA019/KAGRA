@@ -2726,6 +2726,13 @@ fn back_closes_the_screen_on_top() {
     assert_eq!(g.mode, Mode::Roster);
     assert!(g.on_key(back, true));
     assert_eq!(g.mode, Mode::Plan);
+    // The order's player picker unwinds one level: the picker, then the order.
+    g.mode = Mode::Lineup { pick: Some(0) };
+    assert!(g.on_key(back, true));
+    assert_eq!(g.mode, Mode::Lineup { pick: None });
+    assert!(g.on_key(back, true));
+    assert_eq!(g.mode, Mode::Roster);
+    g.mode = Mode::Plan;
     g.pause_run();
     assert!(!g.on_key(back, true), "paused: the shell resumes");
 }
