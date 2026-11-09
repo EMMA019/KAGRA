@@ -105,6 +105,13 @@ KAGRA_BAKE=1 cargo test -p kagra-shared --lib <slug>::
 `default_quality`、`quality_words`、`url_params` もある。`play.html` に
 ゲーム名やジャンルで分岐を書かない（`tests/test_page_spec.py` が止める）。
 
+APK を本編にするなら、マニフェストに `title_ja`（日本語の端末のランチャー名）と
+`icon_layers`（adaptive icon の前と後ろの層）を足す。絵はコードで描ける
+（`diamond_days::art::icon`。型の円からはみ出さないことをテストが見て、`KAGRA_ICON=assets/icons` で PNG を書く）。
+電話の戻るボタンは `Back` キー（`session::BACK_KEY`）で来る。上に開いた画面は
+`on_key` で閉じて `true` を返す。何もしなければシェルが一時停止にする
+（[`docs/distribution.md`](distribution.md)）。
+
 ## 5. 素材
 
 - CC0 かオリジナルだけ。Quaternius は使わない。有料素材は先にオーナーに聞く。
@@ -126,6 +133,7 @@ PR を「出せる」と言う前に全部確認する。
 - [ ] モデルの組が途中で変わらない（`declare_models` と、プレイ中に `gpu_mesh_key` が変わらないテスト）
 - [ ] スマホで 60 fps 近い（`?dev=1` の計測。Pixel 10 などの PowerVR は 1.5 倍で描く）
 - [ ] 日本語と英語の両方で文字が欠けない
+- [ ] APK: アイコンと名前（`icon_layers`、`title_ja`）、戻るボタンで落ちない
 - [ ] 圧縮後の読み込みが 3 MB 前後に収まる
 - [ ] 素材の台帳とライセンスチェックが緑
 - [ ] スマホで触った人の感想をもらった（プレビューのリンクを渡す）

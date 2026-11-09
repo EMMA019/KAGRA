@@ -1,6 +1,11 @@
 {
   "title": "Diamond Days",
-  "icon": "assets/icons/game_placeholder.png",
+  "title_ja": "白球デイズ",
+  "icon": "assets/icons/diamond_days.png",
+  "icon_layers": {
+    "foreground": "assets/icons/diamond_days_front.png",
+    "background": "assets/icons/diamond_days_back.png"
+  },
   "version": "0.1.0",
   "entry": "examples/diamond_days_minimal.py",
   "world": "kagra-shared/tests/fixtures/diamond_days_world.json",

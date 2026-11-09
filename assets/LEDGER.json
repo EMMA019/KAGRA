@@ -804,9 +804,40 @@
     "redistribute-standalone"
    ],
    "paths": [
-    "assets/icons/*.png"
+    "assets/icons/game_placeholder.png"
    ],
    "verified_how": "Drawn by tools/gen_assets/game_icon.py in plain Python (a ring and a triangle); no input images."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original. Written by the test diamond_days::art::icon (KAGRA_ICON=assets/icons).",
+   "verified": "checked",
+   "id": "project-diamond-days-icon",
+   "name": "Diamond Days launcher icon (whole, adaptive front and back layers)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-09",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/icons/diamond_days.png",
+    "assets/icons/diamond_days_front.png",
+    "assets/icons/diamond_days_back.png"
+   ],
+   "verified_how": "Drawn in Rust by kagra-shared/src/diamond_days/art.rs (mod icon) with the engine's vector painter and CPU rasterizer; the only text is the bundled OFL font. No input images."
   },
   {
    "license_spdx": "CC0-1.0",

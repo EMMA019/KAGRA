@@ -58,7 +58,11 @@ mobile/android/kagra.game.properties
 # Package Android が KAGRA Dev に焼く公開 Pages URL（秘密ではない）
 mobile/android/kagra.pages.properties
 mobile/android/app/src/main/assets/kagra_root/
-mobile/android/app/src/main/res/drawable-mdpi/ic_launcher.png
+# scripts/package_android.py が書くランチャーのアイコンと名前（kagra/distribute.py の ANDROID_RES_FILES）
+mobile/android/app/src/main/res/drawable-*/ic_launcher*.png
+mobile/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+mobile/android/app/src/main/res/values/kagra_game.xml
+mobile/android/app/src/main/res/values-ja/kagra_game.xml
 
 # 開発ツールのローカル状態
 .vision-pm/

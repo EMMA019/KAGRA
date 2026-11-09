@@ -1060,3 +1060,181 @@ mod crowd_tests {
         }
     }
 }
+
+/// The app icon (`games/diamond_days_minimal.json`: `icon`, `icon_layers`), baked by its
+/// test with `KAGRA_ICON=assets/icons`.
+#[cfg(test)]
+mod icon {
+    use super::*;
+
+    /// The app icon is drawn on a square this many units wide (`Stage::fit(px, px, ICON, ICON)`).
+    pub const ICON: f32 = 512.0;
+
+    /// The radius around the middle that every launcher mask leaves visible: an adaptive icon
+    /// shows 72 of its 108 units and some masks cut a circle of 66 inside that.
+    pub const ICON_SAFE: f32 = ICON * 33.0 / 108.0;
+
+    /// The app icon's back layer: a summer sky, light from the middle, the field below.
+    pub fn icon_background(p: &mut Painter) {
+        let s = ICON;
+        let square = [[0.0, 0.0], [s, 0.0], [s, s], [0.0, s]];
+        p.fill(
+            &square,
+            Paint::vertical(0.0, s, [30, 96, 200, 255], [120, 190, 246, 255]),
+        );
+        p.sunburst(s * 0.5, s * 0.47, s * 0.8, 18, 0.09, [255, 255, 255, 64]);
+        p.glow(s * 0.5, s * 0.47, s * 0.36, [255, 250, 220, 90]);
+        // The outfield grass and the dirt of the infield's edge.
+        let grass = vector::ellipse(s * 0.5, s * 1.32, s * 0.95, s * 0.55);
+        p.fill(
+            &grass,
+            Paint::vertical(s * 0.77, s, [86, 178, 84, 255], [44, 126, 62, 255]),
+        );
+        let dirt = vector::ellipse(s * 0.5, s * 1.36, s * 0.52, s * 0.44);
+        p.fill(
+            &dirt,
+            Paint::vertical(s * 0.92, s, [214, 160, 104, 255], [176, 120, 76, 255]),
+        );
+        p.outline(&grass, s * 0.012, [255, 255, 255, 120]);
+    }
+
+    /// The app icon's front layer: a white ball with red stitches and the game's name on a
+    /// ribbon, all inside [`ICON_SAFE`] of the middle so no launcher's mask cuts it.
+    pub fn icon_foreground(p: &mut Painter) {
+        let pi = std::f32::consts::PI;
+        let (cx, cy) = (ICON * 0.5, ICON * 0.44);
+        let r = ICON * 0.215;
+        // The ball: a soft shadow, white with a cool shade away from the light.
+        p.fill(
+            &vector::circle(cx + 7.0, cy + 11.0, r),
+            Paint::Solid([0, 30, 70, 70]),
+        );
+        let ball = vector::circle(cx, cy, r);
+        p.fill(
+            &ball,
+            Paint::Radial {
+                center: [cx - r * 0.3, cy - r * 0.45],
+                radius: r * 1.8,
+                c0: WHITE,
+                c1: [204, 214, 230, 255],
+            },
+        );
+        // The seams bow in from either side, stitched in red.
+        let red = [214, 44, 50, 255];
+        for (sx, a) in [(cx - r * 1.3, 0.0f32), (cx + r * 1.3, pi)] {
+            let seam = vector::arc(sx, cy, r * 0.95, r * 0.95, a - 0.84, a + 0.84, 28);
+            p.line(&seam, r * 0.04, red);
+            for k in (2..seam.len() - 2).step_by(3) {
+                let (q0, q1) = (seam[k - 1], seam[k + 1]);
+                let (tx, ty) = (q1[0] - q0[0], q1[1] - q0[1]);
+                let n = (tx * tx + ty * ty).sqrt().max(1e-3);
+                let (tx, ty) = (tx / n, ty / n);
+                let (nx, ny) = (-ty, tx);
+                let q = seam[k];
+                let w = r * 0.1;
+                // A small V across the seam.
+                p.line(
+                    &[
+                        [q[0] - nx * w - tx * w * 0.45, q[1] - ny * w - ty * w * 0.45],
+                        q,
+                        [q[0] + nx * w - tx * w * 0.45, q[1] + ny * w - ty * w * 0.45],
+                    ],
+                    r * 0.038,
+                    red,
+                );
+            }
+        }
+        p.outline(&ball, r * 0.04, [44, 56, 84, 255]);
+        // The shine, between the seams.
+        p.fill(
+            &vector::ellipse(cx - r * 0.02, cy - r * 0.64, r * 0.2, r * 0.1),
+            Paint::Solid([255, 255, 255, 230]),
+        );
+        // The name on a red ribbon across the bottom of the ball.
+        let (rw, rh) = (ICON * 0.36, ICON * 0.13);
+        p.ribbon(
+            cx,
+            cy + r * 0.45,
+            rw,
+            rh,
+            "白球",
+            rh * 0.7,
+            [222, 48, 56, 255],
+        );
+    }
+
+    /// The whole icon at `px` square (the store picture, the page): both layers.
+    pub fn icon_picture(px: u32) -> crate::raster2d::Canvas {
+        let mut list = DrawList::default();
+        {
+            let st = crate::hud_art::Stage::fit(px as f32, px as f32, ICON, ICON);
+            let mut p = Painter::new(&mut list, st);
+            icon_background(&mut p);
+            icon_foreground(&mut p);
+        }
+        crate::raster2d::picture(&list, px, px)
+    }
+
+    /// One adaptive-icon layer at `px` square; the front layer keeps its see-through
+    /// background.
+    pub fn icon_layer(px: u32, front: bool) -> crate::raster2d::Canvas {
+        let mut list = DrawList::default();
+        {
+            let st = crate::hud_art::Stage::fit(px as f32, px as f32, ICON, ICON);
+            let mut p = Painter::new(&mut list, st);
+            if front {
+                icon_foreground(&mut p);
+            } else {
+                icon_background(&mut p);
+            }
+        }
+        let mut c = crate::raster2d::Canvas::new(px, px, [0, 0, 0, if front { 0 } else { 255 }]);
+        c.draw(&list);
+        c
+    }
+
+    /// The app icon (`KAGRA_ICON=dir` writes the files `games/diamond_days_minimal.json`
+    /// names). The front layer stays inside the circle every launcher mask keeps, the back
+    /// layer fills the square.
+    #[test]
+    fn the_app_icon_keeps_inside_the_mask() {
+        let px = 432u32;
+        let front = icon_layer(px, true);
+        let back = icon_layer(px, false);
+        let k = px as f32 / ICON;
+        let mut inside = 0;
+        for y in 0..px {
+            for x in 0..px {
+                let i = ((y * px + x) * 4) as usize;
+                let (dx, dy) = (
+                    x as f32 + 0.5 - px as f32 * 0.5,
+                    y as f32 + 0.5 - px as f32 * 0.5,
+                );
+                let d = (dx * dx + dy * dy).sqrt() / k;
+                if d > ICON_SAFE {
+                    assert_eq!(
+                        front.rgba[i + 3],
+                        0,
+                        "front layer at {x},{y} ({d:.0} units out)"
+                    );
+                } else if front.rgba[i + 3] > 0 {
+                    inside += 1;
+                }
+                assert_eq!(back.rgba[i + 3], 255, "back layer at {x},{y}");
+            }
+        }
+        assert!(
+            inside > (px * px / 8) as usize,
+            "the ball and the ribbon are there: {inside}"
+        );
+        if let Ok(dir) = std::env::var("KAGRA_ICON") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            icon_picture(512)
+                .save_png(&dir.join("diamond_days.png"))
+                .unwrap();
+            front.save_png(&dir.join("diamond_days_front.png")).unwrap();
+            back.save_png(&dir.join("diamond_days_back.png")).unwrap();
+        }
+    }
+}

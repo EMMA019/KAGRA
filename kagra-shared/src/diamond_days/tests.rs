@@ -2711,3 +2711,21 @@ fn the_home_side_that_does_not_bat_gets_an_x() {
     }
     assert!(seen > 10, "{seen} of {} games", games.len());
 }
+
+/// The phone's back button closes the screen on top; on the board it is left to the shell,
+/// which pauses the run.
+#[test]
+fn back_closes_the_screen_on_top() {
+    let back = crate::session::BACK_KEY;
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Plan);
+    assert!(!g.on_key(back, true), "the board: the shell pauses");
+    g.mode = Mode::Player(0);
+    assert!(g.on_key(back, true));
+    assert_eq!(g.mode, Mode::Roster);
+    assert!(g.on_key(back, true));
+    assert_eq!(g.mode, Mode::Plan);
+    g.pause_run();
+    assert!(!g.on_key(back, true), "paused: the shell resumes");
+}

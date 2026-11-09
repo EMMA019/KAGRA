@@ -2046,6 +2046,29 @@ impl DiamondDays {
     }
 
     /// The coach stops on a square: it happens.
+    /// Close the screen on top (the roster, a player's page, the order, the bench), as a
+    /// tap off it does. False on a main screen.
+    fn go_back(&mut self) -> bool {
+        match self.mode {
+            Mode::Roster => self.mode = Mode::Plan,
+            Mode::Player(_) => self.mode = Mode::Roster,
+            Mode::Lineup { .. } => {
+                self.mode = if std::mem::take(&mut self.lineup_from_intro) {
+                    Mode::MatchIntro
+                } else {
+                    Mode::Roster
+                }
+            }
+            Mode::Match {
+                asking: Some(Spot::Bench(_)),
+                ..
+            } => self.give_call(None),
+            _ => return false,
+        }
+        crate::mixer::cue_sfx("card");
+        true
+    }
+
     fn skip_walk(&mut self, left: u8, card: Card) {
         let n = self.spec.ring.len().max(1);
         self.hop_from = (self.s.pos + left as usize - 1) % n;
@@ -3077,15 +3100,9 @@ impl DiamondDays {
         match self.mode {
             Mode::Notice => self.tap_notice(),
             // A tap off the list closes it.
-            Mode::Roster => self.mode = Mode::Plan,
-            Mode::Lineup { .. } => {
-                self.mode = if std::mem::take(&mut self.lineup_from_intro) {
-                    Mode::MatchIntro
-                } else {
-                    Mode::Roster
-                }
+            Mode::Roster | Mode::Lineup { .. } | Mode::Player(_) => {
+                self.go_back();
             }
-            Mode::Player(_) => self.mode = Mode::Roster,
             // A tap skips the walk: the coach is on the square at once.
             Mode::Walk { left, ref card, .. } => {
                 let card = card.clone();
@@ -3566,6 +3583,11 @@ impl crate::kit_host::KitHost for DiamondDays {
     fn on_key(&mut self, name: &str, down: bool) -> bool {
         if !down || self.flow.phase != FlowPhase::Play {
             return false;
+        }
+        // The phone's back button closes the screen on top; on the main screens it is left
+        // to the shell (which pauses the run).
+        if name == crate::session::BACK_KEY {
+            return self.go_back();
         }
         match (name, &self.mode) {
             ("1" | "2" | "3" | "4" | "5", Mode::Plan) => {

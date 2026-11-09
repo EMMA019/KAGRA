@@ -28,6 +28,8 @@ Windows と Android は同じマニフェストを読む。
 | `version` | はい | `major.minor.patch`。`versionCode` は `major*10000+minor*100+patch` |
 | `entry` | はい | 起動する Python 例 |
 | `world` | いいえ | Android の WorldPlay が読む dump |
+| `title_ja` | いいえ | 日本語の端末で出すランチャー名（`values-ja` の文字列）。省略すると `title` |
+| `icon_layers` | いいえ | Android の adaptive icon。`{"foreground": png, "background": png}`、同じ大きさの正方形（432 px で xxxhdpi）。前の層は透明の背景で、中央の円（108 のうち直径 66）に収める |
 | `application_id` | いいえ | 省略時は `dev.kagra.<slug>` |
 | `bundle_assets` | いいえ | 追加で同梱するパス。`["assets"]` で `assets/` 全体 |
 | `platform` | いいえ | ポータルの広告枠（`kagra/platform_spec.py`） |
@@ -109,7 +111,11 @@ python scripts/package_android.py --game examples/platformer_minimal.py
 
 1. `mobile/android/kagra.game.properties` に title / version / applicationId / icon
 2. `app/src/main/assets/kagra_root/` に例・dump・アセット
-3. `drawable-mdpi/ic_launcher.png`
+3. ランチャーのアイコンと名前（`kagra/distribute.py` の `write_android_res`）。`icon` は
+   幅に合う密度の `drawable-*/ic_launcher.png`。`icon_layers` があれば
+   `mipmap-anydpi-v26/ic_launcher.xml` の adaptive icon（ランチャーの丸や角丸の型で
+   切っても欠けない）。`title_ja` があれば `values` / `values-ja` の文字列。前回の分は
+   先に消す
 4. `libkagra_shared.so`（arm64-v8a と x86_64、`--features render`、`--locked`）
 5. `gradle :app:assembleDebug`
 
@@ -118,6 +124,10 @@ python scripts/package_android.py --game examples/platformer_minimal.py
 今までどおり Crest Isle（CI の `android-shell` ジョブ）。
 
 APK は `dist/android/<slug>-debug.apk`。
+
+戻るボタンはゲームに `Back` キー（`kagra_shared::session::BACK_KEY`）として届く。
+キットの `on_key` が使えば（上に開いた画面を閉じるなど）アプリは残る。使わなければ、
+遊んでいる途中なら一時停止、一時停止中なら再開。タイトルでは使われず、アプリが閉じる。
 
 GitHub Actions（無料の `ubuntu-latest`）:
 [`.github/workflows/package-android.yml`](../.github/workflows/package-android.yml)。

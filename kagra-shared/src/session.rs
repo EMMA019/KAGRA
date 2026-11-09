@@ -17,6 +17,9 @@ use crate::world_play::WorldPlay;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The key name a native shell sends for the phone's back button.
+pub const BACK_KEY: &str = "Back";
+
 #[derive(Clone, Debug, Serialize)]
 pub struct FrameStats {
     pub frame: u64,
@@ -902,13 +905,33 @@ impl SharedSession {
         self.playtest.on_pointer(ev)
     }
 
+    /// A key from the page or the app. True when it was used. The phone's back button
+    /// comes as [`BACK_KEY`]; when it is not used, the app goes back (leaves).
     pub fn push_key(&mut self, name: &str, down: bool) -> bool {
         if self.playtest.on_key(name, down) {
             return true;
         }
         if self.kind == SceneKind::Kit {
             if let Some(kit) = self.kit.as_mut() {
-                return kit.on_key(name, down);
+                if kit.on_key(name, down) {
+                    return true;
+                }
+                // The phone's back button. A kit that does not take it itself pauses its
+                // run, and back again closes the pause card. Anywhere else (the title, a
+                // kit with no pause card) it is not used and the app goes back.
+                if name == BACK_KEY && down {
+                    match kit.phase_name() {
+                        "play" => {
+                            kit.pause_run();
+                            return kit.phase_name() == "pause";
+                        }
+                        "pause" => {
+                            kit.resume_run();
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
         false
@@ -1267,6 +1290,27 @@ mod tests {
         u.load_game_json(&dump).unwrap();
         assert_eq!(u.kit.as_ref().unwrap().save_json().as_deref(), None);
     }
+    /// The phone's back button pauses a kit's run and resumes it; on the title it is not
+    /// used, so the app leaves.
+    #[test]
+    fn back_pauses_a_kit_and_leaves_from_the_title() {
+        let dump = crate::crate_tower::CrateTower::new(Default::default())
+            .world_value()
+            .to_string();
+        let mut s = SharedSession::default();
+        s.load_game_json(&dump).unwrap();
+        let phase = |s: &SharedSession| s.kit.as_ref().unwrap().phase_name();
+        assert_eq!(phase(&s), "title");
+        assert!(!s.push_key(BACK_KEY, true));
+        s.kit.as_mut().unwrap().confirm();
+        assert_eq!(phase(&s), "play");
+        assert!(s.push_key(BACK_KEY, true));
+        assert!(!s.push_key(BACK_KEY, false), "only the press counts");
+        assert_eq!(phase(&s), "pause");
+        assert!(s.push_key(BACK_KEY, true));
+        assert_eq!(phase(&s), "play");
+    }
+
     use crate::input::PointerPhase;
 
     fn demo2d() -> SharedSession {

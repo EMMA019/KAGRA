@@ -33,7 +33,7 @@ android {
         targetSdk = 35
         versionCode = gameProp("version_code", "1").toInt()
         versionName = gameProp("version_name", "0.1.0")
-        manifestPlaceholders["appLabel"] = gameProp("title", "KAGRA Shell")
+        manifestPlaceholders["appLabel"] = gameProp("label", gameProp("title", "KAGRA Shell"))
         manifestPlaceholders["appIcon"] = gameProp(
             "icon",
             "@android:drawable/sym_def_app_icon",

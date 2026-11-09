@@ -22,6 +22,29 @@
       "minLength": 1,
       "description": "リポジトリ相対の PNG。Android は drawable、Windows は ICO に包む。"
     },
+    "title_ja": {
+      "type": "string",
+      "description": "日本語の端末で出す Android のランチャー名。省略すると title。"
+    },
+    "icon_layers": {
+      "type": "object",
+      "required": [
+        "foreground",
+        "background"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "foreground": {
+          "type": "string",
+          "description": "Adaptive icon の前の層。透明の背景、中央の円（108 のうち直径 66）に収める。"
+        },
+        "background": {
+          "type": "string",
+          "description": "Adaptive icon の後ろの層。正方形を埋める。"
+        }
+      },
+      "description": "Android の adaptive icon。同じ大きさの正方形 PNG 2 枚（432 px で xxxhdpi）。"
+    },
     "version": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",

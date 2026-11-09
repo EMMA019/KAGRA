@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.net.HttpURLConnection
@@ -159,6 +160,21 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
         setContentView(root)
         surfaceView.holder.addCallback(this)
         surfaceView.setOnTouchListener { _, ev -> onGameTouch(surfaceView.width, surfaceView.height, ev) }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // In a game, the game first (it closes a screen or pauses); then the list.
+                if (picker.visibility != View.VISIBLE) {
+                    if (KagraNative.available && KagraNative.pushKey("Back", true)) {
+                        KagraNative.pushKey("Back", false)
+                        return
+                    }
+                    picker.visibility = View.VISIBLE
+                    return
+                }
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+            }
+        })
 
         if (!KagraNative.available) {
             val detail = KagraNative.loadError
