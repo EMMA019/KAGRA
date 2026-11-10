@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "fea5d08de1"
+      "v": "8f4bfa54ea"
     },
     {
       "path": "kagra_game.json",
@@ -613,5 +613,5 @@
       "max": "high"
     }
   },
-  "build": "d36005683927"
+  "build": "69f01803ebfb"
 }
