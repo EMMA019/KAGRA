@@ -105,7 +105,20 @@ fn char_advance_for(ch: char, size: f32, face: TextFace) -> f32 {
         return size * 0.5;
     };
     let scaled = font.as_scaled(size);
-    scaled.h_advance(scaled.glyph_id(ch))
+    let adv = scaled.h_advance(scaled.glyph_id(ch));
+    // Gothic faces put a narrow kana or a full-width "！" in a full em cell, which
+    // reads as huge letter-spacing at HUD sizes. Pull those side bearings in.
+    // A glyph that already fills its cell (kanji, ◆) keeps the font's advance,
+    // so neighbours do not collide.
+    let Some(outline) = scaled.outline_glyph(scaled.scaled_glyph(ch)) else {
+        return adv;
+    };
+    let ink = outline.px_bounds().width();
+    if ink > 0.0 && ink < adv * 0.72 {
+        let tightened = (ink + size * 0.16).max(size * 0.28);
+        return tightened.min(adv);
+    }
+    adv
 }
 
 /// グリフのカバレッジ画素（0..1）とベースライン相対オフセット。
@@ -478,6 +491,29 @@ mod tests {
         assert!(
             c_min < l_min,
             "center text starts further left: {c_min} < {l_min}"
+        );
+    }
+
+    #[test]
+    fn narrow_kana_tighten_and_full_glyphs_do_not_collide() {
+        let size = 16.0;
+        // ab_glyph's scale is the line box, so one em is a bit under `size`.
+        let em = char_advance_for('弾', size, TextFace::Ui);
+        let u = char_advance_for('う', size, TextFace::Ui);
+        let bang = char_advance_for('！', size, TextFace::Ui);
+        let diamond = char_advance_for('◆', size, TextFace::Ui);
+        assert!(em > size * 0.5, "em {em}");
+        assert!(u < em * 0.9 && u > em * 0.5, "う {u} em {em}");
+        assert!(bang < em * 0.55, "！ {bang} em {em}");
+        assert!(
+            diamond + 0.2 >= em * 0.95,
+            "a full diamond must not shrink into its neighbour: {diamond} vs {em}"
+        );
+        let placed = layout(&TextQuad::new("◆◆", 0.0, 0.0, size, [255; 4]));
+        assert_eq!(placed.len(), 2);
+        assert!(
+            placed[1].x - placed[0].x + 0.2 >= em * 0.95,
+            "diamonds overlap: {placed:?} em {em}"
         );
     }
 

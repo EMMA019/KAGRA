@@ -1,6 +1,6 @@
 {
   "title": "Moonlit Swarm",
-  "icon": "assets/icons/game_placeholder.png",
+  "icon": "assets/icons/moonlit_swarm.png",
   "version": "0.1.0",
   "entry": "examples/survivor_arena_minimal.py",
   "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",

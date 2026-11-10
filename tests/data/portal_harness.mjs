@@ -238,6 +238,7 @@ function commercialShown(r) { return r.shown; }
   const ready = host.init();
   await loadSdk(env, () => { env.win.CrazyGames = { SDK: makeCrazySdk(calls, beh) }; });
   await ready;
+  host.setPhase("complete");
   const offered = host.canOfferRewarded("revive");
   const unknown = await host.rewarded("nope");
   const p = host.rewarded("revive");
@@ -247,6 +248,31 @@ function commercialShown(r) { return r.shown; }
   host.newRun();
   out.cg_rewarded = { offered, unknown, first, offeredAfter, offeredNewRun: host.canOfferRewarded("revive"), calls };
 }
+{ // declared slots: commercial on retry, double coins only on the result card, 90 s gap
+  const env = makeEnv();
+  const calls = []; const beh = { auto: "ok" };
+  const ads = {
+    commercial_on: ["retry"],
+    min_interval_secs: 90,
+    rewarded: [{ slot: "double_coins", at: "game_over", effect: "none", per_run: 1 }],
+  };
+  const host = await booted("crazygames", ads, env);
+  const ready = host.init();
+  await loadSdk(env, () => { env.win.CrazyGames = { SDK: makeCrazySdk(calls, beh) }; });
+  await ready;
+  host.setPhase("title");
+  const onTitle = host.canOfferRewarded("double_coins");
+  const early = await host.commercial("game_over");
+  host.setPhase("complete");
+  const onOver = host.canOfferRewarded("double_coins");
+  const retryP = host.commercial("retry");
+  beh.finish();
+  const retry = await retryP;
+  out.swarm_ads = {
+    onTitle, onOver, earlyReason: early.reason, retryShown: retry.shown,
+    gap: host.ads.min_interval_secs, scripts: env.scripts.length,
+  };
+}
 { // rewarded, but the ad errors: no reward
   const env = makeEnv();
   const calls = []; const beh = { auto: "error" };
@@ -254,6 +280,7 @@ function commercialShown(r) { return r.shown; }
   const ready = host.init();
   await loadSdk(env, () => { env.win.CrazyGames = { SDK: makeCrazySdk(calls, beh) }; });
   await ready;
+  host.setPhase("complete");
   const r = await host.rewarded("revive");
   out.cg_rewarded_error = { r, offeredAgain: host.canOfferRewarded("revive") };
 }

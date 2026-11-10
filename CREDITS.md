@@ -55,6 +55,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [HOP-BEAT music (procedural loop + stingers)](https://github.com/EMMA019/KAGRA) | KAGRA project (Emma) | CC0-1.0 | not required | `assets/audio/hop_beat/hop_beat_*.mp3`, `assets/audio/hop_beat/hop_beat_beatgrid.json` |
 | [HOP-BEAT effects (hop, land, perfect, good, combo, hit, fall, stomp, warn)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/hop_beat/*.wav` |
 | [KAGRA placeholder launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/game_placeholder.png` |
+| [Moonlit Swarm launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/moonlit_swarm.png` |
 | [Neon Cat placeholder sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/neon_cat/*.wav` |
 | [Neon Cat concrete wall texture](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/neon_cat/*.png` |
 | [KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/placeholder/*.glb`, `assets/models/neon_cat/gate_arch.glb` |
