@@ -35,8 +35,10 @@ impl SurvivorArena {
         let dim = |c: [u32; 3], f: f32| c.map(|v| (v as f32 * mix(1.0, f)) as u32);
         for p in doc.props.iter_mut() {
             match p.name.as_str() {
-                "floor" => p.color = p.color.map(|c| dim(c, 0.6)),
-                "wall" => p.color = p.color.map(|c| dim(c, 0.62)),
+                // The pavers stay lighter than the old full-night crush so a phone thumbnail
+                // still separates the hero. `arena.dark` is what turns this down.
+                "floor" => p.color = p.color.map(|c| dim(c, 0.78)),
+                "wall" => p.color = p.color.map(|c| dim(c, 0.74)),
                 _ => {}
             }
         }
@@ -129,7 +131,7 @@ impl SurvivorArena {
             "floor",
             [0.0, -0.12, 0.0],
             [side + 8.0, 0.24, side + 8.0],
-            [255, 255, 255],
+            a.floor,
             0.0,
             0.9,
             0.0,
@@ -251,6 +253,43 @@ impl SurvivorArena {
                     0.0,
                     None,
                 ));
+            }
+        }
+        // Light posts inside the ring: a stone column and a candle lantern at each diagonal,
+        // so the floor is not one repeating tile. Reuses the Kenney column and lantern
+        // already in the bundle (no new mesh, so the draw-call count stays put).
+        let lantern = decor_path("lantern-candle");
+        let post_r = half * 0.58;
+        for (i, (sx, sz)) in [(-1.0_f32, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+            .into_iter()
+            .enumerate()
+        {
+            let (x, z) = (sx * post_r, sz * post_r);
+            if col_ok {
+                doc.props.push(glb_prop(
+                    &format!("column-post-{i}"),
+                    COLUMN_GLB,
+                    "column",
+                    [x, 0.0, z],
+                    [1.65, 2.15, 1.65],
+                    [186, 196, 224],
+                    0.0,
+                    None,
+                ));
+            }
+            if has(&lantern) {
+                let mut p = glb_prop(
+                    &format!("decor-post-{i}"),
+                    &lantern,
+                    "decor",
+                    [x + sx * 0.85, 0.0, z + sz * 0.85],
+                    [1.75, 1.75, 1.75],
+                    [255, 214, 160],
+                    0.9,
+                    Some([1.0, 0.58, 0.24]),
+                );
+                p.yaw = sx.atan2(sz);
+                doc.props.push(p);
             }
         }
         // Pines ringed outside the wall.
@@ -567,6 +606,24 @@ impl SurvivorArena {
             7.0,
             false,
         ));
+        // Two candle posts. Slots 2 and 3 are the shader's spare point lights; they do not
+        // cast shadows (the sun map stays the one shadow), so they stay inside the phone budget.
+        let post_r = half * 0.58;
+        for (i, (sx, sz, name)) in [(-1.0_f32, -1.0, "torch-a"), (1.0, 1.0, "torch-b")]
+            .into_iter()
+            .enumerate()
+        {
+            doc.lights.push(light(
+                2 + i as u32,
+                name,
+                [sx * post_r, 1.8, sz * post_r],
+                [0.0; 3],
+                [1.0, 0.62, 0.30],
+                2.6,
+                8.0,
+                false,
+            ));
+        }
         // Effect clouds (one per kind and third of life) and shot streaks: fixed lists whose
         // vectors are refilled in place each frame.
         for (k, (rgb, size, alpha)) in FX_LOOK.iter().enumerate() {

@@ -1,17 +1,17 @@
 {
   "game": {
     "arena": {
-      "dark": 1.0,
+      "dark": 0.4,
       "floor": [
-        34,
-        46,
-        66
+        255,
+        250,
+        242
       ],
       "half": 13.0,
       "wall": [
-        84,
-        70,
-        128
+        120,
+        112,
+        168
       ]
     },
     "audio": {
@@ -130,17 +130,17 @@
       "shots": 48
     },
     "director": {
-      "curve": 2.0,
+      "curve": 1.4,
       "elite_every": 40.0,
       "elite_fight_secs": 14.0,
       "elite_first": 45.0,
       "elite_hp_cap": 4.0,
       "end_rate": 8.5,
       "hp_per_min": 0.35,
-      "ramp_secs": 100.0,
+      "ramp_secs": 95.0,
       "seed": 1,
       "spawn_dist": 10.5,
-      "start_rate": 1.5
+      "start_rate": 3.0
     },
     "drops": {
       "blink": 4.0,
@@ -578,7 +578,7 @@
     "hero": {
       "hurt_cd": 0.5,
       "max_hp": 100.0,
-      "pickup_radius": 1.7,
+      "pickup_radius": 2.4,
       "radius": 0.4,
       "skin": "classic",
       "speed": 4.6,
@@ -620,7 +620,8 @@
           "ja": "げんき"
         },
         "per_level": 20.0,
-        "stat": "max_hp"
+        "stat": "max_hp",
+        "weight": 1
       },
       {
         "desc": {
@@ -634,7 +635,8 @@
           "ja": "はやあし"
         },
         "per_level": 0.08,
-        "stat": "speed"
+        "stat": "speed",
+        "weight": 1
       },
       {
         "desc": {
@@ -648,7 +650,8 @@
           "ja": "じしゃく"
         },
         "per_level": 0.3,
-        "stat": "magnet"
+        "stat": "magnet",
+        "weight": 4
       },
       {
         "desc": {
@@ -662,7 +665,8 @@
           "ja": "ちからもち"
         },
         "per_level": 0.12,
-        "stat": "might"
+        "stat": "might",
+        "weight": 1
       },
       {
         "desc": {
@@ -676,7 +680,8 @@
           "ja": "せっかち"
         },
         "per_level": 0.07,
-        "stat": "haste"
+        "stat": "haste",
+        "weight": 1
       },
       {
         "desc": {
@@ -690,7 +695,8 @@
           "ja": "せいちょう"
         },
         "per_level": 0.12,
-        "stat": "growth"
+        "stat": "growth",
+        "weight": 1
       }
     ],
     "run": {
