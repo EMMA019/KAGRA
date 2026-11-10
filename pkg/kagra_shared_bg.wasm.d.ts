@@ -13,6 +13,7 @@ export const kagra_net_submit_local: (a: number, b: number, c: number, d: number
 export const kagra_shared_attach_android_surface: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_ios_view: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_attach_offscreen: (a: number, b: number, c: number) => number;
+export const kagra_shared_audio_files: (a: number, b: number, c: number) => number;
 export const kagra_shared_audio_json: (a: number, b: number, c: number) => number;
 export const kagra_shared_create: () => number;
 export const kagra_shared_create_surface: (a: number, b: number, c: number) => number;
@@ -54,6 +55,7 @@ export const kagra_shared_set_settings: (a: number, b: number, c: number, d: num
 export const kagra_shared_set_walk: (a: number, b: number, c: number, d: number) => number;
 export const kagra_shared_stats_json: (a: number, b: number, c: number) => number;
 export const kagra_shared_take_audio_cues: (a: number, b: number) => number;
+export const kagra_shared_take_audio_plan: (a: number, b: number, c: number) => number;
 export const kagra_shared_version: () => number;
 export const netDecode: (a: number, b: number) => [number, number, number, number];
 export const netDt: (a: number, b: number) => number;
