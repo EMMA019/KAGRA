@@ -2,7 +2,7 @@
 
 Prepared for a CrazyGames-style listing. Nothing in this file has been submitted.
 
-Preview (this branch's PR): the phone link is `https://emma019.github.io/KAGRA/pr/<n>/play.html?game=survivor_arena`.
+Phone preview: https://emma019.github.io/KAGRA/pr/226/play.html?game=survivor_arena
 
 ## Short description (en)
 
