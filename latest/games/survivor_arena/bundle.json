@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/survivor_arena/world.json",
-      "v": "b13c7d90b3"
+      "v": "fea5d08de1"
     },
     {
       "path": "kagra_game.json",
@@ -288,7 +288,7 @@
     {
       "path": "assets/textures/survivor_arena/floor.png",
       "url": "assets/textures/survivor_arena/floor.png",
-      "v": "6281f007ae"
+      "v": "9a78ff7e3a"
     }
   ],
   "platform": {
@@ -554,8 +554,8 @@
         },
         "patch": {
           "director": {
-            "start_rate": 1.8,
-            "end_rate": 9.0
+            "start_rate": 3.8,
+            "end_rate": 9.5
           }
         },
         "desc": {
@@ -613,5 +613,5 @@
       "max": "high"
     }
   },
-  "build": "69d5f768851c"
+  "build": "dab9dad37729"
 }
