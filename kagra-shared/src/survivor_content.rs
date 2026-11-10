@@ -227,7 +227,7 @@ impl Default for DropSpec {
                     0.0,
                     [120, 235, 150],
                     "♥",
-                    "Rice ball",
+                    "Rice ball (Onigiri)",
                     "おにぎり",
                 ),
                 row(
@@ -240,7 +240,7 @@ impl Default for DropSpec {
                     0.0,
                     [110, 200, 255],
                     "∪",
-                    "Magnet",
+                    "Magnet (Jishaku)",
                     "じしゃく",
                 ),
                 row(
@@ -253,7 +253,7 @@ impl Default for DropSpec {
                     0.0,
                     [150, 160, 255],
                     "◇",
-                    "Moon dust",
+                    "Moon dust (Tsuki no Ko)",
                     "つきのこ",
                 ),
                 row(
@@ -266,7 +266,7 @@ impl Default for DropSpec {
                     8.0,
                     [255, 120, 90],
                     "◎",
-                    "Moon bomb",
+                    "Moon bomb (Tsuki no Bomu)",
                     "つきのボム",
                 ),
                 row(
@@ -279,7 +279,7 @@ impl Default for DropSpec {
                     0.0,
                     [120, 220, 255],
                     "□",
-                    "Shield",
+                    "Shield (Baria)",
                     "バリア",
                 ),
                 row(
@@ -292,7 +292,7 @@ impl Default for DropSpec {
                     0.0,
                     [255, 200, 90],
                     "↑",
-                    "Frenzy",
+                    "Frenzy (Hassuru)",
                     "ハッスル",
                 ),
                 row(
@@ -305,7 +305,7 @@ impl Default for DropSpec {
                     0.0,
                     [255, 170, 80],
                     "★",
-                    "Weapon",
+                    "Weapon (Buki)",
                     "ぶき",
                 ),
             ],
@@ -497,32 +497,42 @@ pub fn default_synergies() -> Vec<SynergySpec> {
     vec![
         SynergySpec {
             cooldown: -0.15,
-            ..s("bolt", "haste", "Rapid moon", "はやづき")
+            ..s("bolt", "haste", "Rapid moon (Hayazuki)", "はやづき")
         },
         SynergySpec {
             pierce: 1,
-            ..s("bolt", "might", "Moonstrike", "つきぬき")
+            ..s("bolt", "might", "Moonstrike (Tsukinuki)", "つきぬき")
         },
         SynergySpec {
             count: 1,
-            ..s("petals", "might", "Heavy bloom", "おもいはな")
+            ..s("petals", "might", "Heavy bloom (Omoi Hana)", "おもいはな")
         },
         SynergySpec {
             area: 0.25,
-            ..s("blades", "swift", "Whirlwind", "つむじかぜ")
+            ..s("blades", "swift", "Whirlwind (Tsumujikaze)", "つむじかぜ")
         },
         SynergySpec {
             count: 1,
-            ..s("wisps", "growth", "Bloom swarm", "ふえるウィスプ")
+            ..s(
+                "wisps",
+                "growth",
+                "Bloom swarm (Fueru Wisp)",
+                "ふえるウィスプ",
+            )
         },
         SynergySpec {
             cooldown: -0.2,
-            ..s("zap", "haste", "Static", "せいでんき")
+            ..s("zap", "haste", "Static (Seidenki)", "せいでんき")
         },
         SynergySpec {
             area: 0.3,
             damage: 0.2,
-            ..s("pulse", "vitality", "Bulwark", "まもりのなみ")
+            ..s(
+                "pulse",
+                "vitality",
+                "Bulwark (Mamori no Nami)",
+                "まもりのなみ",
+            )
         },
     ]
 }
@@ -542,7 +552,7 @@ fn wl(en: &str, ja: &str, damage: f32, cooldown: f32, count: i32, pierce: i32) -
 pub fn default_weapons() -> Vec<WeaponSpec> {
     let bolt = WeaponSpec {
         id: "bolt".into(),
-        name: Loc::new("Moon bolt", "つきのたま"),
+        name: Loc::new("Moon bolt (Tsuki no Tama)", "つきのたま"),
         desc: Loc::new(
             "Throws bolts at the nearest foe",
             "いちばんちかいてきになげる",
@@ -574,7 +584,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
     };
     let petals = WeaponSpec {
         id: "petals".into(),
-        name: Loc::new("Moon petals", "つきのはなびら"),
+        name: Loc::new("Moon petals (Tsuki no Hanabira)", "つきのはなびら"),
         desc: Loc::new(
             "A fan of petals, deadly up close",
             "ちかくでつよい、はなびらのたば",
@@ -616,7 +626,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
     };
     let blades = WeaponSpec {
         id: "blades".into(),
-        name: Loc::new("Crescent blades", "みかづきのやいば"),
+        name: Loc::new("Crescent blades (Mikazuki no Yaiba)", "みかづきのやいば"),
         desc: Loc::new(
             "Blades circle you and cut what they touch",
             "まわりをまわる、さわるとダメージ",
@@ -658,7 +668,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
     };
     let wisps = WeaponSpec {
         id: "wisps".into(),
-        name: Loc::new("Seeker wisps", "おいかけウィスプ"),
+        name: Loc::new("Seeker wisps (Oikake Wisp)", "おいかけウィスプ"),
         desc: Loc::new(
             "Wisps curve toward foes and burst",
             "てきをおいかけてはじける",
@@ -690,7 +700,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
     };
     let zap = WeaponSpec {
         id: "zap".into(),
-        name: Loc::new("Thunder thread", "いなずまのいと"),
+        name: Loc::new("Thunder thread (Inazuma no Ito)", "いなずまのいと"),
         desc: Loc::new(
             "Lightning jumps from foe to foe",
             "てきからてきへとびうつる",
@@ -722,7 +732,7 @@ pub fn default_weapons() -> Vec<WeaponSpec> {
     };
     let pulse = WeaponSpec {
         id: "pulse".into(),
-        name: Loc::new("Moon pulse", "つきのはどう"),
+        name: Loc::new("Moon pulse (Tsuki no Hadou)", "つきのはどう"),
         desc: Loc::new(
             "A ring that shoves the crowd back",
             "まわりをはじきとばすリング",

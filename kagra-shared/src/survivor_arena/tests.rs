@@ -2021,6 +2021,92 @@ fn the_level_up_heading_clears_the_subtitle() {
     }
 }
 
+fn has_kana(text: &str) -> bool {
+    // Hiragana and katakana. Kanji glyphs (弾, 刃) are the card icons on purpose.
+    text.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF))
+}
+
+#[test]
+fn english_cards_keep_romaji_and_do_not_show_kana_sentences() {
+    let spec = SurvivorSpec::default();
+    assert!(
+        spec.weapons.iter().any(|w| w.name.en.contains("Mikazuki")),
+        "the crescent blades keep their romaji"
+    );
+    assert!(spec.passives.iter().any(|p| p.name.en.contains("Jishaku")));
+    let mut spec = spec;
+    spec.director.start_rate = 0.0;
+    spec.director.elite_first = 0.0;
+    spec.director.event_at = 0.0;
+    let mut g = SurvivorArena::new(spec);
+    g.set_lang("en");
+    g.confirm();
+    g.xp = g.xp_need();
+    g.tick(DT);
+    g.tick(DT);
+    assert!(g.card_count() > 0);
+    for t in &g.hud(390, 844, false).texts {
+        // One-character glyphs (弾, 刃) stay. A sentence must not.
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english card has kana: {}", t.text);
+        }
+    }
+    g.set_lang("ja");
+    assert!(
+        g.hud(390, 844, false)
+            .texts
+            .iter()
+            .any(|t| has_kana(&t.text) && t.text.chars().count() > 2),
+        "japanese still has its own lines"
+    );
+}
+
+#[test]
+fn a_ring_closes_once_between_60_and_90_seconds() {
+    let spec = SurvivorSpec::default();
+    assert!(
+        (60.0..=90.0).contains(&spec.director.event_at),
+        "event_at {}",
+        spec.director.event_at
+    );
+    let mut g = SurvivorArena::new(spec);
+    g.set_lang("en");
+    g.confirm();
+    let mut steps = 0;
+    let mut before = 0;
+    while g.secs() < 95.0 && g.flow.phase == FlowPhase::Play && steps < 60 * 110 {
+        if g.surge_at().is_none() && g.secs() >= 60.0 {
+            before = g.foes().len();
+        }
+        if g.card_count() > 0 {
+            g.choose(0);
+        }
+        kite_step(&mut g);
+        g.tick(DT);
+        steps += 1;
+    }
+    let at = g.surge_at().unwrap_or(-1.0);
+    assert!(
+        (60.0..=90.0).contains(&at),
+        "ring at {at}, lived {:.1}s phase {}",
+        g.secs(),
+        g.phase_name()
+    );
+    assert!(
+        g.foes().len() + 8 >= before,
+        "the ring is a formation (before {before}, now {})",
+        g.foes().len()
+    );
+    let again = g.surge_at();
+    for _ in 0..180 {
+        if g.card_count() > 0 {
+            g.choose(0);
+        }
+        g.tick(DT);
+    }
+    assert_eq!(g.surge_at(), again, "the ring fires once");
+}
+
 #[test]
 fn gems_inside_the_default_pickup_radius_fly_to_the_hero() {
     let mut g = started();

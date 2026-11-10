@@ -217,6 +217,11 @@ pub struct DirectorSpec {
     /// `elite_hp_cap` times that.
     pub elite_fight_secs: f32,
     pub elite_hp_cap: f32,
+    /// A ring of foes at this second (0 = off). The shipped 120 s round puts one
+    /// inside the 60..=90 window. The boss is not this.
+    pub event_at: f32,
+    /// How many foes that ring holds.
+    pub event_count: u32,
 }
 
 impl Default for DirectorSpec {
@@ -237,6 +242,8 @@ impl Default for DirectorSpec {
             elite_every: 40.0,
             elite_fight_secs: 14.0,
             elite_hp_cap: 4.0,
+            event_at: 72.0,
+            event_count: 8,
         }
     }
 }
@@ -540,7 +547,7 @@ impl Default for SurvivorSpec {
             passives: vec![
                 passive(
                     "vitality",
-                    "Vitality",
+                    "Vitality (Genki)",
                     "げんき",
                     "Max HP +20",
                     "さいだいHP +20",
@@ -549,7 +556,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "swift",
-                    "Swift paws",
+                    "Swift paws (Hayaashi)",
                     "はやあし",
                     "Move speed +8%",
                     "いどうそく +8%",
@@ -559,7 +566,7 @@ impl Default for SurvivorSpec {
                 weighted(
                     passive(
                         "magnet",
-                        "Magnet",
+                        "Magnet (Jishaku)",
                         "じしゃく",
                         "Gem pull range +30%",
                         "ジェムをよせる +30%",
@@ -570,7 +577,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "might",
-                    "Might",
+                    "Might (Chikaramochi)",
                     "ちからもち",
                     "Damage +12%",
                     "ダメージ +12%",
@@ -579,7 +586,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "haste",
-                    "Haste",
+                    "Haste (Sekkachi)",
                     "せっかち",
                     "Throws 7% faster",
                     "こうげき +7%はやく",
@@ -588,7 +595,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "growth",
-                    "Growth",
+                    "Growth (Seichou)",
                     "せいちょう",
                     "XP +12%",
                     "けいけんち +12%",
@@ -663,6 +670,10 @@ impl SurvivorSpec {
             1.0,
             20.0,
         )?;
+        range(w, "director.event_at", self.director.event_at, 0.0, 1800.0)?;
+        if self.director.event_count > 24 {
+            return Err(format!("{w}: director.event_count must be 0..=24"));
+        }
         for (i, wp) in self.weapons.iter().enumerate() {
             let n = format!("weapons[{i}]");
             range(w, &format!("{n}.base.area"), wp.base.area, 0.0, 12.0)?;
