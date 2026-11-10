@@ -433,6 +433,7 @@ fn a_chest_drifts_to_the_hero_from_afar_and_opens_from_a_wider_reach() {
 #[test]
 fn an_off_screen_chest_gets_an_edge_arrow() {
     let mut g = quiet("bolt");
+    g.set_lang("ja");
     g.pickups.clear();
     let (hx, hz) = (g.hx, g.hz);
     g.pickups.push(Pickup {
@@ -450,6 +451,58 @@ fn an_off_screen_chest_gets_an_edge_arrow() {
     g.pickups.clear();
     let hud = g.hud(390, 844, false);
     assert!(hud.texts.iter().all(|t| !t.text.starts_with('宝')));
+}
+
+#[test]
+fn english_hud_and_pause_show_no_japanese() {
+    let mut g = quiet("bolt");
+    g.set_lang("en");
+    // An off-screen chest: its edge marker is a word, not a glyph icon, so it
+    // follows the page language like every other HUD line.
+    g.pickups.clear();
+    let (hx, hz) = (g.hx, g.hz);
+    g.pickups.push(Pickup {
+        x: hx + 11.0,
+        z: hz,
+        item: CHEST,
+        table: 0,
+        age: 0.0,
+        fly: false,
+    });
+    g.build_doc();
+    let hud = g.hud(390, 844, false);
+    assert!(
+        hud.texts.iter().any(|t| t.text.starts_with("CHEST")),
+        "english chest marker"
+    );
+    for t in &hud.texts {
+        assert!(
+            !t.text.contains('宝'),
+            "english hud shows the japanese chest label: {}",
+            t.text
+        );
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english hud has kana: {}", t.text);
+        }
+    }
+    // The pause card is all page language too.
+    g.pause();
+    let hud = g.hud(390, 844, false);
+    for want in ["PAUSED", "RESUME", "RETRY", "TITLE"] {
+        assert!(
+            hud.texts.iter().any(|t| t.text == want),
+            "english pause shows {want}"
+        );
+    }
+    for t in &hud.texts {
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english pause has kana: {}", t.text);
+        }
+    }
+    // Japanese keeps its own pause line.
+    g.set_lang("ja");
+    let hud = g.hud(390, 844, false);
+    assert!(hud.texts.iter().any(|t| t.text == "ポーズ"));
 }
 
 #[test]
