@@ -385,20 +385,24 @@ impl SurvivorArena {
                 }
             }
             list.texts.push(TextQuad::new(&tag, tx, ty, 12.0 * s, a));
+            let desc_size = 13.0 * s;
+            let text_w = (r.x + r.w - tx - 14.0 * s).max(desc_size * 4.0);
+            // Romaji makes the English name long. Wrap it instead of running off the card.
+            let name_size = 18.0 * s;
+            let name = wrap_to_width(&name, name_size, text_w);
+            let name_lines = name.lines().count().max(1) as f32;
             list.texts.push(TextQuad::new(
                 &name,
                 tx,
-                ty + 17.0 * s,
-                22.0 * s,
+                ty + 16.0 * s,
+                name_size,
                 [255, 255, 255, 255],
             ));
-            let desc_size = 13.0 * s;
-            let desc_w = (r.x + r.w - tx - 14.0 * s).max(desc_size * 4.0);
-            let desc = wrap_to_width(&desc, desc_size, desc_w);
+            let desc = wrap_to_width(&desc, desc_size, text_w);
             list.texts.push(TextQuad::new(
                 &desc,
                 tx,
-                ty + 46.0 * s,
+                ty + 16.0 * s + name_lines * name_size * 1.2 + 4.0 * s,
                 desc_size,
                 [225, 225, 245, 230],
             ));
