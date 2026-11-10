@@ -259,6 +259,10 @@ struct Save {
     /// The (year, week) whose healing already happened (so a reload does not heal twice).
     #[serde(default)]
     healed: (u8, u8),
+    /// The (year, month) whose saved points already turned into growth on their own
+    /// (so a reload does not spend them twice).
+    #[serde(default)]
+    grown: (u8, u8),
     /// Named schools that stay for the whole run and grow.
     #[serde(default)]
     rivals: Vec<School>,
@@ -703,6 +707,40 @@ impl DiamondDays {
             for p in &mut self.s.team.players {
                 p.hurt = p.hurt.saturating_sub(1);
                 p.study = p.study.saturating_sub(1);
+            }
+        }
+        // A new month: the points the club saved up turn into growth on their own,
+        // the way the AUTO SPEND button on a player's page spends them. The coach
+        // can still spend by hand, a player at a time.
+        let month = board::month(self.s.week);
+        if self.s.grown != (self.s.year, month) {
+            self.s.grown = (self.s.year, month);
+            let steps: usize = self
+                .s
+                .team
+                .players
+                .iter_mut()
+                .map(|p| p.auto_raise())
+                .sum();
+            if steps > 0 {
+                self.note(
+                    "A new month",
+                    "月替わり",
+                    vec![
+                        (
+                            format!(
+                                "The season turned a page: the points saved up became growth on their own, {steps} steps across the team."
+                            ),
+                            format!(
+                                "月が変わった。たまったポイントが自動で成長に変わり、チーム全体で{steps}段階アップした。"
+                            ),
+                        ),
+                        (
+                            "Points still gather every week, and a player's page can still spend them by hand.".into(),
+                            "ポイントは毎週たまっていく。選手ページでは、これまでどおり手動でも上げられる。".into(),
+                        ),
+                    ],
+                );
             }
         }
         // A tournament under way: the draw, then the next game.
@@ -1246,6 +1284,13 @@ impl DiamondDays {
                     if last && won {
                         self.record("Spring prefectural champions", "春季県大会 優勝");
                     }
+                    if !won {
+                        let (_, rn) = f.round_name();
+                        self.record(
+                            &format!("Spring prefectural round {r}"),
+                            &format!("春季県大会 {rn}敗退"),
+                        );
+                    }
                     lines.push(if self.s.seeded {
                         (
                             "The last four in spring: we are seeded in the summer draw.".into(),
@@ -1281,7 +1326,10 @@ impl DiamondDays {
                 } else {
                     self.s.summer_in = false;
                     let (_, rn) = f.round_name();
-                    self.record(&format!("Summer round {r}"), &format!("夏 {rn}敗退"));
+                    self.record(
+                        &format!("Summer prefectural round {r}"),
+                        &format!("夏の県大会 {rn}敗退"),
+                    );
                 }
             }
             Fixture::National(_) => {
@@ -1299,7 +1347,7 @@ impl DiamondDays {
                     let (_, rn) = f.round_name();
                     self.record(
                         &format!("Summer Stadium round {r}"),
-                        &format!("夏の大舞台 {rn}"),
+                        &format!("夏の大舞台 {rn}敗退"),
                     );
                 }
             }
@@ -1312,6 +1360,11 @@ impl DiamondDays {
                     }
                 } else {
                     self.s.autumn_in = false;
+                    let (_, rn) = f.round_name();
+                    self.record(
+                        &format!("Autumn round {r}"),
+                        &format!("秋季大会 {rn}敗退"),
+                    );
                 }
                 if !won || last {
                     lines.push(if self.s.autumn_wins >= 3 {
@@ -1342,7 +1395,7 @@ impl DiamondDays {
                     let (_, rn) = f.round_name();
                     self.record(
                         &format!("Blossom Invitational round {r}"),
-                        &format!("春の招待舞台 {rn}"),
+                        &format!("春の招待舞台 {rn}敗退"),
                     );
                 }
             }
@@ -3488,6 +3541,7 @@ fn fresh_save(seed: u32) -> Save {
         seed: rng.next_u32(),
         scouted: Vec::new(),
         healed: (0, 0),
+        grown: (0, 0),
         rivals: board::rival_schools(),
         slate: Vec::new(),
         spring_in: false,

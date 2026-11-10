@@ -543,16 +543,16 @@ pub fn apply(rng: &mut Rng, h: &Happening, team: &mut Team) -> Option<String> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Fixture {
     Practice,
-    /// The spring prefectural tournament (April), round 1 to 4. The last four are seeded
+    /// The spring prefectural tournament (April), round 1 to 3. The last four are seeded
     /// in the summer.
     SpringPref(u8),
     /// The summer prefectural tournament, round 1 to 6 (a seed starts in round 2).
     Summer(u8),
     /// The national tournament at the Summer Stadium, round 1 to 5 (if qualified).
     National(u8),
-    /// The autumn tournament of the new team, round 1 to 5.
+    /// The autumn tournament of the new team, round 1 to 4.
     Autumn(u8),
-    /// March invitation, chosen in January off the autumn. Round 1 to 4.
+    /// March invitation, chosen in January off the autumn. Round 1 to 3.
     Spring(u8),
 }
 
@@ -600,11 +600,11 @@ impl Fixture {
     pub fn rounds(self) -> u8 {
         match self {
             Fixture::Practice => 1,
-            Fixture::SpringPref(_) => 4,
+            Fixture::SpringPref(_) => 3,
             Fixture::Summer(_) => 6,
             Fixture::National(_) => 5,
-            Fixture::Autumn(_) => 5,
-            Fixture::Spring(_) => 4,
+            Fixture::Autumn(_) => 4,
+            Fixture::Spring(_) => 3,
         }
     }
 
@@ -1014,7 +1014,17 @@ mod tests {
         assert_eq!(Fixture::Summer(5).round_name().1, "準決勝");
         assert_eq!(Fixture::Summer(4).round_name().1, "準々決勝");
         assert_eq!(Fixture::Summer(2).round_name().1, "2回戦");
-        assert_eq!(Fixture::SpringPref(3).round_name().1, "準決勝");
+        assert_eq!(Fixture::SpringPref(2).round_name().1, "準決勝");
+        assert_eq!(Fixture::SpringPref(3).round_name().1, "決勝");
+        // One round fewer in the spring, autumn and March cups (the summer and the
+        // national stage keep theirs): a year holds at most 25 games.
+        assert_eq!(Fixture::SpringPref(1).rounds(), 3);
+        assert_eq!(Fixture::Summer(1).rounds(), 6);
+        assert_eq!(Fixture::National(1).rounds(), 5);
+        assert_eq!(Fixture::Autumn(1).rounds(), 4);
+        assert_eq!(Fixture::Spring(1).rounds(), 3);
+        let most: u8 = (1..=WEEKS).filter_map(fixture).map(|f| f.rounds()).sum();
+        assert_eq!(most, 25);
         assert_eq!(Fixture::Summer(5).next(), Some(Fixture::Summer(6)));
         assert_eq!(Fixture::Summer(6).next(), None);
         assert!(Fixture::National(5).is_final() && !Fixture::Practice.is_cup());
