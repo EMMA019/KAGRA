@@ -5,6 +5,9 @@
 ``--dest pr/<number>`` replaces only that directory.
 ``--delete pr/<number>`` removes it.
 
+Root publishes also prune ``pr/`` to the newest few previews, in the same
+commit as the root replacement (see :func:`prune_previews`).
+
 The token stays in the process environment (``GITHUB_TOKEN``). It is not
 written into the preview files and not echoed if git fails.
 """
@@ -51,6 +54,39 @@ def apply_tree(work: Path, src: Path, dest: str) -> None:
                 child.unlink()
         _copy_into(src, work)
     (work / ".nojekyll").write_bytes(b"")
+
+
+KEEP_PR_PREVIEWS = 5
+
+
+def prune_previews(work: Path, keep: int = KEEP_PR_PREVIEWS) -> list[str]:
+    """Drop all but the newest ``keep`` ``pr/<number>`` preview directories.
+
+    Merged PR previews stay on gh-pages so their links keep working, but
+    every preview is a full site copy, so the tree grows without bound and
+    the Pages artifact has a 1 GB cap (deploy-pages times out near it).
+    Root publishes prune in the same commit as the root replacement, so no
+    intermediate tree (new root not yet in place, previews already gone)
+    is ever pushed. Entries under ``pr/`` that are not ``pr/<digits>``
+    directories are left alone. Returns the removed directory names.
+    """
+    pr_root = work / "pr"
+    if not pr_root.is_dir():
+        return []
+    numbered = sorted(
+        (child for child in pr_root.iterdir() if child.is_dir() and child.name.isdigit()),
+        key=lambda child: int(child.name),
+        reverse=True,
+    )
+    removed: list[str] = []
+    for child in numbered[max(keep, 0) :]:
+        shutil.rmtree(child)
+        removed.append(child.name)
+    if removed:
+        print(f"pruned pr/ previews (kept newest {keep}): removed {', '.join(removed)}")
+    if pr_root.is_dir() and not any(pr_root.iterdir()):
+        pr_root.rmdir()
+    return removed
 
 
 def delete_tree(work: Path, dest: str) -> None:
@@ -124,6 +160,8 @@ def publish(
             if delete:
                 delete_tree(work, dest)
             else:
+                if not dest:
+                    prune_previews(work)
                 apply_tree(work, src, dest)
             if _commit_and_push(work, remote, token, dest, delete):
                 return
