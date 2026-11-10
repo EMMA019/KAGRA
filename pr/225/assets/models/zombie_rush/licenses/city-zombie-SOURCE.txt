@@ -1,5 +1,0 @@
-Official preview: see _previews/oga-male-city-zombie.png (OGA file 34343_2.png).
-Files in files/: InfectedCityMan.fbx (mesh+rig) plus animation FBX clips
-Walking, Zombie Walk, Zombie Running, Zombie Attack, Zombie Attack2, Zombie Attack3,
-Zombie Dying, Zombie Idle, Zombie Idle2, Zombie Reaction Hit, Zombie Scream,
-and 1K PBR PNG textures (BaseColor / Normal / OcclusionRoughnessMetallic for body and outfit).

@@ -1,7 +1,0 @@
-{
-  "title": "Survival",
-  "version": "0.1.0",
-  "slug": "survival",
-  "entry": "examples/survival_minimal.py",
-  "world": "kagra-shared/tests/fixtures/survival_world.json"
-}

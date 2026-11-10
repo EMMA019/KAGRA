@@ -1,7 +1,0 @@
-{
-  "title": "Horde Gates",
-  "version": "0.1.0",
-  "slug": "zombie_rush",
-  "entry": "examples/zombie_rush_minimal.py",
-  "world": "kagra-shared/tests/fixtures/zombie_rush_world.json"
-}
