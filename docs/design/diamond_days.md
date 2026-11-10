@@ -35,19 +35,19 @@ The year follows a real high-school club (the scenario and why: `diamond_days_sc
 | Weeks | What |
 |---|---|
 | 1 | April: first-years join (after year 1) |
-| 4 | Spring prefectural (4 rounds). The last four are seeded in the summer |
+| 4 | Spring prefectural (3 rounds). The last four are seeded in the summer |
 | 6, 10, 22, 30 | Practice games against a nearby school |
 | 11 | Training camp |
 | 12 | Summer numbers (the coach gives number 1 to a pitcher) and the draw |
 | 13 | Summer prefectural (6 rounds; a seed starts in round 2). Lose once and the third-years' summer is over |
 | 17 | Summer Stadium, the national tournament (5 rounds), if we won the prefecture |
 | the day our summer ends | The third-years retire (a word from each), then the new team names a captain |
-| 24 | Autumn tournament of the new team (5 rounds) |
+| 24 | Autumn tournament of the new team (4 rounds) |
 | 27 | The pro draft: a retired third-year may be picked |
 | 33 to 44 | Winter: no games with other schools; training counts for 25% more |
 | 37 | Selection day: a deep autumn run waits by the phone for the March invitation |
 | 40 | Exam week |
-| 45 | Blossom Invitational (4 rounds), if selected |
+| 45 | Blossom Invitational (3 rounds), if selected |
 | 48 | March: the retired third-years graduate; the year ends |
 
 A tournament is played as one stretch of game days from its first week: the board

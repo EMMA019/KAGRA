@@ -2047,7 +2047,7 @@ fn a_tournament_is_a_run_of_game_days_on_its_draw() {
     g.mode = Mode::Plan;
     g.begin_week();
     assert_eq!(g.s.cup, Some(Fixture::SpringPref(1)));
-    assert_eq!(g.s.cup_path.len(), 4, "a school drawn for every round");
+    assert_eq!(g.s.cup_path.len(), 3, "a school drawn for every round");
     assert!(g.notes.iter().any(|n| n.title_ja == "春季県大会"));
     tap(&mut g, 195.0, 400.0);
     assert_eq!(g.mode, Mode::Bracket);
@@ -2085,6 +2085,55 @@ fn a_tournament_is_a_run_of_game_days_on_its_draw() {
             break;
         }
     }
+}
+
+/// A new month spends the points the club saved up, on its own, and says so once:
+/// growth the coach no longer has to click for, player by player.
+#[test]
+fn a_new_month_turns_saved_points_into_growth() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    // The first week of May; April's turn is already behind us, points saved since.
+    g.s.week = 5;
+    g.s.grown = (g.s.year, 4);
+    g.mode = Mode::Plan;
+    for p in &mut g.s.team.players {
+        p.xp = [60; 5];
+    }
+    let points = |g: &DiamondDays| {
+        g.s.team
+            .players
+            .iter()
+            .map(|p| p.xp.iter().sum::<u16>())
+            .sum::<u16>()
+    };
+    let grown = |g: &DiamondDays| {
+        g.s.team
+            .players
+            .iter()
+            .map(|p| Stat::ALL.iter().map(|&st| p.stat(st) as u32).sum::<u32>())
+            .sum::<u32>()
+    };
+    let (pts, stats) = (points(&g), grown(&g));
+    g.begin_week();
+    assert!(
+        g.notes.iter().any(|n| n.title == "A new month"),
+        "the month turning is told"
+    );
+    assert!(points(&g) < pts, "the saved points were spent");
+    assert!(grown(&g) > stats, "and the team grew");
+    // The same month does not spend twice (a reload replays the week).
+    for p in &mut g.s.team.players {
+        p.xp = [60; 5];
+    }
+    let pts = points(&g);
+    g.begin_week();
+    assert_eq!(points(&g), pts, "no second spend in the same month");
+    assert_eq!(
+        g.notes.iter().filter(|n| n.title == "A new month").count(),
+        1,
+        "and it is told once"
+    );
 }
 
 /// Lose in the summer and the third-years retire on the spot: a word from each, they
