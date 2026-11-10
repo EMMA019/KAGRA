@@ -715,13 +715,7 @@ impl DiamondDays {
         let month = board::month(self.s.week);
         if self.s.grown != (self.s.year, month) {
             self.s.grown = (self.s.year, month);
-            let steps: usize = self
-                .s
-                .team
-                .players
-                .iter_mut()
-                .map(|p| p.auto_raise())
-                .sum();
+            let steps: usize = self.s.team.players.iter_mut().map(|p| p.auto_raise()).sum();
             if steps > 0 {
                 self.note(
                     "A new month",
@@ -1361,10 +1355,7 @@ impl DiamondDays {
                 } else {
                     self.s.autumn_in = false;
                     let (_, rn) = f.round_name();
-                    self.record(
-                        &format!("Autumn round {r}"),
-                        &format!("秋季大会 {rn}敗退"),
-                    );
+                    self.record(&format!("Autumn round {r}"), &format!("秋季大会 {rn}敗退"));
                 }
                 if !won || last {
                     lines.push(if self.s.autumn_wins >= 3 {
