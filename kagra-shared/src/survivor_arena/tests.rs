@@ -1969,6 +1969,59 @@ fn an_average_build_is_touched_within_45s() {
 }
 
 #[test]
+fn the_level_up_heading_clears_the_subtitle() {
+    let mut spec = SurvivorSpec::default();
+    spec.director.start_rate = 0.0;
+    spec.director.elite_first = 0.0;
+    let mut g = SurvivorArena::new(spec);
+    g.confirm();
+    g.xp = g.xp_need();
+    g.tick(DT);
+    g.tick(DT);
+    assert!(g.card_count() > 0);
+    let list = g.hud(390, 844, false);
+    let title = list
+        .texts
+        .iter()
+        .find(|t| t.text.contains("LEVEL"))
+        .expect("heading");
+    let sub = list
+        .texts
+        .iter()
+        .find(|t| t.text.contains("Pick"))
+        .expect("subtitle");
+    assert!(
+        sub.y >= title.y + title.size * 1.5,
+        "heading y {} size {} sits on the subtitle y {}",
+        title.y,
+        title.size,
+        sub.y
+    );
+    // The level pips on one card are separate glyphs with a gap.
+    let mut rows: Vec<Vec<f32>> = Vec::new();
+    for t in list
+        .texts
+        .iter()
+        .filter(|t| t.text == "●" || t.text == "◆" || t.text == "○")
+    {
+        if let Some(row) = rows.iter_mut().find(|row| (row[0] - t.y).abs() < 1.0) {
+            row.push(t.x);
+        } else {
+            rows.push(vec![t.y, t.x]);
+        }
+    }
+    for row in rows {
+        let mut xs = row[1..].to_vec();
+        if xs.len() < 2 {
+            continue;
+        }
+        xs.sort_by(f32::total_cmp);
+        let gap = xs.windows(2).map(|w| w[1] - w[0]).fold(f32::MAX, f32::min);
+        assert!(gap >= 12.0, "pip gap {gap}");
+    }
+}
+
+#[test]
 fn gems_inside_the_default_pickup_radius_fly_to_the_hero() {
     let mut g = started();
     let r = g.spec.hero.pickup_radius;

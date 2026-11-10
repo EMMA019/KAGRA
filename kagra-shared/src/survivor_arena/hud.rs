@@ -281,6 +281,11 @@ impl SurvivorArena {
 
     pub(super) fn hud_cards(&self, list: &mut DrawList, w: f32, h: f32, s: f32) {
         list.quads.push(Quad::new(0.0, 0.0, w, h, [6, 6, 20, 200]));
+        // Zen Maru's line box is about 1.45 em. The old 40 px gap under a 32 px
+        // title let 「レベルアップ！」 sit on top of 「ひとつえらんでね」.
+        let title_size = 28.0 * s;
+        let title_y = (h * 0.055).max(16.0 * s);
+        let sub_y = title_y + title_size * 1.7;
         list.texts.push(
             TextQuad::new(
                 if self.swap_in.is_some() {
@@ -289,8 +294,8 @@ impl SurvivorArena {
                     self.tr("LEVEL UP!", "レベルアップ！")
                 },
                 w * 0.5,
-                h * 0.09,
-                32.0 * s,
+                title_y,
+                title_size,
                 [255, 240, 160, 255],
             )
             .aligned(TextAlign::Center),
@@ -306,7 +311,7 @@ impl SurvivorArena {
                     self.tr("Pick one", "ひとつえらんでね")
                 },
                 w * 0.5,
-                h * 0.09 + 40.0 * s,
+                sub_y,
                 14.0 * s,
                 [255, 255, 255, 190],
             )
@@ -363,17 +368,21 @@ impl SurvivorArena {
             };
             let (cur, max) = self.card_pips(*c);
             if max > 1 {
-                let pips: String = (0..max)
-                    .map(|k| match k.cmp(&cur) {
-                        std::cmp::Ordering::Less => '●',
-                        std::cmp::Ordering::Equal => '◆',
-                        std::cmp::Ordering::Greater => '○',
-                    })
-                    .collect();
-                list.texts.push(
-                    TextQuad::new(&pips, r.x + r.w - 12.0 * s, r.y + 8.0 * s, 12.0 * s, a)
-                        .aligned(TextAlign::Right),
-                );
+                // One glyph per slot, with a gap wider than the ink, so ◆ does not
+                // sit on ● or ○ when the pen position rounds.
+                let pip = 12.0 * s;
+                let step = pip * 1.25;
+                for k in 0..max {
+                    let ch = match k.cmp(&cur) {
+                        std::cmp::Ordering::Less => "●",
+                        std::cmp::Ordering::Equal => "◆",
+                        std::cmp::Ordering::Greater => "○",
+                    };
+                    let x = r.x + r.w - 14.0 * s - (max - 1 - k) as f32 * step;
+                    list.texts.push(
+                        TextQuad::new(ch, x, r.y + 6.0 * s, pip, a).aligned(TextAlign::Center),
+                    );
+                }
             }
             list.texts.push(TextQuad::new(&tag, tx, ty, 12.0 * s, a));
             list.texts.push(TextQuad::new(
@@ -383,11 +392,14 @@ impl SurvivorArena {
                 22.0 * s,
                 [255, 255, 255, 255],
             ));
+            let desc_size = 13.0 * s;
+            let desc_w = (r.x + r.w - tx - 14.0 * s).max(desc_size * 4.0);
+            let desc = wrap_to_width(&desc, desc_size, desc_w);
             list.texts.push(TextQuad::new(
                 &desc,
                 tx,
-                ty + 47.0 * s,
-                14.0 * s,
+                ty + 46.0 * s,
+                desc_size,
                 [225, 225, 245, 230],
             ));
         }
@@ -444,5 +456,40 @@ impl SurvivorArena {
                 .aligned(TextAlign::Center),
             );
         }
+    }
+}
+
+/// Two lines at most. A space near the width is the break; Japanese (no spaces)
+/// breaks on a character so a long weapon line does not run off the card.
+fn wrap_to_width(text: &str, size: f32, max_w: f32) -> String {
+    if crate::font::measure_text(text, size) <= max_w {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() < 2 {
+        return text.to_string();
+    }
+    let width = |s: &[char]| crate::font::measure_text(&s.iter().collect::<String>(), size);
+    let mut cut = 1usize;
+    let mut last_space = None;
+    for i in 1..chars.len() {
+        if chars[i] == ' ' {
+            last_space = Some(i);
+        }
+        if width(&chars[..i]) > max_w {
+            cut = last_space.unwrap_or(i.saturating_sub(1)).max(1);
+            break;
+        }
+        cut = i;
+    }
+    if cut >= chars.len() {
+        return text.to_string();
+    }
+    let left: String = chars[..cut].iter().collect();
+    let right: String = chars[cut..].iter().skip_while(|c| **c == ' ').collect();
+    if right.is_empty() {
+        text.to_string()
+    } else {
+        format!("{left}\n{right}")
     }
 }
