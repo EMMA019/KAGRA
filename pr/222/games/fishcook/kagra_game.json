@@ -1,0 +1,7 @@
+{
+  "title": "Fish Cook",
+  "version": "0.1.0",
+  "slug": "fishcook",
+  "entry": "examples/fishcook_minimal.py",
+  "world": "kagra-shared/tests/fixtures/fishcook_world.json"
+}
