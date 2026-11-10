@@ -1,0 +1,23 @@
+{
+  "generator": "tools/gen_assets/bar.py",
+  "license": "AI / procedural \u2014 generated for KAGRA Bar sim. Not third-party art.",
+  "textures": [
+    "bottle_gin.png",
+    "bottle_whiskey.png",
+    "bottle_wine.png",
+    "haru.png",
+    "kai.png",
+    "logo.png",
+    "mio.png",
+    "ren.png",
+    "sora.png",
+    "wall.png",
+    "wood.png",
+    "yuki.png"
+  ],
+  "se": [
+    "door.wav",
+    "glass.wav",
+    "register.wav"
+  ]
+}
