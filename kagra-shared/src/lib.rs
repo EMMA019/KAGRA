@@ -95,6 +95,7 @@ pub mod survival;
 pub mod survivor_arena;
 pub mod survivor_content;
 pub mod td;
+pub mod text;
 pub mod traffic;
 pub mod ui;
 pub mod vector;

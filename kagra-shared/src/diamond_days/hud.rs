@@ -126,35 +126,10 @@ fn overlap(a: [f32; 4], b: [f32; 4]) -> Option<[f32; 4]> {
     (x1 > x0 && y1 > y0).then_some([x0, y0, x1 - x0, y1 - y0])
 }
 
-/// Lines that fit `width` design units at `size` (Japanese breaks anywhere, English at spaces).
+/// Lines that fit `width` design units at `size` ([`crate::text`]: Japanese line-breaking
+/// rules, words and numbers kept whole).
 fn wrap(text: &str, size: f32, width: f32) -> Vec<String> {
-    let mut out = Vec::new();
-    for para in text.split('\n') {
-        let mut line = String::new();
-        let ascii = para.is_ascii();
-        let pieces: Vec<String> = if ascii {
-            para.split(' ').map(|w| format!("{w} ")).collect()
-        } else {
-            para.chars().map(|c| c.to_string()).collect()
-        };
-        for piece in pieces {
-            let trial = format!("{line}{piece}");
-            let keep = !ascii && "、。！？」）".contains(piece.as_str());
-            if !line.is_empty()
-                && crate::font::measure_text(trial.trim_end(), size) > width
-                && !keep
-            {
-                out.push(line.trim_end().to_string());
-                line = piece.trim_start().to_string();
-            } else {
-                line = trial;
-            }
-        }
-        if !line.trim().is_empty() {
-            out.push(line.trim_end().to_string());
-        }
-    }
-    out
+    crate::text::wrap(text, size, width)
 }
 
 impl DiamondDays {
