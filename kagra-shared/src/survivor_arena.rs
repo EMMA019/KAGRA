@@ -406,6 +406,10 @@ pub struct SurvivorArena {
     hp: f32,
     hurt_cd: f32,
     hurt_flash: f32,
+    /// Times the hero actually lost HP, and times the barrier (◇) absorbed a hit.
+    /// The balance bot reads these; the picture does not.
+    hits: u32,
+    barrier_hits: u32,
     // run
     t: f32,
     anim_t: f32,
@@ -558,6 +562,8 @@ impl SurvivorArena {
             hp: spec.hero.max_hp,
             hurt_cd: 0.0,
             hurt_flash: 0.0,
+            hits: 0,
+            barrier_hits: 0,
             t: 0.0,
             anim_t: 0.0,
             kills: 0,
@@ -794,6 +800,8 @@ impl SurvivorArena {
         (self.hx, self.hz, self.vx, self.vz, self.face) = (0.0, 0.0, 0.0, 0.0, 0.0);
         self.hurt_cd = 0.0;
         self.hurt_flash = 0.0;
+        self.hits = 0;
+        self.barrier_hits = 0;
         self.t = 0.0;
         self.kills = 0;
         self.level = 1;
@@ -1223,12 +1231,14 @@ impl SurvivorArena {
         }
         if self.shield_t > 0.0 {
             // The barrier takes it: a flash, a short breather, no damage.
+            self.barrier_hits = self.barrier_hits.saturating_add(1);
             self.hurt_cd = 0.25;
             let at = [self.hx, 0.7, self.hz];
             self.burst(FX_GLINT, 4, at, [0.0, 0.0], 3.0, 1.0, 1.5, 0.35);
             self.cue("shield", 1, 0.2);
             return;
         }
+        self.hits = self.hits.saturating_add(1);
         self.hp -= dmg;
         self.hurt_cd = self.spec.hero.hurt_cd;
         self.hurt_flash = 1.0;
@@ -1561,7 +1571,8 @@ impl SurvivorArena {
         for (i, p) in self.spec.passives.iter().enumerate() {
             let cur = self.passive_lv[i];
             if cur < p.max_level && (cur > 0 || held < lv.max_passives) {
-                pool.push((Card::Passive(i as u8), lv.passive_weight.max(1)));
+                let w = lv.passive_weight.max(1).saturating_mul(p.weight.max(1));
+                pool.push((Card::Passive(i as u8), w));
             }
         }
         // The same level always offers the same cards for a seed (the daily challenge).
@@ -1763,6 +1774,14 @@ impl SurvivorArena {
     }
     pub fn hp(&self) -> f32 {
         self.hp
+    }
+    /// HP hits taken this run (the barrier absorbing one does not count).
+    pub fn hits(&self) -> u32 {
+        self.hits
+    }
+    /// Times the shield barrier absorbed a hit this run.
+    pub fn barrier_hits(&self) -> u32 {
+        self.barrier_hits
     }
     pub fn secs(&self) -> f32 {
         self.t
@@ -1993,7 +2012,7 @@ const DECOR: [(&str, f32, u32); 6] = [
     ("gravestone-cross", 1.5, 3),
     ("gravestone-broken", 1.5, 3),
     ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 3),
+    ("lantern-candle", 1.6, 6),
     ("cross-wood", 1.4, 2),
 ];
 /// Pines ringed outside the wall, so the arena has a dark treeline round it.
