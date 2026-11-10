@@ -232,6 +232,10 @@
     // The first break may show an ad at once: one only comes after a finished run.
     let lastAdAt = now() - ads.min_interval_secs * 1000;
     let lastAdKind = "";
+    // The page reports title / playing / complete. A rewarded slot's `at` only
+    // matches that break. Unset means "the caller has not said", and game_over
+    // slots stay hidden so a title screen cannot offer them by accident.
+    let offerPhase = "";
     let initPromise = null;
     // Who hears about ads: the page glue (bindPage) or the caller's own callbacks.
     const cb = { onBusy: opts.onBusy, onAd: opts.onAd };
@@ -357,11 +361,19 @@
     };
 
     const rewardedSlot = (slot) => ads.rewarded.find((r) => r.slot === slot) || null;
+    const phaseOk = (at) => {
+      if (at === "game_over") return offerPhase === "complete";
+      if (at === "title") return offerPhase === "title" || offerPhase === "";
+      return offerPhase !== "";
+    };
+    /** The page's phase: `title`, `playing` or `complete` (the result card). */
+    const setPhase = (next) => { offerPhase = String(next || ""); };
     /** Could the page offer this rewarded slot right now? (A button should only show if so.) */
     const canOfferRewarded = (slot) => {
       const r = rewardedSlot(slot);
       if (!r || !usable() || adBusy) return false;
       if (provider.name === "gamemonetize") return false;
+      if (!phaseOk(r.at)) return false;
       return (runRewards.get(slot) || 0) < r.per_run;
     };
     /** Rewarded ad the player asked for. `rewarded` is true only after adFinished. */
@@ -388,6 +400,7 @@
       commercial,
       rewarded,
       canOfferRewarded,
+      setPhase,
       /** Replace the ad callbacks: { onBusy(bool), onAd(active, kind) }. */
       bind(callbacks) { Object.assign(cb, callbacks); },
       get status() { return status; },
@@ -518,6 +531,7 @@ html, body { -webkit-user-select: none; -moz-user-select: none; user-select: non
     const blocked = () => host.busy || host.adActive || paused;
 
     const phase = (next) => {
+      if (host.setPhase) host.setPhase(next);
       if (overTimer) { win.clearTimeout(overTimer); overTimer = null; }
       if (next === "playing") {
         host.newRun();

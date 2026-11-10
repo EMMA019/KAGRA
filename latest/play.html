@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="dab9dad37729" />
+  <meta name="kagra-build-id" content="d36005683927" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -39,6 +39,13 @@
       background: rgba(12, 16, 24, 0.72);
     }
     #boot { z-index: 5; }
+    .boot-card { display: grid; justify-items: center; gap: 18px; }
+    #bootLogo { width: 112px; height: 112px; border-radius: 28px; object-fit: cover;
+      background: #140c24; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45); }
+    #bootBar { width: min(220px, 64vw); height: 8px; border-radius: 999px; overflow: hidden;
+      background: rgba(255, 255, 255, 0.16); }
+    #bootFill { height: 100%; width: 0%; border-radius: inherit;
+      background: linear-gradient(90deg, #7ee7ff, #f0c36a); }
     #update {
       position: fixed; left: 50%; top: max(8px, env(safe-area-inset-top)); transform: translateX(-50%);
       z-index: 9; padding: 6px 8px 6px 12px; border-radius: 999px; font-size: 13px;
@@ -162,6 +169,14 @@
       background: radial-gradient(ellipse at 50% 40%, rgba(40, 14, 52, 0.62), rgba(6, 4, 14, 0.9) 78%);
       overflow-y: auto;
       align-items: start;
+    }
+    /* Game over: Retry stays on screen, so the next run is one tap (no scroll). */
+    html[data-phase="complete"] #startRow {
+      position: sticky;
+      bottom: max(8px, env(safe-area-inset-bottom));
+      z-index: 2;
+      margin: 8px 0 0;
+      padding: 8px 0 4px;
     }
     html[data-swipe="1"] .card { margin: auto; padding: 8px 0 18px; }
     .panel {
@@ -307,7 +322,7 @@
           </div>
         </div>
         <p><button id="revive" type="button" class="styled" hidden data-i18n="hop.continue">広告を見てつづける</button></p>
-        <p><button id="start" type="button" data-i18n="start">はじめる</button></p>
+        <p id="startRow"><button id="start" type="button" data-i18n="start">はじめる</button></p>
         <p><button id="fresh" type="button" class="quiet" hidden data-i18n="start.fresh">はじめから</button></p>
         <div id="syncRow" hidden>
           <div class="sync"><span data-i18n="hop.sync">音ズレ補正</span>
@@ -320,16 +335,23 @@
         <p id="catalogRow" data-portal="hide"><a class="btn" href="./index.html" data-i18n="catalog">ジャンル一覧</a></p>
       </div>
     </div>
-    <div id="boot" data-i18n="boot">読み込み中…</div>
+    <div id="boot">
+      <div class="boot-card">
+        <img id="bootLogo" alt="" width="112" height="112" />
+        <div id="bootBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="bootFill"></div>
+        </div>
+      </div>
+    </div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=dab9dad37729"></script>
-  <script src="./quality.js?v=dab9dad37729"></script>
-  <script src="./portal.js?v=dab9dad37729"></script>
+  <script src="./i18n.js?v=d36005683927"></script>
+  <script src="./quality.js?v=d36005683927"></script>
+  <script src="./portal.js?v=d36005683927"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=dab9dad37729"></script>
+  <script src="./meta.js?v=d36005683927"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=dab9dad37729";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=d36005683927";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -374,6 +396,14 @@
       if (blurbEl) blurbEl.textContent = t(page.blurb || "blurb.swipe");
     };
 
+    const bootLogo = document.getElementById("bootLogo");
+    const bootBar = document.getElementById("bootBar");
+    const bootFill = document.getElementById("bootFill");
+    const paintBoot = (done, total) => {
+      const p = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      if (bootFill) bootFill.style.width = `${p}%`;
+      if (bootBar) bootBar.setAttribute("aria-valuenow", String(p));
+    };
     const fail = (text) => {
       boot.className = "err";
       boot.style.display = "grid";
@@ -797,6 +827,10 @@
       gameTitle = (page.title && t(page.title) !== page.title && t(page.title)) || bundle.title || slug;
       document.title = gameTitle;
       document.getElementById("title").textContent = gameTitle;
+      if (bootLogo) {
+        bootLogo.src = `games/${encodeURIComponent(slug)}/icon.png`;
+        bootLogo.addEventListener("error", () => { bootLogo.hidden = true; });
+      }
       const files = Array.isArray(bundle.files) ? bundle.files : [];
       session.clearMount();
       let done = 0;
@@ -819,7 +853,7 @@
           }
           if (bytes) session.mountFile(path, bytes);
           done += 1;
-          boot.textContent = t("boot.progress", { done, total: files.length });
+          paintBoot(done, files.length);
         }
       });
       await Promise.all(workers);
@@ -1228,10 +1262,13 @@
       pads.classList.toggle("visible", playing && !swipeMode);
       hud.classList.toggle("visible", playing);
       document.documentElement.dataset.menu = playing ? "0" : "1";
+      document.documentElement.dataset.phase = phase;
       if (!playing && phase !== "complete") session.showTitle();
       const label = playing ? t("phase.playing") : phase === "complete" ? t("phase.result") : t("phase.title");
+      // The engine version is a development stamp. A public build does not show it.
+      const stamp = dev ? ` · ${sharedVersion()}` : "";
       document.getElementById("phaseLabel").textContent =
-        `${gameTitle || bundle.title || slug} · ${label} · ${sharedVersion()}`;
+        `${gameTitle || bundle.title || slug} · ${label}${stamp}`;
       // page.resume: a kept run is continued from the title; a smaller button starts over.
       const keptRun = !!(page.resume && phase !== "complete" && hasKeptRun(slug));
       document.getElementById("start").textContent =
