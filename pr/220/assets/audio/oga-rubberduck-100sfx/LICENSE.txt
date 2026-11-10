@@ -1,5 +1,0 @@
-100 CC0 SFX by rubberduck
-Source: https://opengameart.org/content/100-cc0-sfx
-License: CC0 1.0 Universal (public domain dedication), as stated on the source page (checked 2026-11-01).
-https://creativecommons.org/publicdomain/zero/1.0/
-Files here are a selection, converted from OGG to mono 22.05 kHz WAV.

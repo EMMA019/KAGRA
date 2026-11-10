@@ -1,7 +1,0 @@
-{
-  "title": "Card Duel",
-  "version": "0.1.0",
-  "slug": "card",
-  "entry": "examples/card_minimal.py",
-  "world": "kagra-shared/tests/fixtures/card_world.json"
-}

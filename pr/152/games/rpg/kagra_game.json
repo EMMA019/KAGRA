@@ -1,7 +1,0 @@
-{
-  "title": "RPG Town",
-  "version": "0.1.0",
-  "slug": "rpg",
-  "entry": "examples/rpg_minimal.py",
-  "world": "kagra-shared/tests/fixtures/rpg_world.json"
-}

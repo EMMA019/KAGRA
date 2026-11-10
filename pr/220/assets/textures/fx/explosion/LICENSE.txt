@@ -1,4 +1,0 @@
-Explosion (frames 1,4,8,12,17,23,30,38 of explosion1.png, upscaled to 128 px)
-Author: Ben Hickling (benhickling) - https://opengameart.org/content/explosion-7
-License: CC0 1.0 - https://creativecommons.org/publicdomain/zero/1.0/
-The OpenGameArt page lists License(s): CC0 (checked 2026-11-01).

@@ -1,7 +1,0 @@
-{
-  "title": "Lumen",
-  "version": "0.1.0",
-  "slug": "neon_run",
-  "entry": "examples/neon_run_minimal.py",
-  "world": "kagra-shared/tests/fixtures/neon_run_world.json"
-}
