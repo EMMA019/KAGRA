@@ -918,6 +918,13 @@ impl SharedSession {
         self.playtest.on_pointer(ev)
     }
 
+    /// The loaded kit's phase (`title`, `play`, `pause`, `result`), when a kit is loaded.
+    pub fn kit_phase(&self) -> Option<&'static str> {
+        (self.kind == SceneKind::Kit)
+            .then(|| self.kit.as_ref().map(|k| k.phase_name()))
+            .flatten()
+    }
+
     /// The one-shot sound files of the loaded game as a JSON array of paths under the
     /// asset root. A native shell loads them once, before the first cue.
     pub fn audio_files_json(&self) -> String {

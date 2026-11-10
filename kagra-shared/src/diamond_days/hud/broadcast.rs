@@ -643,14 +643,15 @@ impl DiamondDays {
                 &marks,
             );
         }
-        // Our chance: the brass band's chance theme, swaying in the corner.
+        // Our chance: the brass band's chance theme, swaying in the corner, under where the
+        // pitch's speed shows.
         if let (Some(pl), Phase::Pitch { .. }) = (pa, phase) {
             if Self::our_chance(g, pl) {
                 let sway = (self.clock * 6.0).sin();
                 p.text_outlined(
                     self.tr("♪ Chance theme! ♪", "♪ チャンステーマ ♪"),
                     r[0] + r[2] - 12.0,
-                    r[1] + 10.0 + sway * 2.0,
+                    r[1] + 44.0 + sway * 2.0,
                     15.0,
                     [255, 220, 120, 255],
                     [60, 20, 20, 255],
