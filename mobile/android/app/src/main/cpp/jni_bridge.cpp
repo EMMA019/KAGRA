@@ -285,6 +285,34 @@ Java_dev_kagra_shell_KagraNative_takeAudioCues(JNIEnv *env, jobject) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_audioFiles(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return env->NewStringUTF("[]");
+  int need = kagra_shared_audio_files(g_session, nullptr, 0);
+  if (need <= 1) return env->NewStringUTF("[]");
+  std::vector<char> buf((size_t)need);
+  kagra_shared_audio_files(g_session, buf.data(), (unsigned)buf.size());
+  return env->NewStringUTF(buf.data());
+#else
+  return env->NewStringUTF("[]");
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_dev_kagra_shell_KagraNative_takeAudioPlan(JNIEnv *env, jobject) {
+#if KAGRA_HAS_SHARED
+  if (!g_session) return env->NewStringUTF("{}");
+  int need = kagra_shared_take_audio_plan(g_session, nullptr, 0);
+  if (need <= 1) return env->NewStringUTF("{}");
+  std::vector<char> buf((size_t)need);
+  kagra_shared_take_audio_plan(g_session, buf.data(), (unsigned)buf.size());
+  return env->NewStringUTF(buf.data());
+#else
+  return env->NewStringUTF("{}");
+#endif
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_dev_kagra_shell_KagraNative_audioJson(JNIEnv *env, jobject) {
 #if KAGRA_HAS_SHARED
   char buf[256];

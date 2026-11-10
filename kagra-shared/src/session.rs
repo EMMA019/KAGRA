@@ -144,6 +144,9 @@ pub struct SharedSession {
     kit_save_key: String,
     kit_save_last: Option<String>,
     kit_save_tick: u32,
+    /// The loaded game's `audio` block (which file a cue plays, how loud), for the plan a
+    /// native shell plays ([`crate::audio_plan`]). `None`: the fixed clips.
+    audio_spec: Option<serde_json::Value>,
     /// Graphics tiers: the game's (or the built-in) definitions, the active tier's name
     /// (`""` = none, `"custom"` = a probe step) and its values.
     quality: crate::quality::QualitySpec,
@@ -189,6 +192,7 @@ impl Default for SharedSession {
             kit_save_key: String::new(),
             kit_save_last: None,
             kit_save_tick: 0,
+            audio_spec: None,
             quality: crate::quality::QualitySpec::builtin(),
             quality_name: String::new(),
             quality_tier: None,
@@ -302,6 +306,15 @@ impl SharedSession {
         // A game's own `quality_tiers` is read here and kept away from the kit's loader.
         let (stripped, tiers) = split_quality_tiers(json)?;
         let json = stripped.as_str();
+        // The game's sounds, for a shell that plays them itself (the web page reads the
+        // same block from the world JSON).
+        self.audio_spec = if json.contains("\"audio\"") {
+            serde_json::from_str::<serde_json::Value>(json)
+                .ok()
+                .and_then(|w| crate::audio_plan::spec_of(&w))
+        } else {
+            None
+        };
         self.quality = match tiers {
             Some(v) => crate::quality::QualitySpec::with_overrides(&v)?,
             None => crate::quality::QualitySpec::builtin(),
@@ -905,6 +918,24 @@ impl SharedSession {
         self.playtest.on_pointer(ev)
     }
 
+    /// The one-shot sound files of the loaded game as a JSON array of paths under the
+    /// asset root. A native shell loads them once, before the first cue.
+    pub fn audio_files_json(&self) -> String {
+        serde_json::to_string(&crate::audio_plan::sfx_files(self.audio_spec.as_ref()))
+            .unwrap_or_else(|_| "[]".into())
+    }
+
+    /// What a native shell plays this frame ([`crate::audio_plan::Plan`] as JSON). Takes
+    /// the mixer's queued cues, like [`crate::mixer::cues_json`].
+    pub fn take_audio_plan_json(&self) -> String {
+        self.audio_plan_json(&crate::mixer::cues_json())
+    }
+
+    /// The plan for cues already taken from the mixer (the JSON of `mixer::cues_json`).
+    pub fn audio_plan_json(&self, cues_json: &str) -> String {
+        crate::audio_plan::plan_json(self.audio_spec.as_ref(), cues_json)
+    }
+
     /// A key from the page or the app. True when it was used. The phone's back button
     /// comes as [`BACK_KEY`]; when it is not used, the app goes back (leaves).
     pub fn push_key(&mut self, name: &str, down: bool) -> bool {
@@ -1290,6 +1321,39 @@ mod tests {
         u.load_game_json(&dump).unwrap();
         assert_eq!(u.kit.as_ref().unwrap().save_json().as_deref(), None);
     }
+    /// A native shell gets the loaded game's sounds as files: Diamond Days' cue names
+    /// become its own files and volumes, and its music follows the mixer.
+    #[test]
+    fn a_native_shell_gets_the_games_sounds_as_files() {
+        crate::mixer::reset_mixer();
+        let dump = crate::diamond_days::DiamondDays::new(Default::default())
+            .world_value()
+            .to_string();
+        let mut s = SharedSession::default();
+        assert_eq!(
+            s.audio_files_json(),
+            r#"["assets/audio/jump.wav","assets/audio/fire.wav","assets/audio/card.wav"]"#,
+            "no game: the fixed clips"
+        );
+        s.load_game_json(&dump).unwrap();
+        let files: Vec<String> = serde_json::from_str(&s.audio_files_json()).unwrap();
+        assert!(files.len() >= 3, "{files:?}");
+        assert!(files.iter().all(|f| f.starts_with("assets/audio/")));
+        let _ = crate::mixer::cues_json();
+        crate::mixer::cue_sfx("homer");
+        crate::mixer::play_bgm("bgm", 0.0);
+        let plan: serde_json::Value = serde_json::from_str(&s.take_audio_plan_json()).unwrap();
+        let shot = &plan["shots"][0];
+        assert!(files.contains(&shot["file"].as_str().unwrap().to_string()));
+        assert!(shot["volume"].as_f64().unwrap() > 0.1);
+        assert!(plan["bgm"]["file"].as_str().unwrap().ends_with(".mp3"));
+        // The queue was taken: the next frame starts nothing new and keeps the music.
+        let next: serde_json::Value = serde_json::from_str(&s.take_audio_plan_json()).unwrap();
+        assert_eq!(next["shots"].as_array().unwrap().len(), 0);
+        assert!(next["bgm"].is_object());
+        crate::mixer::reset_mixer();
+    }
+
     /// The phone's back button pauses a kit's run and resumes it; on the title it is not
     /// used, so the app leaves.
     #[test]

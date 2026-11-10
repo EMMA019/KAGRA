@@ -66,6 +66,11 @@ int kagra_shared_audio_json(SharedSession *ptr, char *buf, unsigned buflen);
 int kagra_shared_set_save_root(const char *path);
 /* BGM ゲインと効果音名の JSON。ヘッドレスでは再生せずキューだけ返す。 */
 int kagra_shared_take_audio_cues(char *buf, unsigned buflen);
+/* The loaded game's one-shot sound files: a JSON array of paths under the asset root. */
+int kagra_shared_audio_files(SharedSession *ptr, char *buf, unsigned buflen);
+/* What to play this frame: {"bgm": {"file","volume"} | null, "shots": [{"file","volume","rate"}]}.
+   The game's audio block and the player's volume are applied. Takes the queued cues. */
+int kagra_shared_take_audio_plan(SharedSession *ptr, char *buf, unsigned buflen);
 
 /* Debug / preview 「直してここ」. Release shells leave enabled at 0. */
 int kagra_shared_set_playtest_enabled(SharedSession *ptr, int on);

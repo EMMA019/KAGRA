@@ -313,7 +313,8 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
             return
         }
         KagraNative.setLang(java.util.Locale.getDefault().language)
-        audio = AudioBus(root)
+        // The game's own sounds (its `audio` block), loaded before the first cue.
+        audio = AudioBus(root).also { it.preload(KagraNative.audioFiles()) }
         status.text = "$gameTitle  ·  左=移動 右下=ジャンプ 右上=アクション"
     }
 
@@ -419,7 +420,7 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 val frame = KagraNative.requestFrame()
                 if (packaged) {
                     try {
-                        audio?.apply(KagraNative.takeAudioCues())
+                        audio?.apply(KagraNative.takeAudioPlan())
                     } catch (_: Exception) {
                     }
                 }
@@ -497,11 +498,13 @@ class DevActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onPause() {
         super.onPause()
         if (KagraNative.available) KagraNative.pause()
+        audio?.pause()
     }
 
     override fun onResume() {
         super.onResume()
         if (KagraNative.available) KagraNative.resume()
+        audio?.resume()
     }
 
     override fun onDestroy() {
