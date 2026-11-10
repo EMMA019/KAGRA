@@ -39,19 +39,26 @@
 //!   pitch, swing, a catcher's squat, a cheer; facing the viewer or from behind.
 //! - [`anim`]: a character's moves (locomotion, one-shot attacks with a hit cue, death hold)
 //!   as crossfaded glTF clips or a procedural pose.
+//! - [`crowd`]: where the bodies of a crowd stand (rows behind a leader) and which flipbook
+//!   frame each one is on. The head count stays with the kit.
+//! - [`gates`]: number-gate math (`x2`, `+10`, `-5`, `/2`) and crowd-versus-wave resolution.
+//! - [`ads`]: a no-op `break` / `rewarded` hook a portal SDK can replace later.
 //!
 //! HUD pieces (story and clear cards, list menus, button hit tests) are in [`crate::hud_kit`].
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
+pub mod ads;
 pub mod anim;
 pub mod chibi;
 pub mod chibi3d;
 pub mod collide;
+pub mod crowd;
 pub mod dialogue;
 pub mod enemies;
 pub mod feel;
 pub mod floats;
+pub mod gates;
 pub mod grid;
 pub mod items;
 pub mod juice;

@@ -36,10 +36,13 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Kenney UI Pack Adventure (paper and banner)](https://kenney.nl/assets/ui-pack-adventure) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/diamond_days/paper.png`, `assets/diamond_days/banner.png` … |
 | [Kenney UI Pack (green and gold controls)](https://kenney.nl/assets/ui-pack) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/diamond_days/btn_green.png`, `assets/diamond_days/btn_gold.png` … |
 | [OpenGameArt: 8 wet squish / slurp impacts (impactsplat03)](https://opengameart.org/content/8-wet-squish-slurp-impacts) | Independent.nu | CC0-1.0 | not required | `assets/audio/oga-wet-squish/*.wav` |
+| [Microsoft Rocketbox Military_Male_01](https://github.com/microsoft/Microsoft-Rocketbox) | Microsoft | MIT | required | `assets/models/zombie_rush/human_run_0.glb`, `assets/models/zombie_rush/human_run_1.glb` … |
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
 | [Baseball Pack (ball icon)](https://opengameart.org/content/baseball-pack) | looneybits | CC0-1.0 | not required | `assets/diamond_days/ball.png` |
 | [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
 | [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
+| [Male City Zombie](https://opengameart.org/content/male-city-zombie-ready-for-use-in-game-engines) | Rikindle3D | CC0-1.0 | not required | `assets/models/zombie_rush/zombie_run_0.glb`, `assets/models/zombie_rush/zombie_run_1.glb` … |
+| [Traffic Road Assets](https://opengameart.org/content/traffic-road-assets) | MilkAndBanana | CC0-1.0 | not required | `assets/models/zombie_rush/props/**` |
 | [Cartoon Field Game Background](https://opengameart.org/content/cartoon-field-game-background) | Segel | CC0-1.0 | not required | `assets/diamond_days/country.png` |
 | [Shibuya demo street map (from OpenStreetMap)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors | ODbL-1.0 | required | `kagra-shared/assets/maps/shibuya_demo.kagra.json` |
 | [Poly Haven props (31 models)](https://polyhaven.com/models) | Poly Haven contributors (per model, see credits) | CC0-1.0 | not required | `assets/library/polyhaven/props/**` |
@@ -66,6 +69,7 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 - Zen Maru Gothic font: Copyright 2021 The Zen Maru Gothic Project Authors, SIL Open Font License 1.1.
 - Public Sans font: SIL Open Font License 1.1 (original Libre Franklin) plus CC0 modifications by the US General Services Administration.
 - PixelMplus10 font: Copyright (C) 2013 itouhiro, Copyright (C) 2002-2013 M+ FONTS PROJECT (M+ FONT LICENSE).
+- Military_Male_01 and the run clip are from Microsoft Rocketbox, Copyright (c) 2020 Microsoft, MIT License. The full permission notice is assets/models/zombie_rush/licenses/rocketbox-LICENSE.md. https://github.com/microsoft/Microsoft-Rocketbox
 - Map data: © OpenStreetMap contributors, available under the Open Database License (ODbL 1.0).
 
 ## Poly Haven props (31 models): per-asset authors
