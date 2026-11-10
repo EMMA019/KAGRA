@@ -45,9 +45,11 @@ impl Default for ArenaSpec {
     fn default() -> Self {
         Self {
             half: 13.0,
-            floor: [34, 46, 66],
-            wall: [84, 70, 128],
-            dark: 1.0,
+            // A light slate tint on the paver texture. `dark` below still pulls it toward night;
+            // this default stays bright enough that a thumbnail reads the hero against the floor.
+            floor: [255, 250, 242],
+            wall: [120, 112, 168],
+            dark: 0.40,
         }
     }
 }
@@ -83,7 +85,8 @@ impl Default for HeroSpec {
             speed: 4.6,
             max_hp: 100.0,
             radius: 0.4,
-            pickup_radius: 1.7,
+            // Wide enough that a gem the hero walks near flies in (the old 1.7 m left a lot on the floor).
+            pickup_radius: 2.4,
             hurt_cd: 0.5,
             skin: "classic".into(),
             start_weapon: "bolt".into(),
@@ -214,22 +217,33 @@ pub struct DirectorSpec {
     /// `elite_hp_cap` times that.
     pub elite_fight_secs: f32,
     pub elite_hp_cap: f32,
+    /// A ring of foes at this second (0 = off). The shipped 120 s round puts one
+    /// inside the 60..=90 window. The boss is not this.
+    pub event_at: f32,
+    /// How many foes that ring holds.
+    pub event_count: u32,
 }
 
 impl Default for DirectorSpec {
     fn default() -> Self {
         Self {
             seed: 1,
-            start_rate: 1.5,
+            // The 120 s round used to stay near 1.5 foes/s for the first half minute (curve 2),
+            // so a bolt and an orbit blade cleared the carpet before it touched the hero.
+            // 3.0 at t=0 and curve 1.4 bring the first contact forward; the end stays 8.5 so a
+            // careful kite can still see dawn and outlast standing still.
+            start_rate: 3.0,
             end_rate: 8.5,
-            ramp_secs: 100.0,
-            curve: 2.0,
+            ramp_secs: 95.0,
+            curve: 1.4,
             hp_per_min: 0.35,
             spawn_dist: 10.5,
             elite_first: 45.0,
             elite_every: 40.0,
             elite_fight_secs: 14.0,
             elite_hp_cap: 4.0,
+            event_at: 72.0,
+            event_count: 8,
         }
     }
 }
@@ -430,6 +444,14 @@ pub struct PassiveSpec {
     /// Added per level: HP points for `max_hp`, a fraction for the others.
     pub per_level: f32,
     pub max_level: u32,
+    /// Draw weight inside the passive pool (1 = the others). Magnet is heavier so it
+    /// shows up in the first offers; the early pickup radius is the free baseline.
+    #[serde(default = "default_passive_weight")]
+    pub weight: u32,
+}
+
+fn default_passive_weight() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -483,7 +505,14 @@ pub(super) fn passive(
         stat,
         per_level: per,
         max_level: 5,
+        weight: 1,
     }
+}
+
+/// A passive with a draw weight above 1, so its card shows up sooner.
+fn weighted(mut p: PassiveSpec, weight: u32) -> PassiveSpec {
+    p.weight = weight;
+    p
 }
 
 pub(crate) fn lv(en: &str, ja: &str) -> WeaponLevel {
@@ -518,7 +547,7 @@ impl Default for SurvivorSpec {
             passives: vec![
                 passive(
                     "vitality",
-                    "Vitality",
+                    "Vitality (Genki)",
                     "げんき",
                     "Max HP +20",
                     "さいだいHP +20",
@@ -527,25 +556,28 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "swift",
-                    "Swift paws",
+                    "Swift paws (Hayaashi)",
                     "はやあし",
                     "Move speed +8%",
                     "いどうそく +8%",
                     PassiveStat::Speed,
                     0.08,
                 ),
-                passive(
-                    "magnet",
-                    "Magnet",
-                    "じしゃく",
-                    "Gem pull range +30%",
-                    "ジェムをよせる +30%",
-                    PassiveStat::Magnet,
-                    0.30,
+                weighted(
+                    passive(
+                        "magnet",
+                        "Magnet (Jishaku)",
+                        "じしゃく",
+                        "Gem pull range +30%",
+                        "ジェムをよせる +30%",
+                        PassiveStat::Magnet,
+                        0.30,
+                    ),
+                    4,
                 ),
                 passive(
                     "might",
-                    "Might",
+                    "Might (Chikaramochi)",
                     "ちからもち",
                     "Damage +12%",
                     "ダメージ +12%",
@@ -554,7 +586,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "haste",
-                    "Haste",
+                    "Haste (Sekkachi)",
                     "せっかち",
                     "Throws 7% faster",
                     "こうげき +7%はやく",
@@ -563,7 +595,7 @@ impl Default for SurvivorSpec {
                 ),
                 passive(
                     "growth",
-                    "Growth",
+                    "Growth (Seichou)",
                     "せいちょう",
                     "XP +12%",
                     "けいけんち +12%",
@@ -638,6 +670,10 @@ impl SurvivorSpec {
             1.0,
             20.0,
         )?;
+        range(w, "director.event_at", self.director.event_at, 0.0, 1800.0)?;
+        if self.director.event_count > 24 {
+            return Err(format!("{w}: director.event_count must be 0..=24"));
+        }
         for (i, wp) in self.weapons.iter().enumerate() {
             let n = format!("weapons[{i}]");
             range(w, &format!("{n}.base.area"), wp.base.area, 0.0, 12.0)?;
@@ -788,6 +824,11 @@ impl SurvivorSpec {
         }
         if self.levels.max_passives > 8 {
             return Err(format!("{w}: levels.max_passives must be 0..=8"));
+        }
+        for (i, p) in self.passives.iter().enumerate() {
+            if !(1..=12).contains(&p.weight) {
+                return Err(format!("{w}: passives[{i}].weight must be 1..=12"));
+            }
         }
         range(w, "levels.heal_frac", self.levels.heal_frac, 0.0, 1.0)?;
         range(

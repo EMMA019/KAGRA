@@ -245,7 +245,7 @@ impl SurvivorArena {
                 );
                 list.texts.push(
                     TextQuad::new(
-                        &format!("宝 {:.0}m", d),
+                        &format!("{} {:.0}m", self.tr("CHEST", "宝"), d),
                         mx,
                         my + 12.0 * s,
                         13.0 * s,

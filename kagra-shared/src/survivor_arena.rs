@@ -406,6 +406,12 @@ pub struct SurvivorArena {
     hp: f32,
     hurt_cd: f32,
     hurt_flash: f32,
+    /// Times the hero actually lost HP, and times the barrier (◇) absorbed a hit.
+    /// The balance bot reads these; the picture does not.
+    hits: u32,
+    barrier_hits: u32,
+    /// Seconds when the mid-run ring fired. Negative until then.
+    surge_at: f32,
     // run
     t: f32,
     anim_t: f32,
@@ -558,6 +564,9 @@ impl SurvivorArena {
             hp: spec.hero.max_hp,
             hurt_cd: 0.0,
             hurt_flash: 0.0,
+            hits: 0,
+            barrier_hits: 0,
+            surge_at: -1.0,
             t: 0.0,
             anim_t: 0.0,
             kills: 0,
@@ -794,6 +803,9 @@ impl SurvivorArena {
         (self.hx, self.hz, self.vx, self.vz, self.face) = (0.0, 0.0, 0.0, 0.0, 0.0);
         self.hurt_cd = 0.0;
         self.hurt_flash = 0.0;
+        self.hits = 0;
+        self.barrier_hits = 0;
+        self.surge_at = -1.0;
         self.t = 0.0;
         self.kills = 0;
         self.level = 1;
@@ -914,6 +926,7 @@ impl SurvivorArena {
         self.pull_all_t = (self.pull_all_t - dt).max(0.0);
         self.move_hero(dt);
         self.spawn(dt);
+        self.spawn_surge();
         self.grid.rebuild(&self.foes.x, &self.foes.z);
         self.move_foes(dt);
         self.step_orbs(dt);
@@ -1109,6 +1122,41 @@ impl SurvivorArena {
         sum
     }
 
+    /// One ring of the carpet foe at `director.event_at`. Once per run, inside the
+    /// 60..=90 window on the shipped clock. Not a boss.
+    fn spawn_surge(&mut self) {
+        let (at, n) = {
+            let d = &self.spec.director;
+            (d.event_at, d.event_count)
+        };
+        if self.surge_at >= 0.0 || at <= 0.0 || n == 0 || self.t < at {
+            return;
+        }
+        let Some(kind) = self.kinds.iter().position(|k| !k.elite && k.unlock <= 0.0) else {
+            return;
+        };
+        self.surge_at = self.t;
+        let msg = self.tr("THE RING CLOSES!", "わっかがせまる！");
+        self.set_toast(msg, [170, 220, 255]);
+        self.zoom_kick = self.zoom_kick.max(0.45);
+        let n = n.min(24);
+        let half = self.spec.arena.half - 0.8;
+        let r = self.spec.director.spawn_dist * 0.72;
+        let hp_mul = 1.0 + self.spec.director.hp_per_min * self.t / 60.0;
+        let hp = self.kinds[kind].hp * hp_mul;
+        for i in 0..n {
+            let a = std::f32::consts::TAU * i as f32 / n as f32;
+            let pos = (
+                (self.hx + a.sin() * r).clamp(-half, half),
+                (self.hz + a.cos() * r).clamp(-half, half),
+            );
+            if !self.add_foe(kind, pos, hp) {
+                break;
+            }
+        }
+        self.cue("elite", 1, 0.35);
+    }
+
     /// The timed elite: the first at `director.elite_first`, then every `elite_every`.
     fn spawn_elite(&mut self) {
         if self.next_elite <= 0.0 || self.t < self.next_elite {
@@ -1223,12 +1271,14 @@ impl SurvivorArena {
         }
         if self.shield_t > 0.0 {
             // The barrier takes it: a flash, a short breather, no damage.
+            self.barrier_hits = self.barrier_hits.saturating_add(1);
             self.hurt_cd = 0.25;
             let at = [self.hx, 0.7, self.hz];
             self.burst(FX_GLINT, 4, at, [0.0, 0.0], 3.0, 1.0, 1.5, 0.35);
             self.cue("shield", 1, 0.2);
             return;
         }
+        self.hits = self.hits.saturating_add(1);
         self.hp -= dmg;
         self.hurt_cd = self.spec.hero.hurt_cd;
         self.hurt_flash = 1.0;
@@ -1561,7 +1611,8 @@ impl SurvivorArena {
         for (i, p) in self.spec.passives.iter().enumerate() {
             let cur = self.passive_lv[i];
             if cur < p.max_level && (cur > 0 || held < lv.max_passives) {
-                pool.push((Card::Passive(i as u8), lv.passive_weight.max(1)));
+                let w = lv.passive_weight.max(1).saturating_mul(p.weight.max(1));
+                pool.push((Card::Passive(i as u8), w));
             }
         }
         // The same level always offers the same cards for a seed (the daily challenge).
@@ -1763,6 +1814,18 @@ impl SurvivorArena {
     }
     pub fn hp(&self) -> f32 {
         self.hp
+    }
+    /// HP hits taken this run (the barrier absorbing one does not count).
+    pub fn hits(&self) -> u32 {
+        self.hits
+    }
+    /// Times the shield barrier absorbed a hit this run.
+    pub fn barrier_hits(&self) -> u32 {
+        self.barrier_hits
+    }
+    /// When the mid-run ring fired, if it has.
+    pub fn surge_at(&self) -> Option<f32> {
+        (self.surge_at >= 0.0).then_some(self.surge_at)
     }
     pub fn secs(&self) -> f32 {
         self.t
@@ -1993,7 +2056,7 @@ const DECOR: [(&str, f32, u32); 6] = [
     ("gravestone-cross", 1.5, 3),
     ("gravestone-broken", 1.5, 3),
     ("pumpkin-carved", 1.4, 3),
-    ("lantern-candle", 1.6, 3),
+    ("lantern-candle", 1.6, 6),
     ("cross-wood", 1.4, 2),
 ];
 /// Pines ringed outside the wall, so the arena has a dark treeline round it.

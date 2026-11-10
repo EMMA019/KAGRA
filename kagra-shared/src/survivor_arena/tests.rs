@@ -93,6 +93,101 @@ fn kite_each(g: &mut SurvivorArena, secs: f32, mut each: impl FnMut(&SurvivorAre
     g.walk(0.0, 0.0);
 }
 
+/// An average phone player: kites, but not perfectly, and grabs a nearby pickup.
+/// Cards: the orbit blades when they are offered (the loadout the first minute actually
+/// grows), else Magnet, else a level of something already held, else whatever is left.
+fn average_pick(g: &mut SurvivorArena) {
+    let n = g.card_count();
+    if n == 0 {
+        return;
+    }
+    let id = |i: usize| g.card_id(i).unwrap_or_default();
+    let held = |i: usize| {
+        id(i)
+            .strip_prefix("weapon:")
+            .is_some_and(|w| g.weapon_level(w) > 0)
+            || id(i)
+                .strip_prefix("passive:")
+                .is_some_and(|p| g.passive_level(p) > 0)
+    };
+    let at = (0..n)
+        .find(|&i| id(i) == "weapon:blades" && g.weapon_level("blades") == 0)
+        .or_else(|| (0..n).find(|&i| id(i) == "passive:magnet" && g.passive_level("magnet") == 0))
+        .or_else(|| (0..n).find(|&i| held(i)))
+        .or_else(|| (0..n).find(|&i| id(i).starts_with("weapon:")))
+        .or_else(|| (0..n).find(|&i| id(i) == "keep"))
+        .unwrap_or(0);
+    g.choose(at);
+}
+
+fn average_step(g: &mut SurvivorArena) {
+    let half = g.spec.arena.half;
+    let (hx, hz) = g.hero();
+    let (mut dx, mut dz) = (0.0f32, 0.0f32);
+    let f = g.foes();
+    for i in 0..f.len() {
+        let (ox, oz) = (hx - f.x[i], hz - f.z[i]);
+        let d2 = ox * ox + oz * oz;
+        if d2 < 36.0 && d2 > 1e-4 {
+            let d = d2.sqrt();
+            let w = 1.0 / d2;
+            // 0.75 of the skilled kite: a thumb that keeps moving, not a perfect orbit.
+            dx += ox / d * w * 3.0;
+            dz += oz / d * w * 3.0;
+        }
+    }
+    if let Some((gx, gz)) = g.gem_positions().min_by(|a, b| {
+        let da = (a.0 - hx).powi(2) + (a.1 - hz).powi(2);
+        let db = (b.0 - hx).powi(2) + (b.1 - hz).powi(2);
+        da.total_cmp(&db)
+    }) {
+        let (ox, oz) = (gx - hx, gz - hz);
+        let d = ox.hypot(oz).max(0.1);
+        dx += ox / d * 0.45;
+        dz += oz / d * 0.45;
+    }
+    if let Some(p) = g.pickups.iter().min_by(|a, b| {
+        let da = (a.x - hx).powi(2) + (a.z - hz).powi(2);
+        let db = (b.x - hx).powi(2) + (b.z - hz).powi(2);
+        da.total_cmp(&db)
+    }) {
+        let (ox, oz) = (p.x - hx, p.z - hz);
+        let d = ox.hypot(oz);
+        if d < 8.0 && d > 0.05 {
+            dx += ox / d * 0.7;
+            dz += oz / d * 0.7;
+        }
+    }
+    let m = half - 3.5;
+    if hx.abs() > m {
+        dx -= hx.signum() * 2.0;
+    }
+    if hz.abs() > m {
+        dz -= hz.signum() * 2.0;
+    }
+    g.walk(dx, -dz);
+}
+
+/// Seconds until the first HP hit or barrier absorb, or `None` if the run stays untouched.
+fn first_pressure(g: &mut SurvivorArena, limit: f32) -> Option<f32> {
+    let mut n = 0;
+    while g.flow.phase == FlowPhase::Play && g.secs() < limit && n < 60 * 80 {
+        if g.card_count() > 0 {
+            average_pick(g);
+        }
+        average_step(g);
+        g.tick(DT);
+        if g.hits() + g.barrier_hits() > 0 {
+            let t = g.secs();
+            g.walk(0.0, 0.0);
+            return Some(t);
+        }
+        n += 1;
+    }
+    g.walk(0.0, 0.0);
+    None
+}
+
 #[test]
 #[ignore]
 fn timeline() {
@@ -338,6 +433,7 @@ fn a_chest_drifts_to_the_hero_from_afar_and_opens_from_a_wider_reach() {
 #[test]
 fn an_off_screen_chest_gets_an_edge_arrow() {
     let mut g = quiet("bolt");
+    g.set_lang("ja");
     g.pickups.clear();
     let (hx, hz) = (g.hx, g.hz);
     g.pickups.push(Pickup {
@@ -355,6 +451,58 @@ fn an_off_screen_chest_gets_an_edge_arrow() {
     g.pickups.clear();
     let hud = g.hud(390, 844, false);
     assert!(hud.texts.iter().all(|t| !t.text.starts_with('宝')));
+}
+
+#[test]
+fn english_hud_and_pause_show_no_japanese() {
+    let mut g = quiet("bolt");
+    g.set_lang("en");
+    // An off-screen chest: its edge marker is a word, not a glyph icon, so it
+    // follows the page language like every other HUD line.
+    g.pickups.clear();
+    let (hx, hz) = (g.hx, g.hz);
+    g.pickups.push(Pickup {
+        x: hx + 11.0,
+        z: hz,
+        item: CHEST,
+        table: 0,
+        age: 0.0,
+        fly: false,
+    });
+    g.build_doc();
+    let hud = g.hud(390, 844, false);
+    assert!(
+        hud.texts.iter().any(|t| t.text.starts_with("CHEST")),
+        "english chest marker"
+    );
+    for t in &hud.texts {
+        assert!(
+            !t.text.contains('宝'),
+            "english hud shows the japanese chest label: {}",
+            t.text
+        );
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english hud has kana: {}", t.text);
+        }
+    }
+    // The pause card is all page language too.
+    g.pause();
+    let hud = g.hud(390, 844, false);
+    for want in ["PAUSED", "RESUME", "RETRY", "TITLE"] {
+        assert!(
+            hud.texts.iter().any(|t| t.text == want),
+            "english pause shows {want}"
+        );
+    }
+    for t in &hud.texts {
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english pause has kana: {}", t.text);
+        }
+    }
+    // Japanese keeps its own pause line.
+    g.set_lang("ja");
+    let hud = g.hud(390, 844, false);
+    assert!(hud.texts.iter().any(|t| t.text == "ポーズ"));
 }
 
 #[test]
@@ -1827,6 +1975,303 @@ fn a_decent_run_can_reach_dawn() {
         (1..6).contains(&wins),
         "{wins}/6 reached dawn: balance is off"
     );
+}
+
+/// §12, compressed to the shipped 120 s round. An average build (sloppy kite, takes a new
+/// weapon and Magnet when offered) must spend the barrier or take a hit inside 45 s on
+/// every seed. A careful kite can still reach dawn: that is `a_decent_run_can_reach_dawn`.
+#[test]
+fn an_average_build_is_touched_within_45s() {
+    let mut lines = Vec::new();
+    for seed in 1..=6u32 {
+        let mut spec = SurvivorSpec::default();
+        spec.director.seed = seed;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        let when = first_pressure(&mut g, 45.0);
+        let weapons: Vec<_> = g
+            .spec
+            .weapons
+            .iter()
+            .filter(|w| g.weapon_level(&w.id) > 0)
+            .map(|w| w.id.as_str())
+            .collect();
+        lines.push(format!(
+            "seed {seed}: pressure {} hits {} barrier {} lv {} weapons {}",
+            when.map(|t| format!("{t:.2}s"))
+                .unwrap_or_else(|| "none".into()),
+            g.hits(),
+            g.barrier_hits(),
+            g.level(),
+            weapons.join("+"),
+        ));
+        let t = when.unwrap_or(999.0);
+        if t > 45.0 {
+            lines.push(format!("seed {seed} MISSED the 45 s mark"));
+        }
+    }
+    let missed = lines
+        .iter()
+        .any(|l| l.contains("MISSED") || l.contains("none"));
+    eprintln!("balance-checker average build\n{}", lines.join("\n"));
+    assert!(
+        !missed,
+        "an average build stayed untouched\n{}",
+        lines.join("\n")
+    );
+}
+
+#[test]
+fn the_level_up_heading_clears_the_subtitle() {
+    let mut spec = SurvivorSpec::default();
+    spec.director.start_rate = 0.0;
+    spec.director.elite_first = 0.0;
+    let mut g = SurvivorArena::new(spec);
+    g.confirm();
+    g.xp = g.xp_need();
+    g.tick(DT);
+    g.tick(DT);
+    assert!(g.card_count() > 0);
+    let list = g.hud(390, 844, false);
+    let title = list
+        .texts
+        .iter()
+        .find(|t| t.text.contains("LEVEL"))
+        .expect("heading");
+    let sub = list
+        .texts
+        .iter()
+        .find(|t| t.text.contains("Pick"))
+        .expect("subtitle");
+    assert!(
+        sub.y >= title.y + title.size * 1.5,
+        "heading y {} size {} sits on the subtitle y {}",
+        title.y,
+        title.size,
+        sub.y
+    );
+    // The level pips on one card are separate glyphs with a gap.
+    let mut rows: Vec<Vec<f32>> = Vec::new();
+    for t in list
+        .texts
+        .iter()
+        .filter(|t| t.text == "●" || t.text == "◆" || t.text == "○")
+    {
+        if let Some(row) = rows.iter_mut().find(|row| (row[0] - t.y).abs() < 1.0) {
+            row.push(t.x);
+        } else {
+            rows.push(vec![t.y, t.x]);
+        }
+    }
+    for row in rows {
+        let mut xs = row[1..].to_vec();
+        if xs.len() < 2 {
+            continue;
+        }
+        xs.sort_by(f32::total_cmp);
+        let gap = xs.windows(2).map(|w| w[1] - w[0]).fold(f32::MAX, f32::min);
+        assert!(gap >= 12.0, "pip gap {gap}");
+    }
+}
+
+fn has_kana(text: &str) -> bool {
+    // Hiragana and katakana. Kanji glyphs (弾, 刃) are the card icons on purpose.
+    text.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF))
+}
+
+#[test]
+fn english_cards_keep_romaji_and_do_not_show_kana_sentences() {
+    let spec = SurvivorSpec::default();
+    assert!(
+        spec.weapons.iter().any(|w| w.name.en.contains("Mikazuki")),
+        "the crescent blades keep their romaji"
+    );
+    assert!(spec.passives.iter().any(|p| p.name.en.contains("Jishaku")));
+    let mut spec = spec;
+    spec.director.start_rate = 0.0;
+    spec.director.elite_first = 0.0;
+    spec.director.event_at = 0.0;
+    let mut g = SurvivorArena::new(spec);
+    g.set_lang("en");
+    g.confirm();
+    g.xp = g.xp_need();
+    g.tick(DT);
+    g.tick(DT);
+    assert!(g.card_count() > 0);
+    for t in &g.hud(390, 844, false).texts {
+        // One-character glyphs (弾, 刃) stay. A sentence must not.
+        if t.text.chars().count() > 2 {
+            assert!(!has_kana(&t.text), "english card has kana: {}", t.text);
+        }
+    }
+    g.set_lang("ja");
+    assert!(
+        g.hud(390, 844, false)
+            .texts
+            .iter()
+            .any(|t| has_kana(&t.text) && t.text.chars().count() > 2),
+        "japanese still has its own lines"
+    );
+}
+
+#[test]
+fn a_ring_closes_once_between_60_and_90_seconds() {
+    let spec = SurvivorSpec::default();
+    assert!(
+        (60.0..=90.0).contains(&spec.director.event_at),
+        "event_at {}",
+        spec.director.event_at
+    );
+    let mut g = SurvivorArena::new(spec);
+    g.set_lang("en");
+    g.confirm();
+    let mut steps = 0;
+    let mut before = 0;
+    while g.secs() < 95.0 && g.flow.phase == FlowPhase::Play && steps < 60 * 110 {
+        if g.surge_at().is_none() && g.secs() >= 60.0 {
+            before = g.foes().len();
+        }
+        if g.card_count() > 0 {
+            g.choose(0);
+        }
+        kite_step(&mut g);
+        g.tick(DT);
+        steps += 1;
+    }
+    let at = g.surge_at().unwrap_or(-1.0);
+    assert!(
+        (60.0..=90.0).contains(&at),
+        "ring at {at}, lived {:.1}s phase {}",
+        g.secs(),
+        g.phase_name()
+    );
+    assert!(
+        g.foes().len() + 8 >= before,
+        "the ring is a formation (before {before}, now {})",
+        g.foes().len()
+    );
+    let again = g.surge_at();
+    for _ in 0..180 {
+        if g.card_count() > 0 {
+            g.choose(0);
+        }
+        g.tick(DT);
+    }
+    assert_eq!(g.surge_at(), again, "the ring fires once");
+}
+
+#[test]
+fn gems_inside_the_default_pickup_radius_fly_to_the_hero() {
+    let mut g = started();
+    let r = g.spec.hero.pickup_radius;
+    assert!(
+        (2.2..=2.5).contains(&r),
+        "pickup_radius {r} is outside the 2.2..=2.5 trial"
+    );
+    let (hx, hz) = g.hero();
+    g.gems.push(Gem {
+        x: hx + 2.2,
+        z: hz,
+        v: 1.0,
+        fly: false,
+    });
+    g.gems.push(Gem {
+        x: hx + 3.4,
+        z: hz,
+        v: 1.0,
+        fly: false,
+    });
+    for _ in 0..8 {
+        g.tick(DT);
+    }
+    let near = g.gems.iter().any(|gem| gem.fly) || g.gems.len() < 2;
+    let far = g
+        .gems
+        .iter()
+        .any(|gem| !gem.fly && (gem.x - hx).abs() > 2.8);
+    assert!(near, "a gem at 2.2 m should start flying in");
+    assert!(far, "a gem at 3.4 m should stay put");
+}
+
+#[test]
+fn magnet_is_offered_in_the_early_cards() {
+    let mut offers = 0;
+    for seed in 1..=24u32 {
+        let mut spec = SurvivorSpec::default();
+        spec.director.seed = seed;
+        // No swarm: the draw only depends on the seed and the level.
+        spec.director.start_rate = 0.0;
+        spec.director.elite_first = 0.0;
+        let mut g = SurvivorArena::new(spec);
+        g.confirm();
+        let mut seen = false;
+        for _ in 0..4 {
+            g.xp = g.xp_need();
+            for _ in 0..4 {
+                if g.card_count() > 0 {
+                    break;
+                }
+                g.tick(DT);
+            }
+            if g.card_count() == 0 {
+                break;
+            }
+            seen |= (0..g.card_count()).any(|i| g.card_id(i).as_deref() == Some("passive:magnet"));
+            // Take something else when we can, so Magnet stays in the pool.
+            let keep = (0..g.card_count())
+                .find(|i| g.card_id(*i).as_deref() != Some("passive:magnet"))
+                .unwrap_or(0);
+            g.choose(keep);
+            g.tick(DT);
+        }
+        offers += u32::from(seen);
+    }
+    assert!(
+        offers >= 12,
+        "magnet showed in the first four offers of {offers}/24 seeds"
+    );
+}
+
+#[test]
+fn the_default_arena_is_bright_enough_to_read_and_keeps_the_light_posts() {
+    let mut g = fresh();
+    g.build_doc();
+    let floor = g
+        .doc
+        .props
+        .iter()
+        .find(|p| p.name == "floor")
+        .unwrap()
+        .color
+        .unwrap();
+    assert!(
+        floor[0] >= 190,
+        "floor tint {floor:?} is still the old night crush"
+    );
+    assert!(
+        g.doc
+            .props
+            .iter()
+            .filter(|p| p.id.contains("column-post"))
+            .count()
+            >= 4,
+        "four light posts"
+    );
+    assert!(
+        g.doc
+            .props
+            .iter()
+            .filter(|p| p.id.contains("decor-post"))
+            .count()
+            >= 4,
+        "a lantern on each post"
+    );
+    assert_eq!(g.doc.lights.len(), 4, "key, hero lantern, two torches");
+    assert!(g
+        .doc
+        .lights
+        .iter()
+        .all(|l| !l.kind.eq_ignore_ascii_case("spot") || l.slot == 0));
 }
 
 #[test]

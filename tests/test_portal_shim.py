@@ -207,6 +207,22 @@ def test_string_tables_match(r):
 # ---- the page file itself -----------------------------------------------------------------
 
 
+def test_declared_rewarded_slot_waits_for_its_break(r):
+    s = r["swarm_ads"]
+    assert s["onTitle"] is False and s["onOver"] is True
+    assert s["earlyReason"] == "slot_off"
+    assert s["retryShown"] is True and s["gap"] == 90
+    assert s["scripts"] == 1, "the SDK loads only because this case asked for CrazyGames"
+
+
+def test_the_public_page_hides_the_dev_counter_and_the_version():
+    html = PLAY.read_text(encoding="utf-8")
+    assert 'id="bootFill"' in html and 'id="bootLogo"' in html
+    assert "boot.progress" not in html, "the load screen is a bar, not an internal counter"
+    assert 'const stamp = dev ? ` · ${sharedVersion()}` : "";' in html
+    assert "${label}${stamp}" in html
+
+
 def test_play_html_loads_the_shim_and_keeps_dev_tools_behind_dev():
     html = PLAY.read_text(encoding="utf-8")
     assert html.index('src="./i18n.js"') < html.index('src="./portal.js"') < html.index('<script type="module">')

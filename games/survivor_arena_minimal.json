@@ -1,6 +1,6 @@
 {
   "title": "Moonlit Swarm",
-  "icon": "assets/icons/game_placeholder.png",
+  "icon": "assets/icons/moonlit_swarm.png",
   "version": "0.1.0",
   "entry": "examples/survivor_arena_minimal.py",
   "world": "kagra-shared/tests/fixtures/survivor_arena_world.json",
@@ -42,7 +42,7 @@
     ],
     "daily": {"enabled": true, "seed_path": "director.seed", "streak_reward": {"base": 10, "per_day": 5, "max": 50}},
     "modifiers": [
-      {"id": "horde", "name": {"en": "Horde", "ja": "だいぐん"}, "desc": {"en": "More foes, from the start", "ja": "さいしょから敵がおおい"}, "patch": {"director": {"start_rate": 1.8, "end_rate": 9.0}}},
+      {"id": "horde", "name": {"en": "Horde", "ja": "だいぐん"}, "desc": {"en": "More foes, from the start", "ja": "さいしょから敵がおおい"}, "patch": {"director": {"start_rate": 3.8, "end_rate": 9.5}}},
       {"id": "glass", "name": {"en": "Glass", "ja": "ガラス"}, "desc": {"en": "Half the health", "ja": "体力が半分"}, "patch": {"hero": {"max_hp": 50}}},
       {"id": "swift", "name": {"en": "Swift", "ja": "しっそう"}, "desc": {"en": "Faster hero", "ja": "足がはやい"}, "patch": {"hero": {"speed": 6.4}}}
     ],

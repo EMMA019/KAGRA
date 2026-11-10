@@ -20,8 +20,8 @@ def main(out):
     rng = np.random.default_rng(1907)
     cell = N // CELLS
     img = np.zeros((N, N, 3), np.float32)
-    base = np.array([40.0, 54.0, 80.0])  # moonlit slate blue
-    moss = np.array([36.0, 62.0, 72.0])
+    base = np.array([72.0, 88.0, 128.0])  # lighter moonlit slate, so the tile reads on a phone
+    moss = np.array([58.0, 108.0, 112.0])
     yy, xx = np.mgrid[0:N, 0:N]
     # Brick-bond pavers: every other row is shifted half a paver.
     for r in range(CELLS):
@@ -29,7 +29,7 @@ def main(out):
         for c in range(CELLS):
             x0 = (c * cell + shift) % N
             y0 = r * cell
-            tone = rng.uniform(0.93, 1.07)
+            tone = rng.uniform(0.78, 1.22)
             mix = rng.uniform(0.0, 0.3) if rng.random() < 0.35 else 0.0
             col = (base * (1 - mix) + moss * mix) * tone
             xs = (np.arange(x0, x0 + cell) % N)
@@ -39,8 +39,9 @@ def main(out):
             v = np.linspace(0, 1, cell)[:, None].repeat(cell, 1)
             edge = np.minimum(np.minimum(u, 1 - u), np.minimum(v, 1 - v))
             grout = np.clip(edge / 0.035, 0, 1)
-            lift = 1.0 + 0.22 * np.clip(1 - np.minimum(u, v) / 0.07, 0, 1) - 0.25 * np.clip(1 - np.minimum(1 - u, 1 - v) / 0.07, 0, 1)
-            tile = col[None, None, :] * (lift * (0.45 + 0.55 * grout))[:, :, None]
+            lift = 1.0 + 0.28 * np.clip(1 - np.minimum(u, v) / 0.07, 0, 1) - 0.32 * np.clip(1 - np.minimum(1 - u, 1 - v) / 0.07, 0, 1)
+            # Dark grout against a lighter paver: the grid has to read in a thumbnail.
+            tile = col[None, None, :] * (lift * (0.34 + 0.66 * grout))[:, :, None]
             img[np.ix_(ys, xs)] = tile
     # Fine grain, periodic by construction (noise tiled from a smaller block).
     g = rng.normal(0, 1, (N // 4, N // 4)).astype(np.float32)

@@ -815,6 +815,35 @@
    "attribution_required": false,
    "attribution_text": null,
    "redistributable_in_public_repo": true,
+   "notes": "Original launcher icon for Moonlit Swarm.",
+   "verified": "checked",
+   "id": "project-moonlit-swarm-icon",
+   "name": "Moonlit Swarm launcher icon",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-10",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/icons/moonlit_swarm.png"
+   ],
+   "verified_how": "Drawn by tools/gen_assets/moonlit_swarm_icon.py in plain Python (a moon and a swarm of lights); no input images."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
    "notes": "Original. Written by the test diamond_days::art::icon (KAGRA_ICON=assets/icons).",
    "verified": "checked",
    "id": "project-diamond-days-icon",
