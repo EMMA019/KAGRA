@@ -120,6 +120,22 @@ def test_root_publish_keeps_other_prs(tmp_path: Path):
     assert (work / "pr" / "4" / "keep.txt").is_file()
 
 
+def test_prune_previews_keeps_newest_five(tmp_path: Path):
+    work = tmp_path / "gh-pages"
+    pr = work / "pr"
+    for number in range(101, 131):
+        (pr / str(number)).mkdir(parents=True)
+        (pr / str(number) / "play.html").write_text("preview", encoding="utf-8")
+    (pr / "notes.txt").write_text("not a preview", encoding="utf-8")
+    removed = pages.prune_previews(work)
+    kept = sorted(child.name for child in pr.iterdir())
+    assert kept == ["126", "127", "128", "129", "130", "notes.txt"]
+    assert removed == [str(number) for number in range(125, 100, -1)]
+    # Fewer previews than the keep count (and no pr/ at all) prune nothing.
+    assert pages.prune_previews(work) == []
+    assert pages.prune_previews(tmp_path / "empty") == []
+
+
 def test_root_seed_skips_only_a_stable_root(tmp_path: Path):
     work = tmp_path / "gh-pages"
     work.mkdir()
