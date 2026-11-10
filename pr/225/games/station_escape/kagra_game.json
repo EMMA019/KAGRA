@@ -1,0 +1,7 @@
+{
+  "title": "Station Escape",
+  "version": "0.1.0",
+  "slug": "station_escape",
+  "entry": "examples/station_escape_minimal.py",
+  "world": "kagra-shared/tests/fixtures/station_escape_world.json"
+}
