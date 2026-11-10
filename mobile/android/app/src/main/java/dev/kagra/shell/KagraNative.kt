@@ -80,6 +80,16 @@ object KagraNative {
     /** BGM と効果音のキュー。呼ぶたびに効果音は消費される。 */
     external fun takeAudioCues(): String
 
+    /** The loaded game's one-shot sound files: a JSON array of paths under the asset root. */
+    external fun audioFiles(): String
+
+    /**
+     * What to play this frame: `{"bgm": {"file","volume"} | null, "shots": [{"file","volume","rate"}]}`.
+     * The game's audio block and the player's volume are already applied. Takes the queued
+     * cues (use this or [takeAudioCues], not both).
+     */
+    external fun takeAudioPlan(): String
+
     /** SurfaceView の Surface を描画先にする。 */
     external fun attachSurface(surface: Surface, width: Int, height: Int): Boolean
     external fun detachSurface()

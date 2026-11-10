@@ -1197,15 +1197,7 @@ impl<'a> Painter<'a> {
 /// Room kept clear on each side of a [`Painter::button`] label.
 pub const BUTTON_PAD: f32 = 7.0;
 
-/// The text size up to `size` at which `text` fits in `room` (design units).
-pub fn fit_size(text: &str, size: f32, room: f32) -> f32 {
-    let wide = crate::font::measure_text(text, size);
-    if wide > room && wide > 0.0 {
-        size * (room.max(1.0) / wide)
-    } else {
-        size
-    }
-}
+pub use crate::text::fit_size;
 
 #[cfg(test)]
 mod tests {

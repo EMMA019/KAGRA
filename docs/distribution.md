@@ -125,6 +125,13 @@ python scripts/package_android.py --game examples/platformer_minimal.py
 
 APK は `dist/android/<slug>-debug.apk`。
 
+音は、ゲームの world JSON にある `game.audio`（どの合図でどのファイルを、どの音量と速さで
+鳴らすか。ブラウザのページが読むのと同じ欄）のとおりに鳴る。どれを鳴らすかは Rust が決めて
+（`kagra-shared/src/audio_plan.rs`、`KagraNative.takeAudioPlan()`）、`AudioBus` はそれを
+SoundPool と MediaPlayer で鳴らすだけ。効果音のファイルは起動時にまとめて読む
+（`KagraNative.audioFiles()`）。`game.audio` が無いゲームは今までどおり
+`assets/audio/<名前>.wav`。画面を離れると音楽は止まり、戻ると続きから鳴る。
+
 戻るボタンはゲームに `Back` キー（`kagra_shared::session::BACK_KEY`）として届く。
 キットの `on_key` が使えば（上に開いた画面を閉じるなど）アプリは残る。使わなければ、
 遊んでいる途中なら一時停止、一時停止中なら再開。タイトルでは使われず、アプリが閉じる。

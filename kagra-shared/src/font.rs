@@ -56,11 +56,23 @@ static UI_FONT: Lazy<ab_glyph::FontArc> = Lazy::new(|| {
         .expect("embedded PublicSans-Bold.ttf must parse")
 });
 
-/// True when every non-whitespace character has a real glyph (not `.notdef`).
+/// True when every non-whitespace character has a real glyph (not `.notdef`) or is a symbol
+/// the engine draws itself ([`crate::glyph_symbols`]).
 pub fn text_covered(text: &str) -> bool {
     text.chars()
         .filter(|ch| !ch.is_whitespace())
-        .all(|ch| select_font(ch).is_some())
+        .all(|ch| select_font(ch).is_some() || crate::glyph_symbols::has(ch))
+}
+
+/// [`text_covered`] as the browser sees it: the wasm build leaves out the pixel face that
+/// catches rare characters on the desktop, so a letter only that face has is a blank there.
+/// HUD checks use this one (`hud_lint`), so a test on a desktop finds what a phone shows.
+pub fn text_covered_on_web(text: &str) -> bool {
+    text.chars().filter(|ch| !ch.is_whitespace()).all(|ch| {
+        font_has_glyph(&UI_FONT, ch)
+            || font_has_glyph(&JP_FONT, ch)
+            || crate::glyph_symbols::has(ch)
+    })
 }
 
 fn font_has_glyph(font: &ab_glyph::FontArc, ch: char) -> bool {
@@ -85,6 +97,10 @@ fn select_font_for(ch: char, face: TextFace) -> Option<&'static ab_glyph::FontAr
     if font_has_glyph(&JP_FONT, ch) {
         return Some(&JP_FONT);
     }
+    // A symbol the engine draws looks the same on every platform: no pixel-face stand-in.
+    if crate::glyph_symbols::has(ch) {
+        return None;
+    }
     #[cfg(not(target_arch = "wasm32"))]
     if font_has_glyph(&FONT, ch) {
         return Some(&FONT);
@@ -100,25 +116,56 @@ fn char_advance(ch: char, size: f32) -> f32 {
 }
 
 fn char_advance_for(ch: char, size: f32, face: TextFace) -> f32 {
-    let size = size.max(1.0);
-    let Some(font) = select_font_for(ch, face) else {
-        return size * 0.5;
-    };
-    let scaled = font.as_scaled(size);
-    let adv = scaled.h_advance(scaled.glyph_id(ch));
-    // Gothic faces put a narrow kana or a full-width "！" in a full em cell, which
-    // reads as huge letter-spacing at HUD sizes. Pull those side bearings in.
-    // A glyph that already fills its cell (kanji, ◆) keeps the font's advance,
-    // so neighbours do not collide.
-    let Some(outline) = scaled.outline_glyph(scaled.scaled_glyph(ch)) else {
-        return adv;
-    };
-    let ink = outline.px_bounds().width();
-    if ink > 0.0 && ink < adv * 0.72 {
-        let tightened = (ink + size * 0.16).max(size * 0.28);
-        return tightened.min(adv);
+    glyph_metrics(ch, face).0 * size.max(1.0)
+}
+
+/// How far a glyph's picture moves from the pen so that its ink sits in the middle of its
+/// (possibly tightened) cell. Zero for a glyph that keeps the font's own cell.
+fn char_shift_for(ch: char, size: f32, face: TextFace) -> f32 {
+    glyph_metrics(ch, face).1 * size.max(1.0)
+}
+
+/// A glyph's advance and ink shift, both per unit of text size, kept per letter and face
+/// (measuring an outline every time a width is asked for is too slow for a HUD).
+///
+/// Gothic faces put a narrow kana, a bracket or a full-width "！" in a full em cell, which
+/// reads as huge letter-spacing at HUD sizes. Such a glyph gets a tighter cell (its ink
+/// plus a small margin) and its ink is moved to the middle of that cell: a "「" sits in the
+/// right half of the font's cell and a "！" in the middle, so only narrowing the advance
+/// would draw them over the next letter. A glyph that already fills its cell (kanji, ◆)
+/// keeps the font's advance and place.
+fn glyph_metrics(ch: char, face: TextFace) -> (f32, f32) {
+    use std::cell::RefCell;
+    thread_local! {
+        static METRICS: RefCell<HashMap<(char, TextFace), (f32, f32)>> =
+            RefCell::new(HashMap::new());
     }
-    adv
+    if let Some(m) = METRICS.with(|c| c.borrow().get(&(ch, face)).copied()) {
+        return m;
+    }
+    // Measured once at a large size (the pixel bounds are whole pixels).
+    const REF: f32 = 256.0;
+    let m = match select_font_for(ch, face) {
+        // An engine-drawn symbol sits in a full-width letter's cell.
+        None if crate::glyph_symbols::has(ch) => (glyph_metrics(SYMBOL_BOX, face).0, 0.0),
+        None => (0.5, 0.0),
+        Some(font) => {
+            let scaled = font.as_scaled(REF);
+            let adv = scaled.h_advance(scaled.glyph_id(ch));
+            let mut m = (adv / REF, 0.0);
+            if let Some(outline) = scaled.outline_glyph(scaled.scaled_glyph(ch)) {
+                let b = outline.px_bounds();
+                let ink = b.width();
+                if ink > 0.0 && ink < adv * 0.72 {
+                    let tight = (ink + REF * 0.16).max(REF * 0.28).min(adv);
+                    m = (tight / REF, ((tight - ink) * 0.5 - b.min.x) / REF);
+                }
+            }
+            m
+        }
+    };
+    METRICS.with(|c| c.borrow_mut().insert((ch, face), m));
+    m
 }
 
 /// グリフのカバレッジ画素（0..1）とベースライン相対オフセット。
@@ -160,7 +207,7 @@ pub(crate) fn layout(tq: &TextQuad) -> Vec<Placed> {
             if ch != ' ' {
                 out.push(Placed {
                     ch,
-                    x: col.round(),
+                    x: (col + char_shift_for(ch, size, tq.face)).round(),
                     baseline: base,
                 });
             }
@@ -198,6 +245,12 @@ pub struct TextRaster {
 pub fn measure_text(text: &str, size: f32) -> f32 {
     let s = size.max(1.0);
     text.chars().map(|c| char_advance(c, s)).sum()
+}
+
+/// The width of one line in a given face (`Display` text is narrower or wider than `Ui`).
+pub fn measure_text_face(text: &str, size: f32, face: TextFace) -> f32 {
+    let s = size.max(1.0);
+    text.chars().map(|c| char_advance_for(c, s, face)).sum()
 }
 
 impl TextRaster {
@@ -268,9 +321,42 @@ fn coverage_quads(cov: &Coverage, x: f32, y: f32, color: [u8; 4], step: f32) -> 
     out
 }
 
+/// The letter whose ink box an engine-drawn symbol fills (a full square in the font).
+const SYMBOL_BOX: char = '■';
+
+/// A symbol the engine draws ([`crate::glyph_symbols`]) as a glyph's coverage: it fills the
+/// box of [`SYMBOL_BOX`] at this size, so it sits on the line like ◆ or ●.
+fn rasterize_symbol(ch: char, px: u32) -> Option<Coverage> {
+    let scaled = JP_FONT.as_scaled(px.max(1) as f32);
+    let bounds = scaled
+        .outline_glyph(scaled.scaled_glyph(SYMBOL_BOX))?
+        .px_bounds();
+    // The font's square leaves a margin a drawn symbol does not need: a little larger, so a
+    // skull is as big as the ◆ and ★ beside it.
+    const GROW: f32 = 1.2;
+    let (bw, bh) = (bounds.width() * GROW, bounds.height() * GROW);
+    let (cx, cy) = (
+        bounds.min.x + bounds.width() * 0.5,
+        bounds.min.y + bounds.height() * 0.5,
+    );
+    let w = bw.ceil().max(1.0) as u32;
+    let h = bh.ceil().max(1.0) as u32;
+    Some(Coverage {
+        dx: (cx - bw * 0.5).floor(),
+        dy: (cy - bh * 0.5).floor(),
+        w,
+        h,
+        pixels: crate::glyph_symbols::coverage(ch, w, h),
+    })
+}
+
 fn rasterize(ch: char, px: u32, face: TextFace) -> Option<Coverage> {
     let size = px.max(1) as f32;
-    let font = select_font_for(ch, face)?;
+    let Some(font) = select_font_for(ch, face) else {
+        return crate::glyph_symbols::has(ch)
+            .then(|| rasterize_symbol(ch, px))
+            .flatten();
+    };
     let scaled = font.as_scaled(size);
     let glyph = scaled.scaled_glyph(ch);
     let outline = scaled.outline_glyph(glyph)?;
@@ -514,6 +600,123 @@ mod tests {
         assert!(
             placed[1].x - placed[0].x + 0.2 >= em * 0.95,
             "diamonds overlap: {placed:?} em {em}"
+        );
+    }
+
+    /// Every glyph's ink lies inside its own cell: a tightened bracket, mark or narrow
+    /// kana is moved with its cell, so it never draws over the letter after it.
+    #[test]
+    fn the_ink_of_every_glyph_stays_in_its_cell() {
+        let text = "「」『』（）【】、。！？・：ー…っゃゅょッャュョりくしうい弾◆ABCgjy.,!?()1";
+        for size in [12.0f32, 16.0, 24.0, 40.0] {
+            for ch in text.chars() {
+                let font = select_font_for(ch, TextFace::Ui).unwrap();
+                let scaled = font.as_scaled(size);
+                let Some(outline) = scaled.outline_glyph(scaled.scaled_glyph(ch)) else {
+                    continue;
+                };
+                let b = outline.px_bounds();
+                let adv = char_advance_for(ch, size, TextFace::Ui);
+                let shift = char_shift_for(ch, size, TextFace::Ui);
+                // Latin letters may overhang their cell a little by design (j, y).
+                let slack = if ch.is_ascii() { size * 0.12 } else { 1.0 };
+                assert!(
+                    b.min.x + shift >= -slack && b.max.x + shift <= adv + slack,
+                    "'{ch}' at {size}: ink {:.1}..{:.1} in a cell of {adv:.1}",
+                    b.min.x + shift,
+                    b.max.x + shift
+                );
+            }
+        }
+        // The bracket is placed before the letter it opens, not on it.
+        let placed = layout(&TextQuad::new("「俺", 0.0, 0.0, 32.0, [255; 4]));
+        let font = select_font_for('「', TextFace::Ui).unwrap();
+        let scaled = font.as_scaled(32.0);
+        let ink_end = scaled
+            .outline_glyph(scaled.scaled_glyph('「'))
+            .unwrap()
+            .px_bounds()
+            .max
+            .x;
+        assert!(
+            placed[0].x + ink_end <= placed[1].x + 1.0,
+            "the bracket's ink ends at {} and the next letter starts at {}",
+            placed[0].x + ink_end,
+            placed[1].x
+        );
+    }
+
+    /// A symbol no font has is drawn by the engine: it has pixels, the width of a
+    /// full-width letter, and it counts as covered on every platform.
+    #[test]
+    fn engine_symbols_draw_like_letters() {
+        let mut r = raster();
+        for ch in crate::glyph_symbols::ALL.chars() {
+            let s = ch.to_string();
+            assert!(text_covered(&s) && text_covered_on_web(&s), "{ch}");
+            let qs = r.text_quads(&TextQuad::new(&s, 0.0, 0.0, 24.0, [255; 4]));
+            assert!(qs.len() > 20, "'{ch}' has {} pixels", qs.len());
+            let adv = char_advance_for(ch, 24.0, TextFace::Ui);
+            let full = char_advance_for('■', 24.0, TextFace::Ui);
+            assert!((adv - full).abs() < 0.01, "'{ch}' advances {adv}, ■ {full}");
+            // Inside its own cell.
+            for q in &qs {
+                assert!(q.x >= -1.0 && q.x <= adv + 1.0, "'{ch}' pixel at {}", q.x);
+            }
+        }
+        // A letter nobody has stays uncovered.
+        assert!(!text_covered_on_web("\u{10FFFD}"));
+    }
+
+    /// Every symbol a game writes (arrows, shapes, marks) can be drawn in the browser: it is
+    /// in a font or it is one the engine draws. Comments are not text on screen.
+    #[test]
+    fn every_symbol_in_the_games_can_be_drawn() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = Vec::new();
+        let mut dirs = vec![root.join("src")];
+        while let Some(d) = dirs.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    dirs.push(p);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    files.push((p, true));
+                }
+            }
+        }
+        for d in [root.join("../games"), root.join("tests/fixtures")] {
+            for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+                if e.path().extension().is_some_and(|x| x == "json") {
+                    files.push((e.path(), false));
+                }
+            }
+        }
+        let mut missing = std::collections::BTreeMap::new();
+        for (f, code) in &files {
+            let text = std::fs::read_to_string(f).unwrap_or_default();
+            for line in text.lines() {
+                let shown = if *code {
+                    line.split("//").next().unwrap_or("")
+                } else {
+                    line
+                };
+                for ch in shown.chars() {
+                    if (0x2000..=0x2BFF).contains(&(ch as u32))
+                        && !text_covered_on_web(&ch.to_string())
+                    {
+                        missing.entry(ch).or_insert_with(|| {
+                            f.file_name().unwrap().to_string_lossy().to_string()
+                        });
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "no font has these and the engine does not draw them (a blank on screen). Use \
+             another mark, run tools/subset_fonts.py if Zen Maru Gothic has it, or add it to \
+             glyph_symbols.rs: {missing:?}"
         );
     }
 

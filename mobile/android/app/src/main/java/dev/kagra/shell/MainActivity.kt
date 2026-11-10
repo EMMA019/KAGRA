@@ -177,7 +177,8 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
         packaged = KagraNative.loadGameFile(world.absolutePath)
         if (packaged) {
             KagraNative.setLang(Locale.getDefault().language)
-            audio = AudioBus(extracted)
+            // The game's own sounds (its `audio` block), loaded before the first cue.
+            audio = AudioBus(extracted).also { it.preload(KagraNative.audioFiles()) }
         }
         if (!packaged) {
             status.text = "$gameTitle\n\nnative load failed: ${KagraNative.lastError()}"
@@ -269,7 +270,7 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 val capturing = playtest?.onFrame() == true
                 if (packaged) {
                     try {
-                        audio?.apply(KagraNative.takeAudioCues())
+                        audio?.apply(KagraNative.takeAudioPlan())
                     } catch (_: Exception) {
                     }
                 }
@@ -400,11 +401,13 @@ class MainActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onPause() {
         super.onPause()
         if (KagraNative.available) KagraNative.pause()
+        audio?.pause()
     }
 
     override fun onResume() {
         super.onResume()
         if (KagraNative.available) KagraNative.resume()
+        audio?.resume()
     }
 
     override fun onDestroy() {

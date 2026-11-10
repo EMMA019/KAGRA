@@ -4,17 +4,21 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.SoundPool
 import java.io.File
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Rust のミキサーが出したキューを鳴らす。
+ * Plays what the Rust side decided for this frame ([KagraNative.takeAudioPlan]).
  *
- * 効果音は SoundPool、BGM はループする MediaPlayer。音量が 0 かミュート、
- * ファイルが無い、デバイスが拒否したときは何もしない。
+ * Which file a cue plays and how loud is the game's `audio` block, worked out in Rust
+ * (`kagra-shared/src/audio_plan.rs`, the same block the browser page reads). This class
+ * only loads files and plays them: one-shots through SoundPool, the looping music through
+ * MediaPlayer. A missing file, a clip still loading or a device that refuses is silence,
+ * never a crash.
  */
 class AudioBus(private val root: File) {
     private val pool: SoundPool = SoundPool.Builder()
-        .setMaxStreams(8)
+        .setMaxStreams(10)
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_GAME)
@@ -22,84 +26,187 @@ class AudioBus(private val root: File) {
                 .build()
         )
         .build()
-    private val clips = HashMap<String, Int>()
-    private var player: MediaPlayer? = null
-    private var bgmName: String = ""
-    private var ready = false
 
-    fun apply(json: String) {
-        ensure()
-        val obj = try {
-            JSONObject(json)
+    /** Path under the asset root → SoundPool id (0: no such file, or it would not load). */
+    private val clips = HashMap<String, Int>()
+
+    /** Ids SoundPool has finished decoding. Playing one before that does nothing. */
+    private val loaded = HashSet<Int>()
+
+    private var player: MediaPlayer? = null
+    private var playerReady = false
+    private var bgmFile = ""
+    private var bgmVolume = 0f
+
+    /** Music files that would not play: not tried again every frame. */
+    private val badMusic = HashSet<String>()
+
+    init {
+        pool.setOnLoadCompleteListener { _, id, status ->
+            if (status == 0) synchronized(loaded) { loaded.add(id) }
+        }
+    }
+
+    /** Load the game's one-shot files ([KagraNative.audioFiles], a JSON array of paths). */
+    fun preload(filesJson: String) {
+        val files = try {
+            JSONArray(filesJson)
         } catch (_: Exception) {
             return
         }
-        val muted = obj.optBoolean("muted", false)
-        val master = obj.optDouble("master", 0.8).toFloat().coerceIn(0f, 1f)
-        val bgm = obj.optDouble("bgm", 0.7).toFloat().coerceIn(0f, 1f)
-        val sfx = obj.optDouble("sfx", 1.0).toFloat().coerceIn(0f, 1f)
-        val name = obj.optString("bgm_name", "")
-        val gain = obj.optDouble("bgm_gain", 0.0).toFloat().coerceIn(0f, 1f)
-        val bgmVol = if (muted) 0f else master * bgm * gain
-        syncBgm(name, bgmVol)
-        if (muted || master <= 0f || sfx <= 0f) return
-        val shots = obj.optJSONArray("oneshots") ?: return
-        val vol = (master * sfx).coerceIn(0f, 1f)
+        for (i in 0 until files.length()) clip(files.optString(i, ""))
+    }
+
+    /** Play one frame's plan: start its one-shots, hold the music at its volume. */
+    fun apply(planJson: String) {
+        val plan = try {
+            JSONObject(planJson)
+        } catch (_: Exception) {
+            return
+        }
+        val bgm = plan.optJSONObject("bgm")
+        if (bgm == null) {
+            syncBgm("", 0f)
+        } else {
+            syncBgm(bgm.optString("file", ""), unit(bgm.optDouble("volume", 0.0)))
+        }
+        val shots = plan.optJSONArray("shots") ?: return
         for (i in 0 until shots.length()) {
-            val id = clips[shots.optString(i)] ?: continue
-            if (id != 0) pool.play(id, vol, vol, 1, 0, 1f)
+            val shot = shots.optJSONObject(i) ?: continue
+            val id = clip(shot.optString("file", ""))
+            if (id == 0 || !synchronized(loaded) { loaded.contains(id) }) continue
+            val volume = unit(shot.optDouble("volume", 1.0))
+            if (volume <= 0f) continue
+            val rate = shot.optDouble("rate", 1.0).toFloat().coerceIn(0.5f, 2f)
+            try {
+                pool.play(id, volume, volume, 1, 0, rate)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** The app left the screen: no music in the background. The next [apply] resumes it. */
+    fun pause() {
+        try {
+            if (playerReady && player?.isPlaying == true) player?.pause()
+            pool.autoPause()
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Back on screen. */
+    fun resume() {
+        try {
+            pool.autoResume()
+        } catch (_: Exception) {
         }
     }
 
     fun release() {
+        dropPlayer()
+        try {
+            pool.release()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun unit(v: Double): Float = if (v.isNaN()) 0f else v.toFloat().coerceIn(0f, 1f)
+
+    /** The file under the asset root, or null for a path that leaves it or is not there. */
+    private fun resolve(rel: String): File? {
+        if (rel.isEmpty() || rel.startsWith("/") || rel.contains("..") || rel.contains("\\")) return null
+        val file = File(root, rel)
+        return if (file.isFile) file else null
+    }
+
+    private fun clip(rel: String): Int {
+        clips[rel]?.let { return it }
+        val file = resolve(rel)
+        val id = if (file == null) {
+            0
+        } else {
+            try {
+                pool.load(file.absolutePath, 1)
+            } catch (_: Exception) {
+                0
+            }
+        }
+        clips[rel] = id
+        return id
+    }
+
+    private fun syncBgm(rel: String, volume: Float) {
+        if (rel.isEmpty() || volume <= 0.005f) {
+            try {
+                if (playerReady && player?.isPlaying == true) player?.pause()
+            } catch (_: Exception) {
+                dropPlayer()
+            }
+            return
+        }
+        bgmVolume = volume
+        if (bgmFile == rel && player != null) {
+            if (!playerReady) return
+            try {
+                player?.setVolume(volume, volume)
+                if (player?.isPlaying != true) player?.start()
+            } catch (_: Exception) {
+                dropPlayer()
+            }
+            return
+        }
+        dropPlayer()
+        if (badMusic.contains(rel)) return
+        val file = resolve(rel)
+        if (file == null) {
+            badMusic.add(rel)
+            return
+        }
+        try {
+            val p = MediaPlayer()
+            p.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            p.setDataSource(file.absolutePath)
+            p.isLooping = true
+            p.setOnPreparedListener { ready ->
+                // Decoded off the frame loop: no hitch when the music first starts.
+                if (ready === player) {
+                    playerReady = true
+                    try {
+                        ready.setVolume(bgmVolume, bgmVolume)
+                        ready.start()
+                    } catch (_: Exception) {
+                        dropPlayer()
+                    }
+                }
+            }
+            p.setOnErrorListener { broken, _, _ ->
+                if (broken === player) {
+                    badMusic.add(rel)
+                    dropPlayer()
+                }
+                true
+            }
+            player = p
+            bgmFile = rel
+            p.prepareAsync()
+        } catch (_: Exception) {
+            badMusic.add(rel)
+            dropPlayer()
+        }
+    }
+
+    private fun dropPlayer() {
         try {
             player?.release()
         } catch (_: Exception) {
         }
         player = null
-        bgmName = ""
-        pool.release()
-    }
-
-    private fun ensure() {
-        if (ready) return
-        ready = true
-        val dir = File(root, "assets/audio")
-        for (name in listOf("jump", "fire", "card", "bgm")) {
-            val file = File(dir, "$name.wav")
-            if (!file.isFile) continue
-            if (name == "bgm") continue
-            val id = pool.load(file.absolutePath, 1)
-            if (id != 0) clips[name] = id
-        }
-    }
-
-    private fun syncBgm(name: String, volume: Float) {
-        if (name.isEmpty() || volume <= 0.01f) {
-            if (player?.isPlaying == true) player?.pause()
-            return
-        }
-        val file = File(root, "assets/audio/$name.wav")
-        if (!file.isFile) return
-        try {
-            if (bgmName != name || player == null) {
-                player?.release()
-                player = MediaPlayer().apply {
-                    setDataSource(file.absolutePath)
-                    isLooping = true
-                    setVolume(volume, volume)
-                    prepare()
-                    start()
-                }
-                bgmName = name
-            } else {
-                player?.setVolume(volume, volume)
-                if (player?.isPlaying != true) player?.start()
-            }
-        } catch (_: Exception) {
-            player?.release()
-            player = null
-            bgmName = ""
-        }
+        playerReady = false
+        bgmFile = ""
     }
 }

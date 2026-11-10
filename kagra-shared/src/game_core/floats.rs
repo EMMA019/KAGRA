@@ -104,6 +104,18 @@ impl Floats {
             };
             let grow = Ease::OutBack.apply((age * 5.0).min(1.0));
             let size = st.size * s * (1.0 - st.pop + st.pop * grow);
+            // A hit at the edge of the screen: the word stays whole, pushed in from the edge
+            // (a point all the way off the screen shows nothing).
+            if sx < 0.0 || sx > w {
+                continue;
+            }
+            let half = crate::font::measure_text_face(&f.text, size, TextFace::Display) * 0.5;
+            let pad = 2.0 * s;
+            let sx = if half * 2.0 + pad * 2.0 >= w {
+                w * 0.5
+            } else {
+                sx.clamp(half + pad, w - half - pad)
+            };
             // Full until the last third, then fade.
             let a = (f.life / (st.secs / 3.0)).clamp(0.0, 1.0);
             let c = f.color;
@@ -125,6 +137,52 @@ impl Floats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A popup at the screen's edge is pushed in so that the whole word shows.
+    #[test]
+    fn a_popup_at_the_edge_stays_whole() {
+        let (w, h) = (390.0, 844.0);
+        let view = View::frame(
+            [0.0; 3],
+            [0.0, 1.0, 1.0],
+            50.0,
+            &View::ground_box(-2.0, 2.0, -2.0, 2.0, 0.0),
+            w / h,
+        );
+        // Find world points that land near the left and right edges.
+        let mut f = Floats::default();
+        for k in 0..41 {
+            f.push(
+                [-10.0 + k as f32 * 0.5, 0.5, 0.0],
+                "CRITICAL!",
+                [255; 4],
+                0.0,
+            );
+        }
+        f.tick(0.05);
+        let mut list = DrawList::default();
+        f.draw(&mut list, &view, w, h, 1.0);
+        assert!(
+            list.texts.len() >= 3,
+            "{} popups on screen",
+            list.texts.len()
+        );
+        let mut pushed = 0;
+        for t in &list.texts {
+            let half = crate::font::measure_text_face(&t.text, t.size, TextFace::Display) * 0.5;
+            assert!(
+                t.x - half >= 0.0 && t.x + half <= w,
+                "'{}' spans {:.0}..{:.0}",
+                t.text,
+                t.x - half,
+                t.x + half
+            );
+            if (t.x - half) < 3.0 || (t.x + half) > w - 3.0 {
+                pushed += 1;
+            }
+        }
+        assert!(pushed >= 1, "some popup was at an edge and was pushed in");
+    }
 
     #[test]
     fn popups_wait_rise_fade_and_go() {

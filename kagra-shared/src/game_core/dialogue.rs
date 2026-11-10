@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::hud_kit::{pill_button, round_panel, wrap_text};
+use crate::hud_kit::{draw_lines, pill_button, round_panel};
 use crate::scene::{DrawList, Quad, TextAlign, TextQuad};
 
 /// Someone who speaks.
@@ -477,20 +477,23 @@ impl Talk {
             } else {
                 &l.text
             };
-            let shown: String = if self.beat == Beat::Typing {
-                text.chars().take(self.typed as usize).collect()
+            // Break the whole line first, then type it out: no word jumps to the next
+            // line as it grows.
+            let lines = crate::text::Wrap::new(17.0 * s, pw - 36.0 * s)
+                .max_lines(4)
+                .lines(text);
+            let shown = if self.beat == Beat::Typing {
+                crate::text::reveal(&lines, self.typed as usize)
             } else {
-                text.clone()
+                lines
             };
-            wrap_text(
+            draw_lines(
                 list,
                 &shown,
                 px + 18.0 * s,
                 py + 24.0 * s,
-                pw - 36.0 * s,
                 17.0 * s,
                 [235, 238, 250, 255],
-                ja,
             );
             if self.beat == Beat::Waiting && (self.clock * 2.5).sin() > -0.3 {
                 arrow_down(list, px + pw - 22.0 * s, py + ph - 20.0 * s, 12.0 * s);

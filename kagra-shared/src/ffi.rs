@@ -709,6 +709,48 @@ pub unsafe extern "C" fn kagra_shared_take_audio_cues(buf: *mut c_char, buflen: 
     write_cstr(&json, buf, buflen)
 }
 
+/// The loaded game's one-shot sound files as a JSON array of paths under the asset root.
+/// A shell loads them once, before the first cue. Returns the bytes needed (with the NUL).
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`buf` は NULL か `buflen` バイト以上の領域。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_audio_files(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    match session(ptr) {
+        Some(s) => write_cstr(&s.audio_files_json(), buf, buflen),
+        None => -1,
+    }
+}
+
+/// What to play this frame, as JSON: `{"bgm": {"file", "volume"} | null, "shots":
+/// [{"file", "volume", "rate"}]}` (`audio_plan`). The game's `audio` block and the
+/// player's volume are already applied; the shell only plays it. Takes the queued cues,
+/// like `kagra_shared_take_audio_cues` (use one or the other). Returns the bytes needed.
+///
+/// # Safety
+/// `ptr` は生存中のハンドルか NULL。`buf` は NULL か `buflen` バイト以上の領域。
+#[no_mangle]
+pub unsafe extern "C" fn kagra_shared_take_audio_plan(
+    ptr: *mut SharedSession,
+    buf: *mut c_char,
+    buflen: c_uint,
+) -> c_int {
+    let Some(s) = session(ptr) else { return -1 };
+    let cues = crate::mixer::cues_json();
+    let json = s.audio_plan_json(&cues);
+    let need = json.len() + 1;
+    if buf.is_null() || (buflen as usize) < need {
+        // Sizing call: keep the cues for the call that copies the plan out.
+        crate::mixer::hold_cues(cues);
+        return need as c_int;
+    }
+    write_cstr(&json, buf, buflen)
+}
+
 /// Debug / preview playtest overlay. `on` is 0/1. Release shells leave this off.
 ///
 /// # Safety
@@ -994,4 +1036,54 @@ pub unsafe extern "C" fn kagra_shared_playtest_packet_json(
     };
     let json = s.playtest_packet_json();
     write_cstr(&json, buf, buflen)
+}
+
+#[cfg(test)]
+mod audio_plan_tests {
+    use super::*;
+
+    /// A shell sizes the buffer with a null pointer, then reads: the sizing call must not
+    /// lose the cues, and the plan names the game's own files.
+    #[test]
+    fn the_plan_survives_the_sizing_call() {
+        crate::mixer::reset_mixer();
+        let dump = crate::diamond_days::DiamondDays::new(Default::default())
+            .world_value()
+            .to_string();
+        let json = CString::new(dump).unwrap();
+        unsafe {
+            let s = kagra_shared_create();
+            assert_eq!(kagra_shared_load_game(s, json.as_ptr()), 0);
+            let need = kagra_shared_audio_files(s, std::ptr::null_mut(), 0);
+            let mut buf = vec![0 as c_char; need as usize];
+            kagra_shared_audio_files(s, buf.as_mut_ptr(), buf.len() as c_uint);
+            let files = CStr::from_ptr(buf.as_ptr()).to_str().unwrap().to_string();
+            assert!(files.starts_with('[') && files.contains(".wav"), "{files}");
+
+            let _ = crate::mixer::cues_json();
+            crate::mixer::cue_sfx("hit");
+            let need = kagra_shared_take_audio_plan(s, std::ptr::null_mut(), 0);
+            assert!(need > 1);
+            let mut buf = vec![0 as c_char; need as usize];
+            let wrote = kagra_shared_take_audio_plan(s, buf.as_mut_ptr(), buf.len() as c_uint);
+            assert_eq!(wrote, need);
+            let plan: serde_json::Value =
+                serde_json::from_str(CStr::from_ptr(buf.as_ptr()).to_str().unwrap()).unwrap();
+            assert_eq!(plan["shots"].as_array().unwrap().len(), 1, "{plan}");
+            assert!(files.contains(plan["shots"][0]["file"].as_str().unwrap()));
+            // Taken: the next frame has no new shot.
+            let need = kagra_shared_take_audio_plan(s, std::ptr::null_mut(), 0);
+            let mut buf = vec![0 as c_char; need as usize];
+            kagra_shared_take_audio_plan(s, buf.as_mut_ptr(), buf.len() as c_uint);
+            let next: serde_json::Value =
+                serde_json::from_str(CStr::from_ptr(buf.as_ptr()).to_str().unwrap()).unwrap();
+            assert_eq!(next["shots"].as_array().unwrap().len(), 0);
+            assert_eq!(
+                kagra_shared_take_audio_plan(std::ptr::null_mut(), std::ptr::null_mut(), 0),
+                -1
+            );
+            kagra_shared_destroy(s);
+        }
+        crate::mixer::reset_mixer();
+    }
 }
