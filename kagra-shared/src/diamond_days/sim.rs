@@ -216,6 +216,13 @@ impl Side {
             .enumerate()
             .filter(|(_, p)| p.pitcher() && p.can_play())
             .collect();
+        // No pitcher can play: whoever stands on the mound pitches (a fielder: weak, but
+        // never no one).
+        if arms.is_empty() {
+            if let Some(i) = mound {
+                arms.push((i, &t.players[i]));
+            }
+        }
         arms.sort_by(|a, b| {
             let first = |i: usize| if Some(i) == mound { 1.0 } else { 0.0 };
             (first(b.0) * 1000.0 + b.1.pitch_rating())
@@ -2426,6 +2433,27 @@ mod tests {
         if let Some(e) = g.log.iter().find(|p| p.kind == PlayKind::Error) {
             assert!(e.is_at_bat() && e.faced_batter());
             assert_eq!(e.pitches().last(), Some(&Pitch::InPlay));
+        }
+    }
+
+    #[test]
+    fn a_side_with_no_pitcher_who_can_play_puts_a_fielder_on_the_mound() {
+        for seed in 0..30 {
+            let mut rng = Rng::new(seed);
+            let mut t = Team::founding(&mut rng);
+            for p in t.players.iter_mut().filter(|p| p.pitcher()) {
+                p.hurt = 2;
+            }
+            let mound = t.mound().expect("a fielder takes the ball");
+            assert!(!t.players[mound].pitcher());
+            let side = Side::from_team(&t, "Us", "Us");
+            assert_eq!(side.bats.len(), 9);
+            assert_eq!(side.arms.len(), 1);
+            assert_eq!(side.arms[0].name, t.players[mound].family);
+            let other = Side::rival(&mut rng, "X", "X", 50.0);
+            let mut g = Game::new(side, other, seed % 2 == 0, seed);
+            g.finish();
+            assert!(g.over, "seed {seed}");
         }
     }
 

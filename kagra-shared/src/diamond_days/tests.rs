@@ -3227,3 +3227,36 @@ fn player_traits_to_png() {
             .unwrap();
     }
 }
+
+/// No pitcher can take the ball: the last ones were third-years and retired after their
+/// final summer, or every pitcher is hurt. A fielder goes to the mound and the game is
+/// played (it used to stop the game with an empty side).
+#[test]
+fn a_club_with_no_pitcher_who_can_play_still_plays() {
+    for hurt in [false, true] {
+        let mut g = started();
+        tap(&mut g, 195.0, 400.0);
+        if hurt {
+            for p in g.s.team.players.iter_mut().filter(|p| p.pitcher()) {
+                p.hurt = 3;
+            }
+        } else {
+            let (gone, stay): (Vec<_>, Vec<_>) = std::mem::take(&mut g.s.team.players)
+                .into_iter()
+                .partition(|p| p.pitcher());
+            g.s.team.players = stay;
+            g.s.seniors = gone;
+        }
+        assert!(g.s.team.ace().is_none());
+        let mound = g.s.team.mound().expect("someone takes the ball");
+        let nine = g.s.team.resolved();
+        assert_eq!(nine.len(), 9, "nine still take the field");
+        assert!(nine.contains(&(mound, team::Pos::P)), "he is on the mound");
+        g.prepare_game(Fixture::Practice);
+        press(&mut g, hud::Btn::PlayBall);
+        let before = g.s.wins + g.s.losses;
+        skip_whole_game(&mut g);
+        assert_eq!(g.mode, Mode::MatchEnd, "hurt: {hurt}");
+        assert_eq!(g.s.wins + g.s.losses, before + 1);
+    }
+}
