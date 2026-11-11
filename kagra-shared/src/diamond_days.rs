@@ -229,6 +229,9 @@ struct Note {
     title: String,
     title_ja: String,
     lines: Vec<(String, String)>,
+    /// The extra-scout tier this card reports, when it tells of a pull: the
+    /// card wears the tier's colour. Presentation only.
+    rarity: Option<team::Rarity>,
     /// Players shown with their faces (family, given): who graduates, who joins.
     faces: Vec<(String, String)>,
     /// A line under each face (a destination, both languages).
@@ -652,6 +655,8 @@ impl DiamondDays {
         if self.mode != Mode::Gacha || self.gacha_left() == 0 {
             return;
         }
+        // The pull itself clicks; who walks in gets his own fanfare below.
+        crate::mixer::cue_sfx("card");
         if self.s.gacha_free > 0 {
             self.s.gacha_free -= 1;
         } else {
@@ -745,14 +750,16 @@ impl DiamondDays {
         }
         self.s.team.players.push(p);
         self.s.team.unique_names();
-        crate::mixer::cue_sfx(if rarity == team::Rarity::Legend {
-            "win"
-        } else {
-            "event"
+        crate::mixer::cue_sfx(match rarity {
+            team::Rarity::Legend => "win",
+            team::Rarity::Star => "homer",
+            team::Rarity::Promising => "train",
+            _ => "event",
         });
         self.note("Extra scout", "追加スカウト", lines);
         if let Some(n) = self.notes.last_mut() {
             n.faces = vec![(fam, given)];
+            n.rarity = Some(rarity);
         }
     }
 
@@ -849,6 +856,7 @@ impl DiamondDays {
             title: title.into(),
             title_ja: title_ja.into(),
             lines,
+            rarity: None,
             faces: Vec::new(),
             captions: Vec::new(),
             roles: Vec::new(),
