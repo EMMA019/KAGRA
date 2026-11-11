@@ -9,6 +9,8 @@
 //! - `hud.rs`, `doc.rs`: the HUD and the 3D picture.
 
 mod art;
+#[cfg(test)]
+mod autoplay;
 mod board;
 mod doc;
 mod hud;

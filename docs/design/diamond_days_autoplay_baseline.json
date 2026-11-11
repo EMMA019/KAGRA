@@ -1,0 +1,2737 @@
+{
+  "meta": {
+    "policy": "first card, games skipped, orders left to the team, points left to the monthly automatic growth, no scouting",
+    "ring": [
+      "Rest",
+      "Batting",
+      "Fielding",
+      "Event",
+      "Running",
+      "Pitching",
+      "Game",
+      "Strength",
+      "Spirit",
+      "Batting",
+      "Event",
+      "Rest",
+      "Pitching",
+      "Fielding",
+      "Scout",
+      "Strength",
+      "Film",
+      "Game",
+      "Spirit",
+      "Running",
+      "Event",
+      "Grounds"
+    ],
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "years": 10
+  },
+  "per_seed": [
+    {
+      "graduates": 47,
+      "left_early": 0,
+      "reputation_start": 5.0,
+      "seed": 1,
+      "years": [
+        {
+          "best_tier": 1,
+          "errors_them": 10,
+          "errors_us": 6,
+          "games": {
+            "Autumn": 3,
+            "Practice": 3,
+            "Spring": 1,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 1,
+            "Event": 3,
+            "Fielding": 5,
+            "Film": 2,
+            "Game": 3,
+            "Game (winter)": 2,
+            "Grounds": 1,
+            "Pitching": 2,
+            "Rest": 3,
+            "Running": 6,
+            "Scout": 1,
+            "Spirit": 1,
+            "Strength": 6
+          },
+          "plate_appearances": 710,
+          "pros": 0,
+          "reputation_end": 13.5,
+          "runs_them": 22,
+          "runs_us": 46,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 3,
+            "Summer": 1
+          },
+          "year": 1
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 5,
+            "Fielding": 3,
+            "Film": 4,
+            "Game": 2,
+            "Game (winter)": 2,
+            "Pitching": 3,
+            "Rest": 5,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 4
+          },
+          "plate_appearances": 425,
+          "pros": 1,
+          "reputation_end": 19.5,
+          "runs_them": 14,
+          "runs_us": 23,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 2,
+            "Summer": 1
+          },
+          "year": 2
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 4,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 1,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 7,
+            "Fielding": 8,
+            "Film": 2,
+            "Game": 1,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 4,
+            "Strength": 2
+          },
+          "plate_appearances": 379,
+          "pros": 2,
+          "reputation_end": 24.5,
+          "runs_them": 17,
+          "runs_us": 14,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1
+          },
+          "year": 3
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 0,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Spring": 1,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 5,
+            "Fielding": 6,
+            "Film": 1,
+            "Grounds": 1,
+            "Pitching": 1,
+            "Rest": 2,
+            "Running": 6,
+            "Scout": 4,
+            "Spirit": 7,
+            "Strength": 1
+          },
+          "plate_appearances": 567,
+          "pros": 1,
+          "reputation_end": 39.0,
+          "runs_them": 17,
+          "runs_us": 22,
+          "wins": {
+            "Autumn": 2,
+            "Summer": 3
+          },
+          "year": 4
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 2,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 7,
+            "Fielding": 2,
+            "Film": 4,
+            "Game": 2,
+            "Game (winter)": 2,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 4,
+            "Running": 1,
+            "Scout": 2,
+            "Spirit": 3,
+            "Strength": 2
+          },
+          "plate_appearances": 602,
+          "pros": 3,
+          "reputation_end": 50.0,
+          "runs_them": 23,
+          "runs_us": 55,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "year": 5
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 7,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 3,
+            "Film": 4,
+            "Game": 3,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 7,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 5
+          },
+          "plate_appearances": 1043,
+          "pros": 2,
+          "reputation_end": 82.0,
+          "runs_them": 10,
+          "runs_us": 120,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 6
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 3,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 5,
+            "Event": 2,
+            "Fielding": 1,
+            "Film": 1,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 5,
+            "Running": 2,
+            "Scout": 2,
+            "Spirit": 4,
+            "Strength": 5
+          },
+          "plate_appearances": 1036,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 12,
+          "runs_us": 150,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 7
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 2,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 3,
+            "National": 4,
+            "Practice": 1,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 7,
+            "Fielding": 2,
+            "Film": 2,
+            "Game": 1,
+            "Game (winter)": 1,
+            "Grounds": 3,
+            "Pitching": 4,
+            "Rest": 4,
+            "Running": 3,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 2
+          },
+          "plate_appearances": 945,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 16,
+          "runs_us": 104,
+          "wins": {
+            "Autumn": 2,
+            "National": 3,
+            "Practice": 1,
+            "Summer": 5
+          },
+          "year": 8
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 1,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "National": 3,
+            "Practice": 4,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 2,
+            "Fielding": 2,
+            "Film": 2,
+            "Game": 4,
+            "Game (winter)": 1,
+            "Pitching": 7,
+            "Rest": 4,
+            "Running": 3,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 2
+          },
+          "plate_appearances": 1490,
+          "pros": 8,
+          "reputation_end": 100.0,
+          "runs_them": 14,
+          "runs_us": 217,
+          "wins": {
+            "Autumn": 4,
+            "National": 2,
+            "Practice": 4,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 9
+        },
+        {
+          "best_tier": 0,
+          "errors_them": 3,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 3,
+            "National": 5,
+            "Practice": 2,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 1,
+            "Fielding": 6,
+            "Film": 2,
+            "Game": 2,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 8,
+            "Spirit": 2,
+            "Strength": 3
+          },
+          "plate_appearances": 1109,
+          "pros": 9,
+          "reputation_end": 100.0,
+          "runs_them": 19,
+          "runs_us": 112,
+          "wins": {
+            "Autumn": 2,
+            "National": 5,
+            "Practice": 2,
+            "Summer": 5
+          },
+          "year": 10
+        }
+      ]
+    },
+    {
+      "graduates": 44,
+      "left_early": 0,
+      "reputation_start": 5.0,
+      "seed": 2,
+      "years": [
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 5,
+          "games": {
+            "Autumn": 1,
+            "Practice": 4,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 3,
+            "Fielding": 2,
+            "Film": 1,
+            "Game": 4,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 3,
+            "Rest": 5,
+            "Running": 5,
+            "Scout": 3,
+            "Spirit": 4,
+            "Strength": 4
+          },
+          "plate_appearances": 450,
+          "pros": 0,
+          "reputation_end": 7.5,
+          "runs_them": 18,
+          "runs_us": 22,
+          "wins": {
+            "Practice": 3
+          },
+          "year": 1
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 4,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 3,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 6,
+            "Fielding": 3,
+            "Film": 2,
+            "Game": 3,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 3,
+            "Rest": 4,
+            "Running": 2,
+            "Scout": 2,
+            "Spirit": 3,
+            "Strength": 4
+          },
+          "plate_appearances": 540,
+          "pros": 0,
+          "reputation_end": 14.0,
+          "runs_them": 25,
+          "runs_us": 29,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1
+          },
+          "year": 2
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 1,
+          "errors_us": 4,
+          "games": {
+            "Autumn": 2,
+            "Practice": 3,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 6,
+            "Fielding": 3,
+            "Film": 1,
+            "Game": 3,
+            "Game (winter)": 3,
+            "Grounds": 2,
+            "Pitching": 3,
+            "Rest": 5,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 1,
+            "Strength": 6
+          },
+          "plate_appearances": 551,
+          "pros": 0,
+          "reputation_end": 20.0,
+          "runs_them": 31,
+          "runs_us": 33,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 1,
+            "Summer": 1
+          },
+          "year": 3
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 3,
+          "errors_us": 3,
+          "games": {
+            "Autumn": 3,
+            "Practice": 1,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 5,
+            "Fielding": 5,
+            "Film": 2,
+            "Game": 1,
+            "Game (winter)": 2,
+            "Pitching": 3,
+            "Rest": 3,
+            "Running": 4,
+            "Scout": 1,
+            "Spirit": 4,
+            "Strength": 6
+          },
+          "plate_appearances": 657,
+          "pros": 5,
+          "reputation_end": 36.0,
+          "runs_them": 9,
+          "runs_us": 41,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1,
+            "Summer": 4
+          },
+          "year": 4
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 7,
+            "Fielding": 5,
+            "Film": 2,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 2,
+            "Running": 3,
+            "Scout": 4,
+            "Spirit": 3,
+            "Strength": 1
+          },
+          "plate_appearances": 456,
+          "pros": 3,
+          "reputation_end": 43.0,
+          "runs_them": 10,
+          "runs_us": 37,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 2,
+            "Summer": 1
+          },
+          "year": 5
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 2,
+            "Practice": 1,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 6,
+            "Event": 5,
+            "Fielding": 4,
+            "Film": 2,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 4,
+            "Pitching": 2,
+            "Rest": 2,
+            "Running": 2,
+            "Scout": 1,
+            "Spirit": 4,
+            "Strength": 5
+          },
+          "plate_appearances": 475,
+          "pros": 2,
+          "reputation_end": 52.5,
+          "runs_them": 7,
+          "runs_us": 41,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 1,
+            "Summer": 2
+          },
+          "year": 6
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 4,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 5,
+            "Fielding": 3,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 5,
+            "Rest": 7,
+            "Running": 4,
+            "Spirit": 2,
+            "Strength": 4
+          },
+          "plate_appearances": 1064,
+          "pros": 6,
+          "reputation_end": 81.5,
+          "runs_them": 23,
+          "runs_us": 102,
+          "wins": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "year": 7
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 9,
+            "Fielding": 4,
+            "Film": 2,
+            "Game (winter)": 1,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 5,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 2
+          },
+          "plate_appearances": 510,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 18,
+          "runs_us": 36,
+          "wins": {
+            "Autumn": 2,
+            "Summer": 3
+          },
+          "year": 8
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 9,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "National": 2,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 2,
+            "Fielding": 6,
+            "Film": 5,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 2,
+            "Rest": 4,
+            "Running": 1,
+            "Spirit": 4,
+            "Strength": 3
+          },
+          "plate_appearances": 1297,
+          "pros": 6,
+          "reputation_end": 100.0,
+          "runs_them": 23,
+          "runs_us": 182,
+          "wins": {
+            "Autumn": 4,
+            "National": 1,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 9
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 3,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 3,
+            "National": 4,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 2,
+            "Fielding": 4,
+            "Film": 2,
+            "Game (winter)": 1,
+            "Grounds": 3,
+            "Pitching": 3,
+            "Rest": 4,
+            "Running": 6,
+            "Scout": 1,
+            "Spirit": 2,
+            "Strength": 4
+          },
+          "plate_appearances": 1140,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 15,
+          "runs_us": 141,
+          "wins": {
+            "Autumn": 2,
+            "National": 3,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 10
+        }
+      ]
+    },
+    {
+      "graduates": 53,
+      "left_early": 0,
+      "reputation_start": 5.0,
+      "seed": 3,
+      "years": [
+        {
+          "best_tier": 1,
+          "errors_them": 1,
+          "errors_us": 6,
+          "games": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Spring": 1,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 4,
+            "Fielding": 2,
+            "Film": 3,
+            "Game": 2,
+            "Grounds": 2,
+            "Pitching": 5,
+            "Rest": 4,
+            "Running": 1,
+            "Scout": 3,
+            "Spirit": 3,
+            "Strength": 4
+          },
+          "plate_appearances": 711,
+          "pros": 0,
+          "reputation_end": 16.0,
+          "runs_them": 31,
+          "runs_us": 37,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "year": 1
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 0,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 4,
+            "Fielding": 2,
+            "Film": 4,
+            "Game": 3,
+            "Game (winter)": 2,
+            "Grounds": 2,
+            "Pitching": 3,
+            "Rest": 3,
+            "Running": 6,
+            "Scout": 1,
+            "Spirit": 5,
+            "Strength": 1
+          },
+          "plate_appearances": 450,
+          "pros": 0,
+          "reputation_end": 23.5,
+          "runs_them": 18,
+          "runs_us": 19,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 1,
+            "Summer": 1
+          },
+          "year": 2
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 3,
+          "errors_us": 8,
+          "games": {
+            "Autumn": 1,
+            "Practice": 5,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 7,
+            "Fielding": 5,
+            "Film": 1,
+            "Game": 5,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 2,
+            "Rest": 5,
+            "Running": 2,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 2
+          },
+          "plate_appearances": 684,
+          "pros": 1,
+          "reputation_end": 36.0,
+          "runs_them": 19,
+          "runs_us": 46,
+          "wins": {
+            "Practice": 5,
+            "Summer": 2
+          },
+          "year": 3
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 6,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 5,
+            "Fielding": 4,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 5,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 3
+          },
+          "plate_appearances": 1007,
+          "pros": 3,
+          "reputation_end": 63.5,
+          "runs_them": 25,
+          "runs_us": 88,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "year": 4
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 2,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Spring": 2,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 4,
+            "Fielding": 3,
+            "Game": 2,
+            "Game (winter)": 2,
+            "Grounds": 2,
+            "Pitching": 3,
+            "Rest": 5,
+            "Running": 2,
+            "Scout": 4,
+            "Spirit": 5,
+            "Strength": 2
+          },
+          "plate_appearances": 863,
+          "pros": 3,
+          "reputation_end": 80.5,
+          "runs_them": 44,
+          "runs_us": 91,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Spring": 1,
+            "Summer": 3
+          },
+          "year": 5
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 6,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 4,
+            "Fielding": 4,
+            "Film": 3,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 3,
+            "Pitching": 2,
+            "Rest": 3,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 2,
+            "Strength": 6
+          },
+          "plate_appearances": 949,
+          "pros": 6,
+          "reputation_end": 100.0,
+          "runs_them": 4,
+          "runs_us": 102,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 6
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 5,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 4,
+            "National": 3,
+            "Practice": 1,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 3,
+            "Fielding": 2,
+            "Film": 2,
+            "Game": 1,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 5,
+            "Rest": 4,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 3
+          },
+          "plate_appearances": 1213,
+          "pros": 8,
+          "reputation_end": 100.0,
+          "runs_them": 18,
+          "runs_us": 158,
+          "wins": {
+            "Autumn": 4,
+            "National": 2,
+            "Practice": 1,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 7
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 5,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 4,
+            "National": 1,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 5,
+            "Event": 5,
+            "Fielding": 2,
+            "Film": 1,
+            "Game": 2,
+            "Game (winter)": 3,
+            "Grounds": 1,
+            "Pitching": 4,
+            "Rest": 2,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 4,
+            "Strength": 2
+          },
+          "plate_appearances": 1177,
+          "pros": 9,
+          "reputation_end": 100.0,
+          "runs_them": 7,
+          "runs_us": 190,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 8
+        },
+        {
+          "best_tier": 0,
+          "errors_them": 3,
+          "errors_us": 3,
+          "games": {
+            "Autumn": 4,
+            "National": 5,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 6,
+            "Fielding": 4,
+            "Film": 1,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 4,
+            "Scout": 1,
+            "Spirit": 2,
+            "Strength": 4
+          },
+          "plate_appearances": 1453,
+          "pros": 9,
+          "reputation_end": 100.0,
+          "runs_them": 15,
+          "runs_us": 199,
+          "wins": {
+            "Autumn": 4,
+            "National": 5,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 9
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 5,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "National": 5,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 5,
+            "Fielding": 2,
+            "Film": 2,
+            "Game": 2,
+            "Grounds": 2,
+            "Pitching": 6,
+            "Rest": 5,
+            "Running": 1,
+            "Scout": 1,
+            "Spirit": 2,
+            "Strength": 4
+          },
+          "plate_appearances": 1445,
+          "pros": 9,
+          "reputation_end": 100.0,
+          "runs_them": 9,
+          "runs_us": 194,
+          "wins": {
+            "Autumn": 4,
+            "National": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 10
+        }
+      ]
+    },
+    {
+      "graduates": 51,
+      "left_early": 0,
+      "reputation_start": 5.0,
+      "seed": 4,
+      "years": [
+        {
+          "best_tier": 3,
+          "errors_them": 4,
+          "errors_us": 5,
+          "games": {
+            "Autumn": 2,
+            "Practice": 3,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 4,
+            "Fielding": 4,
+            "Game": 4,
+            "Game (winter)": 3,
+            "Grounds": 1,
+            "Pitching": 1,
+            "Rest": 5,
+            "Running": 3,
+            "Scout": 3,
+            "Spirit": 4,
+            "Strength": 3
+          },
+          "plate_appearances": 631,
+          "pros": 0,
+          "reputation_end": 12.5,
+          "runs_them": 17,
+          "runs_us": 50,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 3,
+            "Summer": 2
+          },
+          "year": 1
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 2,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 3,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 4,
+            "Fielding": 4,
+            "Film": 1,
+            "Game": 3,
+            "Game (winter)": 2,
+            "Grounds": 1,
+            "Pitching": 5,
+            "Rest": 4,
+            "Running": 4,
+            "Spirit": 3,
+            "Strength": 2
+          },
+          "plate_appearances": 789,
+          "pros": 1,
+          "reputation_end": 25.5,
+          "runs_them": 37,
+          "runs_us": 43,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 3,
+            "Spring": 2
+          },
+          "year": 2
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 1,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 1,
+            "Practice": 2,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 6,
+            "Event": 6,
+            "Fielding": 4,
+            "Film": 1,
+            "Game": 2,
+            "Pitching": 2,
+            "Running": 7,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 7
+          },
+          "plate_appearances": 317,
+          "pros": 1,
+          "reputation_end": 26.5,
+          "runs_them": 9,
+          "runs_us": 22,
+          "wins": {
+            "Practice": 2
+          },
+          "year": 3
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 1,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 2,
+            "Practice": 1,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 5,
+            "Event": 8,
+            "Fielding": 8,
+            "Film": 1,
+            "Game": 1,
+            "Pitching": 3,
+            "Rest": 2,
+            "Running": 3,
+            "Scout": 4,
+            "Spirit": 2,
+            "Strength": 1
+          },
+          "plate_appearances": 451,
+          "pros": 4,
+          "reputation_end": 36.0,
+          "runs_them": 16,
+          "runs_us": 25,
+          "wins": {
+            "Autumn": 1,
+            "Practice": 1,
+            "Summer": 2
+          },
+          "year": 4
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 4,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 3,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 8,
+            "Fielding": 2,
+            "Game": 3,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 4,
+            "Running": 2,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 3
+          },
+          "plate_appearances": 966,
+          "pros": 3,
+          "reputation_end": 61.0,
+          "runs_them": 14,
+          "runs_us": 75,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 5
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 6,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 6,
+            "Event": 4,
+            "Fielding": 3,
+            "Film": 1,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 5,
+            "Rest": 2,
+            "Running": 3,
+            "Scout": 2,
+            "Spirit": 3,
+            "Strength": 5
+          },
+          "plate_appearances": 982,
+          "pros": 6,
+          "reputation_end": 93.5,
+          "runs_them": 14,
+          "runs_us": 103,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 6
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 1,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 4,
+            "Spring": 3,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 3,
+            "Fielding": 5,
+            "Film": 1,
+            "Game": 1,
+            "Grounds": 2,
+            "Pitching": 1,
+            "Rest": 2,
+            "Running": 6,
+            "Scout": 3,
+            "Spirit": 7,
+            "Strength": 3
+          },
+          "plate_appearances": 666,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 9,
+          "runs_us": 92,
+          "wins": {
+            "Autumn": 4,
+            "Spring": 3
+          },
+          "year": 7
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 6,
+          "errors_us": 3,
+          "games": {
+            "Autumn": 4,
+            "National": 3,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 6,
+            "Fielding": 1,
+            "Film": 4,
+            "Game": 2,
+            "Game (winter)": 2,
+            "Grounds": 2,
+            "Pitching": 5,
+            "Rest": 2,
+            "Running": 2,
+            "Strength": 5
+          },
+          "plate_appearances": 1357,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 19,
+          "runs_us": 188,
+          "wins": {
+            "Autumn": 4,
+            "National": 2,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 8
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 5,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 6,
+            "Fielding": 4,
+            "Film": 1,
+            "Game": 2,
+            "Game (winter)": 2,
+            "Grounds": 1,
+            "Pitching": 5,
+            "Rest": 4,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 3,
+            "Strength": 3
+          },
+          "plate_appearances": 997,
+          "pros": 8,
+          "reputation_end": 100.0,
+          "runs_them": 7,
+          "runs_us": 148,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 9
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 1,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "National": 5,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 6,
+            "Fielding": 5,
+            "Film": 3,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 4,
+            "Rest": 3,
+            "Running": 2,
+            "Scout": 2,
+            "Spirit": 1,
+            "Strength": 2
+          },
+          "plate_appearances": 1448,
+          "pros": 10,
+          "reputation_end": 100.0,
+          "runs_them": 16,
+          "runs_us": 208,
+          "wins": {
+            "Autumn": 4,
+            "National": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 5
+          },
+          "year": 10
+        }
+      ]
+    },
+    {
+      "graduates": 48,
+      "left_early": 0,
+      "reputation_start": 5.0,
+      "seed": 5,
+      "years": [
+        {
+          "best_tier": 3,
+          "errors_them": 2,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 1,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 7,
+            "Fielding": 4,
+            "Game": 2,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 3,
+            "Rest": 5,
+            "Running": 2,
+            "Scout": 3,
+            "Spirit": 3,
+            "Strength": 3
+          },
+          "plate_appearances": 367,
+          "pros": 0,
+          "reputation_end": 11.5,
+          "runs_them": 11,
+          "runs_us": 16,
+          "wins": {
+            "Practice": 2,
+            "Summer": 1
+          },
+          "year": 1
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 3,
+          "errors_us": 6,
+          "games": {
+            "Autumn": 3,
+            "Practice": 1,
+            "Summer": 3
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 8,
+            "Fielding": 6,
+            "Film": 1,
+            "Game": 1,
+            "Game (winter)": 1,
+            "Grounds": 4,
+            "Pitching": 3,
+            "Rest": 1,
+            "Running": 2,
+            "Scout": 2,
+            "Spirit": 6,
+            "Strength": 2
+          },
+          "plate_appearances": 530,
+          "pros": 0,
+          "reputation_end": 24.0,
+          "runs_them": 26,
+          "runs_us": 27,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1,
+            "Summer": 2
+          },
+          "year": 2
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 1,
+          "errors_us": 3,
+          "games": {
+            "Autumn": 3,
+            "Practice": 1,
+            "Spring": 1,
+            "Summer": 1
+          },
+          "landings": {
+            "Batting": 1,
+            "Event": 6,
+            "Fielding": 3,
+            "Film": 1,
+            "Game": 1,
+            "Grounds": 2,
+            "Pitching": 4,
+            "Rest": 4,
+            "Running": 5,
+            "Scout": 3,
+            "Spirit": 3,
+            "Strength": 5
+          },
+          "plate_appearances": 456,
+          "pros": 0,
+          "reputation_end": 30.0,
+          "runs_them": 19,
+          "runs_us": 19,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1
+          },
+          "year": 3
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 5,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 3,
+            "Practice": 4,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 5,
+            "Fielding": 1,
+            "Film": 2,
+            "Game": 4,
+            "Game (winter)": 1,
+            "Grounds": 2,
+            "Pitching": 6,
+            "Rest": 3,
+            "Running": 3,
+            "Scout": 1,
+            "Spirit": 1,
+            "Strength": 6
+          },
+          "plate_appearances": 865,
+          "pros": 3,
+          "reputation_end": 46.5,
+          "runs_them": 41,
+          "runs_us": 56,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 3
+          },
+          "year": 4
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 4,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 3,
+            "Practice": 2,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 6,
+            "Fielding": 7,
+            "Game": 2,
+            "Grounds": 4,
+            "Pitching": 2,
+            "Rest": 1,
+            "Running": 5,
+            "Scout": 2,
+            "Spirit": 4,
+            "Strength": 3
+          },
+          "plate_appearances": 573,
+          "pros": 4,
+          "reputation_end": 58.0,
+          "runs_them": 24,
+          "runs_us": 76,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 2,
+            "Summer": 1
+          },
+          "year": 5
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 3,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 2
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 2,
+            "Fielding": 3,
+            "Film": 2,
+            "Game": 3,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Pitching": 3,
+            "Rest": 6,
+            "Running": 6,
+            "Spirit": 2,
+            "Strength": 4
+          },
+          "plate_appearances": 897,
+          "pros": 6,
+          "reputation_end": 83.5,
+          "runs_them": 21,
+          "runs_us": 87,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 1
+          },
+          "year": 6
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 2,
+          "errors_us": 3,
+          "games": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 9,
+            "Fielding": 5,
+            "Film": 3,
+            "Game": 3,
+            "Grounds": 1,
+            "Pitching": 3,
+            "Rest": 2,
+            "Running": 1,
+            "Scout": 1,
+            "Spirit": 2,
+            "Strength": 2
+          },
+          "plate_appearances": 1101,
+          "pros": 5,
+          "reputation_end": 100.0,
+          "runs_them": 32,
+          "runs_us": 108,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 7
+        },
+        {
+          "best_tier": 3,
+          "errors_them": 3,
+          "errors_us": 0,
+          "games": {
+            "Autumn": 3,
+            "Practice": 1,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 3,
+            "Event": 6,
+            "Fielding": 4,
+            "Film": 1,
+            "Game": 1,
+            "Grounds": 2,
+            "Pitching": 2,
+            "Rest": 4,
+            "Running": 5,
+            "Scout": 3,
+            "Spirit": 2,
+            "Strength": 6
+          },
+          "plate_appearances": 645,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 15,
+          "runs_us": 98,
+          "wins": {
+            "Autumn": 2,
+            "Practice": 1,
+            "Summer": 3
+          },
+          "year": 8
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 3,
+          "errors_us": 2,
+          "games": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 4,
+            "Event": 7,
+            "Fielding": 6,
+            "Film": 2,
+            "Game": 2,
+            "Grounds": 2,
+            "Pitching": 3,
+            "Rest": 1,
+            "Running": 3,
+            "Spirit": 4,
+            "Strength": 4
+          },
+          "plate_appearances": 1052,
+          "pros": 7,
+          "reputation_end": 100.0,
+          "runs_them": 12,
+          "runs_us": 178,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 2,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 9
+        },
+        {
+          "best_tier": 1,
+          "errors_them": 4,
+          "errors_us": 1,
+          "games": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 4
+          },
+          "landings": {
+            "Batting": 2,
+            "Event": 5,
+            "Fielding": 5,
+            "Film": 3,
+            "Game": 3,
+            "Game (winter)": 1,
+            "Grounds": 1,
+            "Rest": 6,
+            "Running": 4,
+            "Scout": 2,
+            "Spirit": 2,
+            "Strength": 2
+          },
+          "plate_appearances": 1116,
+          "pros": 9,
+          "reputation_end": 100.0,
+          "runs_them": 11,
+          "runs_us": 188,
+          "wins": {
+            "Autumn": 4,
+            "Practice": 3,
+            "Spring": 3,
+            "Summer": 3
+          },
+          "year": 10
+        }
+      ]
+    }
+  ],
+  "schema": 1,
+  "summary": {
+    "best.tier_0": {
+      "max": 10.0,
+      "mean": 4.0,
+      "min": 0.0,
+      "n": 5,
+      "sd": 5.4772
+    },
+    "best.tier_1": {
+      "max": 70.0,
+      "mean": 56.0,
+      "min": 30.0,
+      "n": 5,
+      "sd": 16.7332
+    },
+    "best.tier_2": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "best.tier_3": {
+      "max": 70.0,
+      "mean": 40.0,
+      "min": 20.0,
+      "n": 5,
+      "sd": 20.0
+    },
+    "errors_per_100_pa": {
+      "max": 0.6972,
+      "mean": 0.5958,
+      "min": 0.5346,
+      "n": 5,
+      "sd": 0.0662
+    },
+    "errors_per_game.both": {
+      "max": 0.5464,
+      "mean": 0.4587,
+      "min": 0.4144,
+      "n": 5,
+      "sd": 0.0548
+    },
+    "errors_per_game.them": {
+      "max": 0.3093,
+      "mean": 0.2829,
+      "min": 0.2581,
+      "n": 5,
+      "sd": 0.0189
+    },
+    "errors_per_game.us": {
+      "max": 0.2371,
+      "mean": 0.1758,
+      "min": 0.1351,
+      "n": 5,
+      "sd": 0.0422
+    },
+    "games_by_year.year_01": {
+      "max": 9.0,
+      "mean": 7.4,
+      "min": 5.0,
+      "n": 5,
+      "sd": 1.8166
+    },
+    "games_by_year.year_02": {
+      "max": 10.0,
+      "mean": 7.2,
+      "min": 6.0,
+      "n": 5,
+      "sd": 1.6432
+    },
+    "games_by_year.year_03": {
+      "max": 9.0,
+      "mean": 6.2,
+      "min": 4.0,
+      "n": 5,
+      "sd": 1.9235
+    },
+    "games_by_year.year_04": {
+      "max": 13.0,
+      "mean": 9.4,
+      "min": 6.0,
+      "n": 5,
+      "sd": 2.7019
+    },
+    "games_by_year.year_05": {
+      "max": 13.0,
+      "mean": 9.0,
+      "min": 6.0,
+      "n": 5,
+      "sd": 2.9155
+    },
+    "games_by_year.year_06": {
+      "max": 14.0,
+      "mean": 11.6,
+      "min": 6.0,
+      "n": 5,
+      "sd": 3.2094
+    },
+    "games_by_year.year_07": {
+      "max": 16.0,
+      "mean": 13.0,
+      "min": 8.0,
+      "n": 5,
+      "sd": 3.0
+    },
+    "games_by_year.year_08": {
+      "max": 17.0,
+      "mean": 12.0,
+      "min": 7.0,
+      "n": 5,
+      "sd": 4.3589
+    },
+    "games_by_year.year_09": {
+      "max": 19.0,
+      "mean": 16.0,
+      "min": 13.0,
+      "n": 5,
+      "sd": 3.0
+    },
+    "games_by_year.year_10": {
+      "max": 19.0,
+      "mean": 16.4,
+      "min": 14.0,
+      "n": 5,
+      "sd": 2.4083
+    },
+    "games_per_year.Autumn": {
+      "max": 3.2,
+      "mean": 3.08,
+      "min": 2.7,
+      "n": 5,
+      "sd": 0.2168
+    },
+    "games_per_year.National": {
+      "max": 1.4,
+      "mean": 0.8,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.5477
+    },
+    "games_per_year.Practice": {
+      "max": 2.2,
+      "mean": 2.04,
+      "min": 1.8,
+      "n": 5,
+      "sd": 0.1673
+    },
+    "games_per_year.Spring": {
+      "max": 2.1,
+      "mean": 1.5,
+      "min": 0.9,
+      "n": 5,
+      "sd": 0.5657
+    },
+    "games_per_year.SpringPref": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "games_per_year.Summer": {
+      "max": 4.1,
+      "mean": 3.4,
+      "min": 3.0,
+      "n": 5,
+      "sd": 0.4359
+    },
+    "games_per_year.total": {
+      "max": 13.0,
+      "mean": 10.82,
+      "min": 9.3,
+      "n": 5,
+      "sd": 1.4516
+    },
+    "graduates_by_year.year_01": {
+      "max": 3.0,
+      "mean": 3.0,
+      "min": 3.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "graduates_by_year.year_02": {
+      "max": 5.0,
+      "mean": 5.0,
+      "min": 5.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "graduates_by_year.year_03": {
+      "max": 5.0,
+      "mean": 5.0,
+      "min": 5.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "graduates_by_year.year_04": {
+      "max": 6.0,
+      "mean": 5.8,
+      "min": 5.0,
+      "n": 5,
+      "sd": 0.4472
+    },
+    "graduates_by_year.year_05": {
+      "max": 5.0,
+      "mean": 5.0,
+      "min": 5.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "graduates_by_year.year_06": {
+      "max": 7.0,
+      "mean": 6.0,
+      "min": 5.0,
+      "n": 5,
+      "sd": 1.0
+    },
+    "graduates_by_year.year_07": {
+      "max": 8.0,
+      "mean": 6.8,
+      "min": 6.0,
+      "n": 5,
+      "sd": 0.8367
+    },
+    "graduates_by_year.year_08": {
+      "max": 9.0,
+      "mean": 7.4,
+      "min": 7.0,
+      "n": 5,
+      "sd": 0.8944
+    },
+    "graduates_by_year.year_09": {
+      "max": 9.0,
+      "mean": 7.8,
+      "min": 7.0,
+      "n": 5,
+      "sd": 0.8367
+    },
+    "graduates_by_year.year_10": {
+      "max": 10.0,
+      "mean": 8.8,
+      "min": 7.0,
+      "n": 5,
+      "sd": 1.0954
+    },
+    "growth.fielder.Arm": {
+      "max": 9.7005,
+      "mean": 9.7005,
+      "min": 9.7005,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.Catching": {
+      "max": 9.1111,
+      "mean": 9.1111,
+      "min": 9.1111,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.Contact": {
+      "max": 21.8696,
+      "mean": 21.8696,
+      "min": 21.8696,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.Fielding": {
+      "max": 9.314,
+      "mean": 9.314,
+      "min": 9.314,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.Power": {
+      "max": 14.1739,
+      "mean": 14.1739,
+      "min": 14.1739,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.Speed": {
+      "max": 15.0435,
+      "mean": 15.0435,
+      "min": 15.0435,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.fielder.exit_level": {
+      "max": 66.6594,
+      "mean": 64.2538,
+      "min": 61.3198,
+      "n": 5,
+      "sd": 2.2123
+    },
+    "growth.fielder.gain_level": {
+      "max": 13.8485,
+      "mean": 13.2091,
+      "min": 12.2906,
+      "n": 5,
+      "sd": 0.7192
+    },
+    "growth.fielder.graduates": {
+      "max": 46.0,
+      "mean": 41.4,
+      "min": 37.0,
+      "n": 5,
+      "sd": 3.6469
+    },
+    "growth.fielder.join_level": {
+      "max": 54.0797,
+      "mean": 51.0446,
+      "min": 47.5946,
+      "n": 5,
+      "sd": 2.3977
+    },
+    "growth.pitcher.Breaking": {
+      "max": 9.75,
+      "mean": 9.75,
+      "min": 9.75,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.pitcher.Control": {
+      "max": 10.4722,
+      "mean": 10.4722,
+      "min": 10.4722,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.pitcher.Stamina": {
+      "max": 8.6667,
+      "mean": 8.6667,
+      "min": 8.6667,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.pitcher.Velocity": {
+      "max": 16.6944,
+      "mean": 16.6944,
+      "min": 16.6944,
+      "n": 1,
+      "sd": 0.0
+    },
+    "growth.pitcher.exit_level": {
+      "max": 60.3571,
+      "mean": 57.9818,
+      "min": 54.6548,
+      "n": 5,
+      "sd": 2.4605
+    },
+    "growth.pitcher.gain_level": {
+      "max": 14.6667,
+      "mean": 14.1961,
+      "min": 13.5521,
+      "n": 5,
+      "sd": 0.4202
+    },
+    "growth.pitcher.graduates": {
+      "max": 8.0,
+      "mean": 7.2,
+      "min": 7.0,
+      "n": 5,
+      "sd": 0.4472
+    },
+    "growth.pitcher.join_level": {
+      "max": 46.5833,
+      "mean": 43.7857,
+      "min": 40.5833,
+      "n": 5,
+      "sd": 2.6385
+    },
+    "landing_share.Batting": {
+      "max": 10.4839,
+      "mean": 8.9282,
+      "min": 8.1579,
+      "n": 5,
+      "sd": 0.976
+    },
+    "landing_share.Event": {
+      "max": 16.0526,
+      "mean": 13.6134,
+      "min": 11.2299,
+      "n": 5,
+      "sd": 1.8579
+    },
+    "landing_share.Fielding": {
+      "max": 11.8421,
+      "mean": 10.0826,
+      "min": 8.1967,
+      "n": 5,
+      "sd": 1.3837
+    },
+    "landing_share.Film": {
+      "max": 6.4171,
+      "mean": 4.7008,
+      "min": 3.4946,
+      "n": 5,
+      "sd": 1.1248
+    },
+    "landing_share.Game": {
+      "max": 9.5628,
+      "mean": 8.5035,
+      "min": 7.1053,
+      "n": 5,
+      "sd": 0.9401
+    },
+    "landing_share.Grounds": {
+      "max": 5.2632,
+      "mean": 4.3794,
+      "min": 3.2258,
+      "n": 5,
+      "sd": 0.8922
+    },
+    "landing_share.Pitching": {
+      "max": 10.3825,
+      "mean": 9.1474,
+      "min": 7.6316,
+      "n": 5,
+      "sd": 1.1152
+    },
+    "landing_share.Rest": {
+      "max": 10.6952,
+      "mean": 9.5084,
+      "min": 7.5269,
+      "n": 5,
+      "sd": 1.3612
+    },
+    "landing_share.Running": {
+      "max": 10.4278,
+      "mean": 9.3435,
+      "min": 8.1967,
+      "n": 5,
+      "sd": 0.7953
+    },
+    "landing_share.Scout": {
+      "max": 5.1075,
+      "mean": 4.6499,
+      "min": 4.2105,
+      "n": 5,
+      "sd": 0.3392
+    },
+    "landing_share.Spirit": {
+      "max": 8.4699,
+      "mean": 7.9098,
+      "min": 7.5269,
+      "n": 5,
+      "sd": 0.4356
+    },
+    "landing_share.Strength": {
+      "max": 10.2632,
+      "mean": 9.2332,
+      "min": 8.4699,
+      "n": 5,
+      "sd": 0.7688
+    },
+    "landings_per_year.Batting": {
+      "max": 3.9,
+      "mean": 3.34,
+      "min": 3.1,
+      "n": 5,
+      "sd": 0.3362
+    },
+    "landings_per_year.Event": {
+      "max": 6.1,
+      "mean": 5.1,
+      "min": 4.2,
+      "n": 5,
+      "sd": 0.7314
+    },
+    "landings_per_year.Fielding": {
+      "max": 4.5,
+      "mean": 3.78,
+      "min": 3.0,
+      "n": 5,
+      "sd": 0.563
+    },
+    "landings_per_year.Film": {
+      "max": 2.4,
+      "mean": 1.76,
+      "min": 1.3,
+      "n": 5,
+      "sd": 0.4219
+    },
+    "landings_per_year.Game": {
+      "max": 2.3,
+      "mean": 2.12,
+      "min": 1.9,
+      "n": 5,
+      "sd": 0.1643
+    },
+    "landings_per_year.Game (winter)": {
+      "max": 1.3,
+      "mean": 1.06,
+      "min": 0.5,
+      "n": 5,
+      "sd": 0.3209
+    },
+    "landings_per_year.Grounds": {
+      "max": 2.0,
+      "mean": 1.64,
+      "min": 1.2,
+      "n": 5,
+      "sd": 0.3362
+    },
+    "landings_per_year.Pitching": {
+      "max": 3.8,
+      "mean": 3.42,
+      "min": 2.9,
+      "n": 5,
+      "sd": 0.3701
+    },
+    "landings_per_year.Rest": {
+      "max": 4.0,
+      "mean": 3.56,
+      "min": 2.8,
+      "n": 5,
+      "sd": 0.5128
+    },
+    "landings_per_year.Running": {
+      "max": 3.9,
+      "mean": 3.5,
+      "min": 3.0,
+      "n": 5,
+      "sd": 0.324
+    },
+    "landings_per_year.Scout": {
+      "max": 1.9,
+      "mean": 1.74,
+      "min": 1.6,
+      "n": 5,
+      "sd": 0.114
+    },
+    "landings_per_year.Spirit": {
+      "max": 3.1,
+      "mean": 2.96,
+      "min": 2.8,
+      "n": 5,
+      "sd": 0.1342
+    },
+    "landings_per_year.Strength": {
+      "max": 3.9,
+      "mean": 3.46,
+      "min": 3.1,
+      "n": 5,
+      "sd": 0.3362
+    },
+    "pros.per_year": {
+      "max": 4.8,
+      "mean": 4.24,
+      "min": 3.6,
+      "n": 5,
+      "sd": 0.503
+    },
+    "pros.total": {
+      "max": 48.0,
+      "mean": 42.4,
+      "min": 36.0,
+      "n": 5,
+      "sd": 5.0299
+    },
+    "pros_by_year.year_01": {
+      "max": 0.0,
+      "mean": 0.0,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "pros_by_year.year_02": {
+      "max": 1.0,
+      "mean": 0.4,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.5477
+    },
+    "pros_by_year.year_03": {
+      "max": 2.0,
+      "mean": 0.8,
+      "min": 0.0,
+      "n": 5,
+      "sd": 0.8367
+    },
+    "pros_by_year.year_04": {
+      "max": 5.0,
+      "mean": 3.2,
+      "min": 1.0,
+      "n": 5,
+      "sd": 1.4832
+    },
+    "pros_by_year.year_05": {
+      "max": 4.0,
+      "mean": 3.2,
+      "min": 3.0,
+      "n": 5,
+      "sd": 0.4472
+    },
+    "pros_by_year.year_06": {
+      "max": 6.0,
+      "mean": 4.4,
+      "min": 2.0,
+      "n": 5,
+      "sd": 2.1909
+    },
+    "pros_by_year.year_07": {
+      "max": 8.0,
+      "mean": 6.6,
+      "min": 5.0,
+      "n": 5,
+      "sd": 1.1402
+    },
+    "pros_by_year.year_08": {
+      "max": 9.0,
+      "mean": 7.4,
+      "min": 7.0,
+      "n": 5,
+      "sd": 0.8944
+    },
+    "pros_by_year.year_09": {
+      "max": 9.0,
+      "mean": 7.6,
+      "min": 6.0,
+      "n": 5,
+      "sd": 1.1402
+    },
+    "pros_by_year.year_10": {
+      "max": 10.0,
+      "mean": 8.8,
+      "min": 7.0,
+      "n": 5,
+      "sd": 1.0954
+    },
+    "reputation.year_00": {
+      "max": 5.0,
+      "mean": 5.0,
+      "min": 5.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "reputation.year_01": {
+      "max": 16.0,
+      "mean": 12.2,
+      "min": 7.5,
+      "n": 5,
+      "sd": 3.1145
+    },
+    "reputation.year_02": {
+      "max": 25.5,
+      "mean": 21.3,
+      "min": 14.0,
+      "n": 5,
+      "sd": 4.6449
+    },
+    "reputation.year_03": {
+      "max": 36.0,
+      "mean": 27.4,
+      "min": 20.0,
+      "n": 5,
+      "sd": 6.0146
+    },
+    "reputation.year_04": {
+      "max": 63.5,
+      "mean": 44.2,
+      "min": 36.0,
+      "n": 5,
+      "sd": 11.6114
+    },
+    "reputation.year_05": {
+      "max": 80.5,
+      "mean": 58.5,
+      "min": 43.0,
+      "n": 5,
+      "sd": 14.1686
+    },
+    "reputation.year_06": {
+      "max": 100.0,
+      "mean": 82.3,
+      "min": 52.5,
+      "n": 5,
+      "sd": 18.2229
+    },
+    "reputation.year_07": {
+      "max": 100.0,
+      "mean": 96.3,
+      "min": 81.5,
+      "n": 5,
+      "sd": 8.2735
+    },
+    "reputation.year_08": {
+      "max": 100.0,
+      "mean": 100.0,
+      "min": 100.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "reputation.year_09": {
+      "max": 100.0,
+      "mean": 100.0,
+      "min": 100.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "reputation.year_10": {
+      "max": 100.0,
+      "mean": 100.0,
+      "min": 100.0,
+      "n": 5,
+      "sd": 0.0
+    },
+    "runs_per_game.them": {
+      "max": 2.1856,
+      "mean": 1.6972,
+      "min": 1.4234,
+      "n": 5,
+      "sd": 0.3403
+    },
+    "runs_per_game.us": {
+      "max": 8.7938,
+      "mean": 8.204,
+      "min": 7.1398,
+      "n": 5,
+      "sd": 0.6995
+    },
+    "win_rate.Autumn": {
+      "max": 84.375,
+      "mean": 78.8575,
+      "min": 66.6667,
+      "n": 5,
+      "sd": 7.2535
+    },
+    "win_rate.National": {
+      "max": 83.3333,
+      "mean": 75.8929,
+      "min": 66.6667,
+      "n": 4,
+      "sd": 7.0346
+    },
+    "win_rate.Practice": {
+      "max": 100.0,
+      "mean": 91.7172,
+      "min": 72.2222,
+      "n": 5,
+      "sd": 11.5313
+    },
+    "win_rate.Spring": {
+      "max": 100.0,
+      "mean": 91.968,
+      "min": 81.8182,
+      "n": 5,
+      "sd": 6.7187
+    },
+    "win_rate.Summer": {
+      "max": 85.3659,
+      "mean": 76.3967,
+      "min": 66.6667,
+      "n": 5,
+      "sd": 6.9528
+    },
+    "win_rate.all": {
+      "max": 86.9231,
+      "mean": 82.1502,
+      "min": 74.1935,
+      "n": 5,
+      "sd": 5.0774
+    },
+    "win_rate.cups": {
+      "max": 85.1852,
+      "mean": 79.9206,
+      "min": 74.6667,
+      "n": 5,
+      "sd": 4.1308
+    },
+    "win_rate_by_year.year_01": {
+      "max": 75.0,
+      "mean": 63.6667,
+      "min": 50.0,
+      "n": 5,
+      "sd": 9.3095
+    },
+    "win_rate_by_year.year_02": {
+      "max": 71.4286,
+      "mean": 60.1905,
+      "min": 42.8571,
+      "n": 5,
+      "sd": 12.9301
+    },
+    "win_rate_by_year.year_03": {
+      "max": 77.7778,
+      "mean": 56.127,
+      "min": 42.8571,
+      "n": 5,
+      "sd": 13.5548
+    },
+    "win_rate_by_year.year_04": {
+      "max": 84.6154,
+      "mean": 71.0392,
+      "min": 62.5,
+      "n": 5,
+      "sd": 9.7026
+    },
+    "win_rate_by_year.year_05": {
+      "max": 84.6154,
+      "mean": 74.0876,
+      "min": 66.6667,
+      "n": 5,
+      "sd": 6.6268
+    },
+    "win_rate_by_year.year_06": {
+      "max": 92.8571,
+      "mean": 87.1612,
+      "min": 66.6667,
+      "n": 5,
+      "sd": 11.4645
+    },
+    "win_rate_by_year.year_07": {
+      "max": 93.75,
+      "mean": 90.4258,
+      "min": 85.7143,
+      "n": 5,
+      "sd": 3.5799
+    },
+    "win_rate_by_year.year_08": {
+      "max": 94.1176,
+      "mean": 83.699,
+      "min": 71.4286,
+      "n": 5,
+      "sd": 10.3494
+    },
+    "win_rate_by_year.year_09": {
+      "max": 100.0,
+      "mean": 94.6204,
+      "min": 92.3077,
+      "n": 5,
+      "sd": 3.1784
+    },
+    "win_rate_by_year.year_10": {
+      "max": 94.7368,
+      "mean": 92.4662,
+      "min": 86.6667,
+      "n": 5,
+      "sd": 3.3485
+    }
+  }
+}

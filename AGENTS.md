@@ -87,6 +87,7 @@ node scripts/browser_smoke.mjs dist/preview [slug ...]     # every game starts i
 python3 tools/asset_ledger.py check
 python tools/subset_fonts.py                               # after adding Japanese text
 python scripts/repro_issue.py 123                          # 「直してここ」
+cargo test -p kagra-shared --lib autoplay_baseline -- --ignored --nocapture   # Diamond Days balance numbers (docs/design/diamond_days_autoplay.md)
 ```
 
 Preview links: `https://emma019.github.io/KAGRA/pr/<n>/play.html?game=<slug>`

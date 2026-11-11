@@ -30,7 +30,7 @@ fn touch(g: &mut DiamondDays, x: f32, y: f32, phase: PointerPhase) {
 
 /// A finger down and up on one spot. A scene change takes no taps while it covers the
 /// screen, so wait for it first, as a player does.
-fn tap(g: &mut DiamondDays, x: f32, y: f32) {
+pub(super) fn tap(g: &mut DiamondDays, x: f32, y: f32) {
     for _ in 0..40 {
         if g.transition.as_ref().is_none_or(|t| t.openness() >= 0.6) {
             break;
@@ -41,7 +41,7 @@ fn tap(g: &mut DiamondDays, x: f32, y: f32) {
     touch(g, x, y, PointerPhase::End);
 }
 
-fn press(g: &mut DiamondDays, b: hud::Btn) {
+pub(super) fn press(g: &mut DiamondDays, b: hud::Btn) {
     let r = g
         .hud_buttons(W as f32, H as f32)
         .into_iter()
@@ -56,7 +56,7 @@ fn all_texts(list: &crate::scene::DrawList) -> impl Iterator<Item = &crate::scen
     list.flatten().into_iter().flat_map(|l| l.texts.iter())
 }
 
-fn run(g: &mut DiamondDays, secs: f32) {
+pub(super) fn run(g: &mut DiamondDays, secs: f32) {
     for _ in 0..(secs / DT) as usize {
         g.tick(DT);
     }
