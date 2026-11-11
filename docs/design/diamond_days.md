@@ -96,6 +96,29 @@ call at chances and pinches (below). "Skip" plays the rest at once.
 - **Scout** squares find a middle-schooler (position, a rating) who joins next April,
   up to four a year.
 
+## The extra scout (April gacha)
+
+April has one more door: after the usual intake, the coach may pull the **extra scout**
+— a gacha over this spring's hopefuls, with the pull told on a notice card and the boy
+joining at once as a first-year (he does not count in the walk-in numbers and is not a
+scouted promise).
+
+- **Pulls, not money.** The year turn deals free pulls (2, or 3 at reputation 60+);
+  they are April-only and vanish when the month turns. **Tickets** keep across years
+  (at most 9): one from a scout square that finds the year's book already full, one
+  from a prefectural title, one from a first game at the Summer Stadium.
+- **Five tiers** stand on the walk-in level (`33 + reputation × 0.25`): Normal (the
+  level itself), Fine (+8), Promising (+16, a trait guaranteed), Star (+26, two traits
+  with a signature — a heavy ball for a pitcher, a batting trait for a fielder) and
+  Legend (a flat 78–86, two traits, signature included). Chances grow with reputation:
+  Legend 0.3% → 1.5%, Star 2% → 5%, Promising 8% → 10%, Fine a flat 30%, the rest
+  Normal. Ten pulls without a Promising-or-better make the next one Promising-or-better
+  (drawn at the usual relative rates; no pity aims at a Legend itself).
+- **A Legend is a reborn alumnus.** He wears the name of one of the school's own pros
+  (from the `pros` record; a fictional legend's name until the school has one), is
+  flagged `legend`, and is never renamed by the unique-names pass — the club renames
+  around him. The card says which year he went pro.
+
 ## Calls in a game (round 2)
 
 The game stops at a **chance** (we bat with a runner on second or third) or a **pinch**
