@@ -241,6 +241,76 @@ pub enum Tier {
 /// At most this many good or gold traits (bad habits do not take a slot).
 pub const TRAIT_SLOTS: usize = 4;
 
+/// A pitch a pitcher throws besides his fastball. Each has a level, 1 to 7 (how much it
+/// moves).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PitchKind {
+    Slider,
+    Curve,
+    Cutter,
+    Fork,
+    Shuuto,
+    Sinker,
+    Change,
+}
+
+/// Which batters a pitch troubles most.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Breaks {
+    /// Away from a batter on the pitcher's own side (a right-hander's slider to a
+    /// right-handed batter).
+    SameSide,
+    /// Away from a batter on the other side.
+    OtherSide,
+    /// Down: a swing and a miss against anyone.
+    Down,
+}
+
+impl PitchKind {
+    pub const ALL: [PitchKind; 7] = [
+        PitchKind::Slider,
+        PitchKind::Curve,
+        PitchKind::Cutter,
+        PitchKind::Fork,
+        PitchKind::Shuuto,
+        PitchKind::Sinker,
+        PitchKind::Change,
+    ];
+
+    pub fn breaks(self) -> Breaks {
+        match self {
+            PitchKind::Slider | PitchKind::Curve | PitchKind::Cutter => Breaks::SameSide,
+            PitchKind::Shuuto | PitchKind::Sinker | PitchKind::Change => Breaks::OtherSide,
+            PitchKind::Fork => Breaks::Down,
+        }
+    }
+
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (PitchKind::Slider, false) => "Slider",
+            (PitchKind::Curve, false) => "Curve",
+            (PitchKind::Cutter, false) => "Cutter",
+            (PitchKind::Fork, false) => "Splitter",
+            (PitchKind::Shuuto, false) => "Two-seam",
+            (PitchKind::Sinker, false) => "Sinker",
+            (PitchKind::Change, false) => "Changeup",
+            (PitchKind::Slider, true) => "スライダー",
+            (PitchKind::Curve, true) => "カーブ",
+            (PitchKind::Cutter, true) => "カット",
+            (PitchKind::Fork, true) => "フォーク",
+            (PitchKind::Shuuto, true) => "シュート",
+            (PitchKind::Sinker, true) => "シンカー",
+            (PitchKind::Change, true) => "チェンジアップ",
+        }
+    }
+}
+
+/// Bats and throws left? From the name, the same way the ballpark draws him.
+pub fn lefty(name: &str) -> bool {
+    super::art::bats_left(name)
+}
+
 impl Ability {
     pub const ALL: [Ability; 37] = [
         Ability::Chance,
@@ -563,6 +633,14 @@ pub struct Player {
     pub control: u8,
     pub stamina_p: u8,
     pub breaking: u8,
+    /// Sure hands (catching the ball cleanly; errors). 0 in a save from before it
+    /// existed: read as his fielding.
+    #[serde(default)]
+    pub catching: u8,
+    /// A pitcher's pitches besides the fastball, with their levels (1 to 7). Empty in a
+    /// save from before: read from his breaking ball (see [`Player::repertoire`]).
+    #[serde(default)]
+    pub pitches: Vec<(PitchKind, u8)>,
     pub mood: Mood,
     /// 0 to 100: tiredness taken away; low stamina trains badly and risks injury.
     pub stamina: u8,
@@ -652,14 +730,16 @@ pub enum Stat {
     Control,
     Stamina,
     Breaking,
+    Catching,
 }
 
 impl Stat {
-    pub const ALL: [Stat; 9] = [
+    pub const ALL: [Stat; 10] = [
         Stat::Contact,
         Stat::Power,
         Stat::Speed,
         Stat::Field,
+        Stat::Catching,
         Stat::Arm,
         Stat::Velo,
         Stat::Control,
@@ -673,7 +753,7 @@ impl Stat {
             Stat::Contact => Drill::Batting,
             Stat::Power | Stat::Stamina => Drill::Strength,
             Stat::Speed => Drill::Running,
-            Stat::Field | Stat::Arm => Drill::Fielding,
+            Stat::Field | Stat::Arm | Stat::Catching => Drill::Fielding,
             Stat::Velo | Stat::Control | Stat::Breaking => Drill::Pitching,
         }
     }
@@ -697,6 +777,7 @@ impl Stat {
             (Stat::Control, false) => "Control",
             (Stat::Stamina, false) => "Stamina",
             (Stat::Breaking, false) => "Breaking",
+            (Stat::Catching, false) => "Catching",
             (Stat::Contact, true) => "ミート",
             (Stat::Power, true) => "パワー",
             (Stat::Speed, true) => "走力",
@@ -706,6 +787,7 @@ impl Stat {
             (Stat::Control, true) => "制球",
             (Stat::Stamina, true) => "スタミナ",
             (Stat::Breaking, true) => "変化球",
+            (Stat::Catching, true) => "捕球",
         }
     }
 }
@@ -853,7 +935,71 @@ impl Player {
             Stat::Control => self.control,
             Stat::Stamina => self.stamina_p,
             Stat::Breaking => self.breaking,
+            Stat::Catching => self.catching(),
         }
+    }
+
+    /// Sure hands (a save from before catching existed reads his fielding).
+    pub fn catching(&self) -> u8 {
+        if self.catching == 0 {
+            self.field
+        } else {
+            self.catching
+        }
+    }
+
+    /// His pitches besides the fastball (a save from before reads them off his breaking
+    /// ball: a slider, and a curve once it is good).
+    pub fn repertoire(&self) -> Vec<(PitchKind, u8)> {
+        if !self.pitches.is_empty() || !self.pitcher() {
+            return self.pitches.clone();
+        }
+        let mut out = vec![(PitchKind::Slider, (self.breaking / 18).clamp(1, 5))];
+        if self.breaking >= 50 {
+            out.push((PitchKind::Curve, (self.breaking / 25).clamp(1, 4)));
+        }
+        out
+    }
+
+    /// Bats (and throws) left?
+    pub fn left(&self) -> bool {
+        lefty(&self.family)
+    }
+
+    /// A better breaking ball: a new pitch at 40 and 65, otherwise the weakest one
+    /// moves more. True when something changed.
+    fn grow_pitch(&mut self) -> bool {
+        let mut rep = self.repertoire();
+        let want = if self.breaking >= 65 {
+            3
+        } else if self.breaking >= 40 {
+            2
+        } else {
+            1
+        };
+        if rep.len() < want {
+            // The next kind in the list for him, by his name, that he does not throw yet.
+            let start =
+                (super::art::hash(&self.family) as usize + rep.len()) % PitchKind::ALL.len();
+            if let Some(k) = (0..PitchKind::ALL.len())
+                .map(|i| PitchKind::ALL[(start + i) % PitchKind::ALL.len()])
+                .find(|k| rep.iter().all(|(h, _)| h != k))
+            {
+                rep.push((k, 1));
+                self.pitches = rep;
+                return true;
+            }
+        }
+        if let Some(weak) = rep
+            .iter_mut()
+            .filter(|(_, l)| *l < 7)
+            .min_by_key(|(_, l)| *l)
+        {
+            weak.1 += 1;
+            self.pitches = rep;
+            return true;
+        }
+        false
     }
 
     fn stat_mut(&mut self, st: Stat) -> &mut u8 {
@@ -867,6 +1013,12 @@ impl Player {
             Stat::Control => &mut self.control,
             Stat::Stamina => &mut self.stamina_p,
             Stat::Breaking => &mut self.breaking,
+            Stat::Catching => {
+                if self.catching == 0 {
+                    self.catching = self.field;
+                }
+                &mut self.catching
+            }
         }
     }
 
@@ -927,6 +1079,9 @@ impl Player {
         if let Some(a) = learned {
             self.grant(a);
         }
+        if st == Stat::Breaking && pitcher && v.is_multiple_of(8) {
+            self.grow_pitch();
+        }
         // The gold step: a good trait and a stat at the top.
         let gold = match (st, v) {
             (Stat::Power, 88) => Some(Ability::Slugger),
@@ -947,7 +1102,7 @@ impl Player {
             (Stat::Control, 70) if pitcher => Some(Ability::Rattled),
             (Stat::Stamina, 60) if pitcher => Some(Ability::ShakyStart),
             (Stat::Breaking, 60) if pitcher => Some(Ability::HomerProne),
-            (Stat::Field, 60) => Some(Ability::Butterfingers),
+            (Stat::Field, 60) | (Stat::Catching, 60) => Some(Ability::Butterfingers),
             (Stat::Contact, 70) => Some(Ability::Streaky),
             (Stat::Power, 70) => Some(Ability::Shrinks),
             _ => None,
@@ -1133,6 +1288,8 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         control,
         stamina_p,
         breaking,
+        catching: 0,
+        pitches: Vec::new(),
         mood: Mood::Normal,
         stamina: 100,
         hurt: 0,
@@ -1150,6 +1307,10 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         season: Stats::default(),
         career: Stats::default(),
     };
+    // Sure hands near his fielding, a little either way (by name: no extra dice, so the
+    // rest of the club comes out as before).
+    p.catching =
+        (p.field as i16 + (super::art::hash(&p.family) % 13) as i16 - 6).clamp(5, 95) as u8;
     // He starts on the drill he needs most (the monthly automatic menu).
     p.menu = p.suggested_menu();
     p
@@ -2096,6 +2257,38 @@ mod tests {
 #[cfg(test)]
 mod trait_tests {
     use super::*;
+
+    /// A pitcher's breaking ball grows into pitches: a second at 40, a third at 65, and
+    /// each moves more up to level 7. A fielder throws none; catching reads his fielding
+    /// in a save from before it existed.
+    #[test]
+    fn breaking_balls_grow_into_pitches() {
+        let mut rng = Rng::new(5);
+        let mut p = rookie(&mut rng, 1, Pos::P, 50.0);
+        p.pitches.clear();
+        p.breaking = 30;
+        let first = p.repertoire();
+        assert_eq!(first.len(), 1, "{first:?}");
+        p.breaking = 45;
+        assert!(p.grow_pitch());
+        assert_eq!(p.pitches.len(), 2);
+        p.breaking = 70;
+        assert!(p.grow_pitch());
+        assert_eq!(p.pitches.len(), 3);
+        let kinds: std::collections::HashSet<_> = p.pitches.iter().map(|x| x.0).collect();
+        assert_eq!(kinds.len(), 3, "no pitch twice");
+        for _ in 0..40 {
+            p.grow_pitch();
+        }
+        assert!(p.pitches.iter().all(|x| x.1 == 7));
+        assert!(!p.grow_pitch(), "nothing left to grow");
+
+        let mut f = rookie(&mut rng, 1, Pos::SS, 50.0);
+        assert!(f.repertoire().is_empty());
+        assert!((5..=95).contains(&f.catching));
+        f.catching = 0;
+        assert_eq!(f.catching(), f.field);
+    }
 
     /// Every trait has a name in both languages, a line on what it does, a job that can use
     /// it, and the gold steps pair with good traits one to one.

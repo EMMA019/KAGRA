@@ -196,6 +196,7 @@ pub(super) fn in_play(kind: PlayKind) -> bool {
     matches!(
         kind,
         PlayKind::Hit(_)
+            | PlayKind::Error
             | PlayKind::GroundOut
             | PlayKind::FlyOut
             | PlayKind::DoublePlay
@@ -791,6 +792,7 @@ impl DiamondDays {
                     }
                     PlayKind::Hit(2) => (self.tr("DOUBLE!", "ツーベース！"), [255, 210, 110, 255]),
                     PlayKind::Hit(_) => (self.tr("BASE HIT!", "ヒット！"), [255, 230, 150, 255]),
+                    PlayKind::Error => (self.tr("ERROR!", "エラー！"), [255, 170, 120, 255]),
                     PlayKind::Strikeout => (self.tr("STRIKEOUT!", "三振！"), WHITE),
                     PlayKind::Walk if walked => {
                         (self.tr("INTENTIONAL WALK", "敬遠"), [130, 210, 255, 255])

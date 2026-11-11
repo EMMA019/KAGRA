@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::team::{
-    Ability, Player, Pos, Team, BIT_CHANCE, BIT_CLUTCH, BIT_EYE, BIT_HEAVY, BIT_PINCH, BIT_STEAL,
+    Ability, Breaks, PitchKind, Player, Pos, Team, BIT_CHANCE, BIT_CLUTCH, BIT_EYE, BIT_HEAVY,
+    BIT_PINCH, BIT_STEAL,
 };
 
 /// Does a batter's or a pitcher's trait set hold `a`?
@@ -35,6 +36,12 @@ pub struct Batter {
     pub abil: u64,
     #[serde(default)]
     pub pitcher: bool,
+    /// Bats left.
+    #[serde(default)]
+    pub left: bool,
+    /// Sure hands: catching the ball cleanly.
+    #[serde(default)]
+    pub catching: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -47,18 +54,47 @@ pub struct Arm {
     pub endurance: f32,
     #[serde(default)]
     pub abil: u64,
+    /// Throws left.
+    #[serde(default)]
+    pub left: bool,
+    /// His pitches besides the fastball, with their levels (1 to 7).
+    #[serde(default)]
+    pub pitches: Vec<(PitchKind, u8)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Glove {
     pub name: String,
     pub field: f32,
+    /// Sure hands (0: as his fielding).
+    #[serde(default)]
+    pub catching: f32,
 }
 
 impl Arm {
     fn stuff(&self, thrown: u32) -> f32 {
         let tired = (thrown as f32 - self.endurance).max(0.0) * 0.5;
         (self.velo - 115.0) * 1.3 + self.control * 0.45 + self.breaking * 0.45 - tired
+            + if self.pitches.len() >= 3 { 3.0 } else { 0.0 }
+    }
+
+    /// What his pitches take off a batter's contact (by which side he bats) and add to
+    /// the strikeout rate: a slider or a curve is hard on a batter on the pitcher's own
+    /// side, a two-seam, sinker or changeup on the other side, a splitter on anyone.
+    pub fn versus(&self, batter_left: bool) -> (f32, f32) {
+        let same = batter_left == self.left;
+        let mut contact = 0.0;
+        let mut k = 0.0;
+        for &(kind, lv) in &self.pitches {
+            let lv = lv.min(7) as f32;
+            match kind.breaks() {
+                Breaks::SameSide if same => contact += lv * 0.9,
+                Breaks::OtherSide if !same => contact += lv * 0.9,
+                Breaks::Down => k += lv * 0.006,
+                _ => contact += lv * 0.25,
+            }
+        }
+        (contact, k)
     }
 }
 
@@ -82,6 +118,25 @@ pub struct Side {
 }
 
 impl Side {
+    /// The fielders' sure hands on average (a side from before catching existed reads its
+    /// fielding).
+    pub fn catching_avg(&self) -> f32 {
+        if self.gloves.is_empty() {
+            return self.field;
+        }
+        self.gloves
+            .iter()
+            .map(|g| {
+                if g.catching > 0.0 {
+                    g.catching
+                } else {
+                    g.field
+                }
+            })
+            .sum::<f32>()
+            / self.gloves.len() as f32
+    }
+
     /// Our club as it stands this week (condition counts). The coach's card is used when
     /// it is still a legal nine; otherwise the automatic order.
     pub fn from_team(t: &Team, name: &str, name_ja: &str) -> Self {
@@ -129,6 +184,13 @@ impl Side {
                 field,
                 abil: p.bits(),
                 pitcher: p.pitcher(),
+                left: p.left(),
+                catching: p.catching() as f32 + if p.has(Ability::Glove) { 6.0 } else { 0.0 }
+                    - if p.has(Ability::Butterfingers) {
+                        8.0
+                    } else {
+                        0.0
+                    },
             }
         };
         let bats: Vec<Batter> = nine
@@ -140,6 +202,7 @@ impl Side {
             .map(|b| Glove {
                 name: b.name.clone(),
                 field: b.field,
+                catching: b.catching,
             })
             .collect();
         let field = if gloves.is_empty() {
@@ -169,6 +232,8 @@ impl Side {
                     + p.stamina_p as f32 * 0.9 * (p.stamina as f32 / 100.0).max(0.4)
                     + if p.has(Ability::Workhorse) { 15.0 } else { 0.0 },
                 abil: p.bits(),
+                left: p.left(),
+                pitches: p.repertoire(),
             })
             .collect();
         let playing: Vec<&str> = bats.iter().map(|b| b.name.as_str()).collect();
@@ -626,6 +691,8 @@ pub enum PlayKind {
     Change,
     /// A pitch hit the batter: he takes first.
     HitByPitch,
+    /// A fielder lets the ball go: the batter reaches.
+    Error,
 }
 
 #[derive(Clone, Debug)]
@@ -1045,6 +1112,16 @@ impl Game {
         if self.risp() && holds(arm.abil, Ability::Rattled) {
             stuff -= 8.0;
         }
+        // Left against right: a batter sees a pitcher from his own side worse.
+        let same_side = b.left == arm.left;
+        if same_side {
+            contact -= 4.0;
+            power -= 3.0;
+        } else {
+            contact += 3.0;
+        }
+        let (pitch_contact, pitch_k) = arm.versus(b.left);
+        contact -= pitch_contact;
         let situation = self.our_banner(s, b.abil, arm.abil);
         let our_bat = s == self.us;
         let field = self.sides[f].field;
@@ -1173,7 +1250,8 @@ impl Game {
             + k_call)
             .clamp(0.04, 0.42)
             * if hit_run { 0.85 } else { 1.0 }
-            * k_trait;
+            * k_trait
+            + pitch_k;
         let bb_call = match def {
             Some(Tactic::Outside) => 1.4,
             Some(Tactic::Low) => 1.15,
@@ -1357,7 +1435,28 @@ impl Game {
             }
             return self.after_play(s);
         }
-        // An out in play. Low pitches are beaten into the ground.
+        // An out in play, unless the glove lets it go: the fielders' sure hands decide.
+        let hands = self.sides[f].catching_avg();
+        let error = ((58.0 - hands) * 0.0014).clamp(0.006, 0.06);
+        if self.rng.unit() < error {
+            let mut runs = 0;
+            self.advance(s, bi, 1, &mut runs, hit_run);
+            self.mark_banner = situation;
+            let (en, ja) = if runs > 0 {
+                (
+                    format!("{name} reaches on an error! {runs} scores."),
+                    format!("{name}の打球を野手がはじく！エラーの間に{runs}点。"),
+                )
+            } else {
+                (
+                    format!("{name} reaches on an error!"),
+                    format!("{name}の打球を野手がはじく！エラーで出塁。"),
+                )
+            };
+            self.say_as(PlayKind::Error, en, ja, runs);
+            return self.after_play(s);
+        }
+        // Low pitches are beaten into the ground.
         let ground = self.rng.unit() < if has(Tactic::Low) { 0.72 } else { 0.5 };
         // The runner going on the pitch takes the double play away.
         let dp_odds = if has(Tactic::Low) { 0.45 } else { 0.3 };
@@ -1770,6 +1869,7 @@ impl Game {
         self.sides[self.us].gloves[slot] = Glove {
             name: new.name.clone(),
             field: new.field,
+            catching: new.catching,
         };
         let n = self.sides[self.us].gloves.len().max(1) as f32;
         self.sides[self.us].field = self.sides[self.us]
@@ -1982,21 +2082,24 @@ mod tests {
             "{:?}",
             called.iter().find(|p| p.runs > 0)
         );
-        // More hits get through, with a man on third and fewer than two out.
-        let third = |p: &Play| p.bases0 & 4 != 0 && p.outs0 < 2;
-        let hits = |pick: &dyn Fn(&Play) -> bool| {
+        // More hits get through, with a man on third and fewer than two out: the same
+        // batters in the same games, with the infield drawn in and with no call at all.
+        let third = |p: &Play| p.bases0 & 4 != 0 && p.outs0 < 2 && p.their_call.is_none();
+        let hits = |log: &[Play], pick: &dyn Fn(&Play) -> bool| {
             rate(
-                &log,
+                log,
                 |p| pick(p) && third(p),
                 |p| matches!(p.kind, PlayKind::Hit(_)),
             )
         };
+        let drawn = calling_them(Some(Tactic::InfieldIn), 400);
+        let base = calling_them(None, 400);
         let drawn_in = with(Tactic::InfieldIn);
         assert!(
-            hits(&drawn_in) > hits(&clean),
+            hits(&drawn, &drawn_in) > hits(&base, &clean),
             "{} vs {}",
-            hits(&drawn_in),
-            hits(&clean)
+            hits(&drawn, &drawn_in),
+            hits(&base, &clean)
         );
     }
 
@@ -2243,6 +2346,86 @@ mod tests {
             assert!(g.inning >= 9);
             assert_eq!(g.line[0].len(), g.inning as usize);
             assert!(!g.log.is_empty());
+        }
+    }
+
+    #[test]
+    fn left_and_right_and_the_pitches_shape_the_matchup() {
+        let mut arm = side(52.0, 3).arms[0].clone();
+        arm.left = false;
+        arm.pitches = vec![(PitchKind::Slider, 5)];
+        // A right-hander's slider runs away from a right-handed batter.
+        let (vs_right, _) = arm.versus(false);
+        let (vs_left, _) = arm.versus(true);
+        assert!(vs_right > vs_left * 2.0, "{vs_right} vs {vs_left}");
+        // A sinker the other way; a splitter gets swings and misses from anyone.
+        arm.pitches = vec![(PitchKind::Sinker, 5), (PitchKind::Fork, 4)];
+        let (r, k_r) = arm.versus(false);
+        let (l, k_l) = arm.versus(true);
+        assert!(l > r && k_r > 0.0 && k_r == k_l);
+        // Three pitches keep the batter guessing.
+        let two = arm.stuff(0);
+        arm.pitches.push((PitchKind::Curve, 1));
+        assert!(arm.stuff(0) > two);
+
+        // Over many games a batter hits a pitcher from the other side better.
+        let mut seen = [[0u32; 2]; 2];
+        for seed in 0..160 {
+            let mut g = Game::new(
+                side(52.0, seed),
+                side(52.0, seed + 300),
+                seed % 2 == 0,
+                seed,
+            );
+            g.finish();
+            for p in g.log.iter().filter(|p| p.is_at_bat()) {
+                let same =
+                    super::super::team::lefty(&p.batter) == super::super::team::lefty(&p.pitcher);
+                seen[same as usize][0] += 1;
+                seen[same as usize][1] += matches!(p.kind, PlayKind::Hit(_)) as u32;
+            }
+        }
+        let avg = |s: [u32; 2]| s[1] as f32 / s[0].max(1) as f32;
+        assert!(seen[0][0] > 300 && seen[1][0] > 300, "{seen:?}");
+        assert!(avg(seen[0]) > avg(seen[1]) + 0.01, "{seen:?}");
+    }
+
+    #[test]
+    fn errors_come_from_unsure_hands() {
+        let errors = |hands: f32| {
+            let (mut n, mut pa) = (0, 0);
+            for seed in 0..80 {
+                let mut a = side(52.0, seed);
+                let mut b = side(52.0, seed + 900);
+                for gl in a.gloves.iter_mut().chain(b.gloves.iter_mut()) {
+                    gl.catching = hands;
+                }
+                let mut g = Game::new(a, b, true, seed);
+                g.finish();
+                n += g.log.iter().filter(|p| p.kind == PlayKind::Error).count();
+                pa += g.log.iter().filter(|p| p.faced_batter()).count();
+            }
+            n as f32 / pa.max(1) as f32
+        };
+        let (shaky, sure) = (errors(25.0), errors(85.0));
+        assert!(shaky > sure * 3.0, "{shaky} vs {sure}");
+        assert!(
+            (0.002..0.05).contains(&sure) && shaky < 0.06,
+            "{shaky} {sure}"
+        );
+        // An error is an at bat and no hit; the batter reaches.
+        let mut g = Game::new(side(52.0, 1), side(52.0, 2), true, 1);
+        for gl in g.sides[1].gloves.iter_mut() {
+            gl.catching = 5.0;
+        }
+        let mut guard = 0;
+        while !g.over && guard < 4000 && !g.log.iter().any(|p| p.kind == PlayKind::Error) {
+            guard += 1;
+            g.step();
+        }
+        if let Some(e) = g.log.iter().find(|p| p.kind == PlayKind::Error) {
+            assert!(e.is_at_bat() && e.faced_batter());
+            assert_eq!(e.pitches().last(), Some(&Pitch::InPlay));
         }
     }
 

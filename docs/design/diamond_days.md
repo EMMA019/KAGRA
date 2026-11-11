@@ -73,10 +73,27 @@ the region names the school by its fame stars: 無名校 (Unknown), 注目校 (N
 Each player has a name, a grade (1 to 3), a position, and stats from 1 to 99, shown as
 letter grades (S, A to G):
 
-- Batting: Contact, Power, Speed, Fielding, Arm.
-- Pitching (pitchers): Velocity (km/h), Control, Stamina, Breaking ball.
+- Batting: Contact, Power, Speed, Fielding, Catching, Arm.
+- Pitching (pitchers): Velocity (km/h), Control, Stamina, Breaking ball, and **pitches**
+  besides the fastball (slider, curve, cutter, splitter, two-seam, sinker, changeup), each
+  at a level 1 to 7.
+- **Hands**: right or left (the same for throwing and batting), shown on his page
+  (右投右打 / 左投左打) and in the ballpark.
 
 Plus condition (Great, Good, Normal, Poor, Awful), stamina (0 to 100), and weeks hurt.
+
+### Left and right, pitches, errors (round 7)
+
+- A batter facing a pitcher from his own side loses contact and some power; from the
+  other side he sees the ball better.
+- A slider, curve or cutter breaks away from a batter on the pitcher's side; a two-seam,
+  sinker or changeup away from the other side; a splitter gets swings and misses from
+  anyone. Three pitches or more keep every batter guessing.
+- The breaking ball grows into pitches: a second at 40, a third at 65, and every eight
+  points of breaking ball a pitch moves more.
+- **Catching** decides errors: a ball that would be an out can be dropped (ERROR!), the
+  batter reaches and runners move up a base. A team of shaky hands drops several a week;
+  sure hands almost none.
 
 ## Games
 

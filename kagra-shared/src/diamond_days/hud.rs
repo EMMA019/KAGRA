@@ -2417,10 +2417,16 @@ impl DiamondDays {
             shade(OURS, -0.5),
             TextAlign::Left,
         );
+        let hands = match (pl.left(), ja) {
+            (true, true) => "左投左打",
+            (false, true) => "右投右打",
+            (true, false) => "L/L",
+            (false, false) => "R/R",
+        };
         let sub = if ja {
-            format!("{}年  {}", pl.grade, pl.pos.short(true))
+            format!("{}年  {}  {hands}", pl.grade, pl.pos.short(true))
         } else {
-            format!("Year {}  {}", pl.grade, pl.pos.short(false))
+            format!("Year {}  {}  {hands}", pl.grade, pl.pos.short(false))
         };
         p.text(&sub, 160.0, 60.0, 15.0, INK, TextAlign::Left);
         // This season's numbers in games.
@@ -2513,6 +2519,24 @@ impl DiamondDays {
             INK_SOFT,
             TextAlign::Left,
         );
+        // A pitcher's pitches besides the fastball, with how much each moves.
+        let rep = pl.repertoire();
+        if pl.pitcher() && !rep.is_empty() {
+            let list: Vec<String> = rep
+                .iter()
+                .map(|(k, lv)| format!("{} {lv}", k.label(ja)))
+                .collect();
+            let line = format!("{}  {}", self.tr("Pitches", "球種"), list.join("  "));
+            let size = crate::text::fit_size(&line, 11.0, 250.0);
+            p.text(
+                &line,
+                376.0,
+                176.0,
+                size,
+                [52, 96, 186, 255],
+                TextAlign::Right,
+            );
+        }
         for (k, d) in Drill::ALL.into_iter().enumerate() {
             let cx = 50.0 + k as f32 * 75.0;
             let col = art::drill_color(d);

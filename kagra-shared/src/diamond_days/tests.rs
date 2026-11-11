@@ -381,9 +381,13 @@ fn a_whole_year_turns_over_and_the_coach_may_retire_after_three() {
         weeks += 1;
     }
     assert_eq!(g.s.year, 2, "a year is 48 weeks: {weeks}");
+    // At least the summer and autumn openers; practice games come only when the road
+    // lands on one.
     assert!(
-        g.s.wins + g.s.losses >= 5,
-        "practice games and tournaments played"
+        g.s.wins + g.s.losses >= 2,
+        "the tournaments were played: {} {}",
+        g.s.wins,
+        g.s.losses
     );
     assert_eq!(g.s.results.len(), 1, "the year's result is kept");
     assert!(g.s.team.players.len() >= founding - thirds + 4);
@@ -3208,6 +3212,18 @@ fn player_traits_to_png() {
         std::fs::create_dir_all(&dir).unwrap();
         crate::raster2d::picture(&g.hud(W, H, false), W, H)
             .save_png(&std::path::Path::new(&dir).join(format!("player_traits_{tag}.png")))
+            .unwrap();
+        // A pitcher: hands, three pitches and the stat rows down to catching.
+        let i = g.s.team.players.iter().position(|p| p.pitcher()).unwrap();
+        g.s.team.players[i].pitches = vec![
+            (team::PitchKind::Slider, 4),
+            (team::PitchKind::Fork, 3),
+            (team::PitchKind::Change, 2),
+        ];
+        g.mode = Mode::Player(i);
+        run(&mut g, 1.6);
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join(format!("player_pitcher_{tag}.png")))
             .unwrap();
     }
 }
