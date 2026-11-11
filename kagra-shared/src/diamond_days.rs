@@ -1298,7 +1298,8 @@ impl DiamondDays {
         if let Some((top, _)) = self.rival_ace() {
             let late = (rounds as usize).saturating_sub(2);
             if let Some(at) = path.iter().position(|&i| i as usize == top) {
-                if at < late {
+                // Earlier or in the final: the semifinal either way.
+                if at != late && late < path.len() {
                     path.swap(at, late);
                 }
             } else if late < path.len() {
@@ -2444,7 +2445,7 @@ impl DiamondDays {
                     .collect();
                 for k in tired {
                     let roll = self.rng.unit();
-                    if roll >= 0.15 {
+                    if roll >= 0.15 * self.s.team.players[k].injury_risk() {
                         continue;
                     }
                     let n = self.s.team.players[k].family.clone();

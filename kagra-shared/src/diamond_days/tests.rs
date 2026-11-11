@@ -1672,10 +1672,14 @@ fn the_throw_to_first_meets_a_raised_glove() {
                 Mode::Match { .. } => g.tick(DT),
                 _ => break,
             }
+            // Ground balls to the left side and up the middle: those are thrown to first
+            // (one up the right side the first baseman can take himself).
             let kind = match (&g.mode, g.game.as_ref()) {
-                (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => {
-                    gm.log.get(shown - 1).map(|p| p.kind)
-                }
+                (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => gm
+                    .log
+                    .get(shown - 1)
+                    .filter(|p| p.dir < 12.0)
+                    .map(|p| p.kind),
                 _ => None,
             };
             if kind != Some(sim::PlayKind::GroundOut) {
@@ -3176,4 +3180,34 @@ fn the_months_practice_is_automatic_unless_the_coach_sets_it() {
     // Back closes the screen to the roster.
     assert!(g.on_key(crate::session::BACK_KEY, true));
     assert_eq!(g.mode, Mode::Roster);
+}
+
+/// `KAGRA_SHOTS=dir`: a player page with good, gold and bad traits.
+#[test]
+fn player_traits_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS") else {
+        return;
+    };
+    for (lang, tag) in [("ja", "ja"), ("en", "en")] {
+        let mut g = started();
+        g.set_lang(lang);
+        tap(&mut g, 195.0, 400.0);
+        let i = g.s.team.players.iter().position(|p| !p.pitcher()).unwrap();
+        {
+            let p = &mut g.s.team.players[i];
+            p.abilities = vec![
+                team::Ability::Gale,
+                team::Ability::Slugger,
+                team::Ability::Glove,
+                team::Ability::Leadoff,
+                team::Ability::Streaky,
+            ];
+        }
+        g.mode = Mode::Player(i);
+        run(&mut g, 1.6);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join(format!("player_traits_{tag}.png")))
+            .unwrap();
+    }
 }

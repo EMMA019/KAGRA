@@ -2454,16 +2454,16 @@ impl DiamondDays {
         p.text(pl.mood.label(ja), 186.0, 87.0, 14.0, INK, TextAlign::Left);
         p.text(
             self.tr("Stamina", "体力"),
-            160.0,
-            116.0,
+            296.0,
+            88.0,
             12.0,
             INK_SOFT,
-            TextAlign::Left,
+            TextAlign::Right,
         );
         p.gauge(
-            204.0,
-            120.0,
-            170.0,
+            302.0,
+            92.0,
+            78.0,
             10.0,
             pl.stamina as f32 / 100.0,
             stamina_color(pl.stamina),
@@ -2481,26 +2481,18 @@ impl DiamondDays {
             } else {
                 format!("Red mark ({} wk)", pl.study)
             };
-            p.text(&t, 160.0, 136.0, 13.0, [220, 70, 60, 255], TextAlign::Left);
+            p.text(&t, 160.0, 112.0, 13.0, [220, 70, 60, 255], TextAlign::Left);
         } else if pl.abilities.is_empty() {
             p.text(
-                self.tr("No ability", "特技なし"),
+                self.tr("No traits", "特技なし"),
                 160.0,
-                136.0,
+                112.0,
                 13.0,
                 INK_SOFT,
                 TextAlign::Left,
             );
         } else {
-            let tags: Vec<&str> = pl.abilities.iter().map(|a| a.label(ja)).collect();
-            p.text(
-                &tags.join("  "),
-                160.0,
-                136.0,
-                13.0,
-                [176, 96, 24, 255],
-                TextAlign::Left,
-            );
+            trait_chips(p, [160.0, 110.0, 224.0], 2, &pl.abilities, ja);
         }
         // Points by drill.
         p.panel(
@@ -2708,6 +2700,52 @@ pub(in crate::diamond_days) fn square_label(sq: Square, ja: bool) -> &'static st
         (Square::Game, false) => "GAME",
         _ => sq.label(ja),
     }
+}
+
+/// A trait's chip colour: good orange, gold gold, a bad habit slate blue.
+pub(in crate::diamond_days) fn trait_color(a: team::Ability) -> (Rgba, Rgba) {
+    match a.tier() {
+        team::Tier::Good => ([236, 140, 52, 255], WHITE),
+        team::Tier::Gold => ([238, 196, 60, 255], [74, 52, 8, 255]),
+        team::Tier::Bad => ([92, 108, 150, 255], WHITE),
+    }
+}
+
+/// Traits as chips from `at` = [x, y, width], wrapping onto at most `rows` rows. Returns
+/// how many rows it used.
+pub(in crate::diamond_days) fn trait_chips(
+    p: &mut Painter,
+    at: [f32; 3],
+    rows: usize,
+    traits: &[team::Ability],
+    ja: bool,
+) -> usize {
+    let (size, h, gap) = (10.5, 16.0, 4.0);
+    let (mut x, mut row) = (at[0], 0usize);
+    for a in traits {
+        let label = a.label(ja);
+        let w = crate::font::measure_text(label, size) + 12.0;
+        if x + w > at[0] + at[2] && x > at[0] {
+            row += 1;
+            x = at[0];
+        }
+        if row >= rows {
+            break;
+        }
+        let y = at[1] + row as f32 * (h + 3.0);
+        let (bg, fg) = trait_color(*a);
+        p.panel(x, y, w, h, h * 0.5, bg, shade(bg, -0.12), 0.0);
+        p.text(
+            label,
+            x + w * 0.5,
+            y + (h - size) * 0.5 - 0.5,
+            crate::text::fit_size(label, size, w - 6.0),
+            fg,
+            TextAlign::Center,
+        );
+        x += w + gap;
+    }
+    row.min(rows - 1) + 1
 }
 
 pub fn grade_color(g: &str) -> Rgba {

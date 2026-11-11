@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use super::team::{
     Ability, Player, Pos, Team, BIT_CHANCE, BIT_CLUTCH, BIT_EYE, BIT_HEAVY, BIT_PINCH, BIT_STEAL,
 };
+
+/// Does a batter's or a pitcher's trait set hold `a`?
+fn holds(abil: u64, a: Ability) -> bool {
+    abil & a.bit() != 0
+}
 use crate::game_core::swarm::Rng;
 
 /// The coach's order for an inning at bat.
@@ -27,7 +32,7 @@ pub struct Batter {
     pub field: f32,
     /// [`Ability`] bits.
     #[serde(default)]
-    pub abil: u8,
+    pub abil: u64,
     #[serde(default)]
     pub pitcher: bool,
 }
@@ -41,7 +46,7 @@ pub struct Arm {
     /// Pitches before he tires.
     pub endurance: f32,
     #[serde(default)]
-    pub abil: u8,
+    pub abil: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -98,11 +103,29 @@ impl Side {
                 }
                 _ => p.field as f32,
             };
+            // Traits that change what he is rather than a moment.
+            let field = field
+                + if p.has(Ability::IronWall) {
+                    16.0
+                } else if p.has(Ability::Glove) {
+                    8.0
+                } else {
+                    0.0
+                }
+                + if p.has(Ability::Cannon) { 5.0 } else { 0.0 }
+                - if p.has(Ability::Butterfingers) {
+                    8.0
+                } else {
+                    0.0
+                };
+            let speed = p.speed as f32
+                + if p.has(Ability::Gale) { 15.0 } else { 0.0 }
+                + if p.has(Ability::Runner) { 12.0 } else { 0.0 };
             Batter {
                 name: p.family.clone(),
                 contact: p.contact as f32 * m(p) + boost,
                 power: p.power as f32 * m(p),
-                speed: p.speed as f32,
+                speed,
                 field,
                 abil: p.bits(),
                 pitcher: p.pitcher(),
@@ -142,7 +165,9 @@ impl Side {
                 velo: p.velo as f32,
                 control: p.control as f32 * m(p),
                 breaking: p.breaking as f32 * m(p),
-                endurance: 40.0 + p.stamina_p as f32 * 0.9 * (p.stamina as f32 / 100.0).max(0.4),
+                endurance: 40.0
+                    + p.stamina_p as f32 * 0.9 * (p.stamina as f32 / 100.0).max(0.4)
+                    + if p.has(Ability::Workhorse) { 15.0 } else { 0.0 },
                 abil: p.bits(),
             })
             .collect();
@@ -798,7 +823,7 @@ impl Game {
     }
 
     /// The trait to shout for our side. Rivals' traits still change the numbers.
-    fn our_banner(&self, batting: usize, bat_abil: u8, arm_abil: u8) -> Option<Ability> {
+    fn our_banner(&self, batting: usize, bat_abil: u64, arm_abil: u64) -> Option<Ability> {
         let our_bat = batting == self.us;
         if our_bat && self.risp() && bat_abil & BIT_CHANCE != 0 {
             return Some(Ability::Chance);
@@ -977,7 +1002,48 @@ impl Game {
             stuff += 6.0;
         }
         if arm.abil & BIT_HEAVY != 0 {
-            stuff += 7.0;
+            stuff += if holds(arm.abil, Ability::Roaring) {
+                14.0
+            } else {
+                7.0
+            };
+        }
+        // The gold steps over what the good trait already gave.
+        if self.risp() && holds(b.abil, Ability::BigStage) {
+            contact += 8.0;
+            power += 6.0;
+        }
+        if self.risp() && holds(arm.abil, Ability::IceHeart) {
+            stuff += 8.0;
+        }
+        if holds(b.abil, Ability::OutOfPark) {
+            power += 16.0;
+        } else if holds(b.abil, Ability::Slugger) {
+            power += 8.0;
+        }
+        if holds(b.abil, Ability::Spray) {
+            contact += 4.0;
+        }
+        let leadoff = self.outs == 0 && self.bases.iter().all(|x| x.is_none());
+        if leadoff && holds(b.abil, Ability::Leadoff) {
+            contact += 3.0;
+        }
+        if holds(arm.abil, Ability::Settles) {
+            stuff += (self.inning.saturating_sub(1).min(6)) as f32 * 1.2;
+        }
+        // Bad habits.
+        if self.risp() && holds(b.abil, Ability::Shrinks) {
+            contact -= 8.0;
+            power -= 4.0;
+        }
+        if holds(b.abil, Ability::Streaky) {
+            contact += (self.rng.unit() - 0.5) * 16.0;
+        }
+        if self.inning == 1 && holds(arm.abil, Ability::ShakyStart) {
+            stuff -= 8.0;
+        }
+        if self.risp() && holds(arm.abil, Ability::Rattled) {
+            stuff -= 8.0;
         }
         let situation = self.our_banner(s, b.abil, arm.abil);
         let our_bat = s == self.us;
@@ -1012,9 +1078,10 @@ impl Game {
             return self.after_play(s);
         }
         // The squeeze: the runner on third breaks as the batter bunts.
+        let bunter = holds(b.abil, Ability::Bunter);
         if has(Tactic::Squeeze) && self.bases[2].is_some() {
             self.outs += 1;
-            if r < 0.68 {
+            if r < if bunter { 0.86 } else { 0.68 } {
                 self.mark_clutch = true;
                 self.mark_banner = situation;
                 self.bases[2] = None;
@@ -1049,7 +1116,7 @@ impl Game {
             && (self.bases[0].is_some() || self.bases[1].is_some())
             && self.bases[2].is_none()
         {
-            if r < 0.78 {
+            if r < if bunter { 0.93 } else { 0.78 } {
                 self.outs += 1;
                 self.mark_banner = situation;
                 let runs = 0;
@@ -1091,19 +1158,45 @@ impl Game {
             Some(Tactic::Outside) => -0.01,
             _ => 0.0,
         };
+        let k_trait = if holds(arm.abil, Ability::KPile) {
+            1.3
+        } else if holds(arm.abil, Ability::Strikeout) {
+            1.15
+        } else {
+            1.0
+        } * if holds(b.abil, Ability::Spray) {
+            0.9
+        } else {
+            1.0
+        };
         let k = ((0.13 + (stuff - contact) * 0.0035 + k_adj + if wait { 0.03 } else { 0.0 })
             + k_call)
             .clamp(0.04, 0.42)
-            * if hit_run { 0.85 } else { 1.0 };
+            * if hit_run { 0.85 } else { 1.0 }
+            * k_trait;
         let bb_call = match def {
             Some(Tactic::Outside) => 1.4,
             Some(Tactic::Low) => 1.15,
             _ => 1.0,
         } * if hit_run { 0.5 } else { 1.0 };
+        let bb_trait = if holds(arm.abil, Ability::Command) {
+            0.7
+        } else {
+            1.0
+        } * if holds(arm.abil, Ability::Wild) {
+            1.45
+        } else {
+            1.0
+        } * if leadoff && holds(b.abil, Ability::Leadoff) {
+            1.3
+        } else {
+            1.0
+        };
         let bb = (0.10 - arm.control * 0.0007).clamp(0.02, 0.11)
             * if wait { 2.2 } else { 1.0 }
             * eye
-            * bb_call;
+            * bb_call
+            * bb_trait;
         let hit_call = match def {
             Some(Tactic::Inside) => -0.03,
             Some(Tactic::Outside) => -0.015,
@@ -1121,7 +1214,17 @@ impl Game {
             Some(Tactic::Outside) => 0.55,
             Some(Tactic::Low) => 0.6,
             _ => 1.0,
-        } * if hit_run { 0.85 } else { 1.0 };
+        } * if hit_run { 0.85 } else { 1.0 }
+            * if holds(arm.abil, Ability::Sinker) {
+                0.75
+            } else {
+                1.0
+            }
+            * if holds(arm.abil, Ability::HomerProne) {
+                1.35
+            } else {
+                1.0
+            };
         // Inside, a wild one hits him (more so with poor control).
         let hbp = 0.006
             + if has(Tactic::Inside) {
@@ -1445,6 +1548,7 @@ impl Game {
         let runner = &self.sides[s].bats[r];
         let sp = runner.speed;
         let steal_o = runner.abil & BIT_STEAL != 0;
+        let runner_abil = runner.abil;
         let name = runner.name.clone();
         let (to_en, to_ja) = if base == 1 {
             ("third", "三盗")
@@ -1454,7 +1558,20 @@ impl Game {
         if s == self.us && steal_o {
             self.mark_banner = Some(Ability::Steal);
         }
-        if self.rng.unit() < 0.35 + sp * 0.006 + if steal_o { 0.16 } else { 0.0 } {
+        let odds = 0.35
+            + sp * 0.006
+            + if steal_o { 0.16 } else { 0.0 }
+            + if holds(runner_abil, Ability::Gale) {
+                0.2
+            } else {
+                0.0
+            }
+            - if holds(self.pitcher_now().abil, Ability::Pickoff) {
+                0.15
+            } else {
+                0.0
+            };
+        if self.rng.unit() < odds {
             self.bases[base + 1] = self.bases[base].take();
             self.say_as(
                 PlayKind::Steal,
@@ -1848,7 +1965,7 @@ mod tests {
 
     #[test]
     fn the_infield_in_holds_the_runner_but_lets_more_through() {
-        let log = calling(Some(Tactic::InfieldIn), 120);
+        let log = calling(Some(Tactic::InfieldIn), 400);
         let scored_on_grounder = log
             .iter()
             .filter(|p| clean(p) && p.kind == PlayKind::GroundOut && p.runs > 0)

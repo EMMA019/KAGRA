@@ -1444,7 +1444,7 @@ pub fn camp_week(team: &mut Team, rng: &mut Rng, base: f32) -> CampReport {
             continue;
         }
         let roll = rng.unit();
-        if roll < 0.09 {
+        if roll < 0.09 * p.injury_risk() {
             if tough[i] {
                 shrugged.push(names[i].clone());
             } else {

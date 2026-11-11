@@ -98,6 +98,27 @@ call at chances and pinches (below). "Skip" plays the rest at once.
 - **Scout** squares find a middle-schooler (position, a rating) who joins next April,
   up to four a year.
 
+## Traits: good, gold and bad (round 7)
+
+37 traits instead of 8, each with a real effect in the game or in practice, all names
+original:
+
+- **Good (21).** The first eight (big moment, fireman, late grit, burner, iron body, spark,
+  good eye, heater) and thirteen more: pull power, all fields, table setter (leading off),
+  bunt artist, smart feet, soft hands, rocket arm; for pitchers bat misser (strikeouts),
+  keeps it low (fewer home runs), paint brush (few walks), long haul (stamina), quick move
+  (fewer steals), warms up (better later).
+- **Gold (8).** The step above a good trait, replacing it and still counting as it: big
+  stage, moonshot, gale, iron wall, roaring heat, K machine, ice heart, unbreakable. A good
+  trait turns gold when its stat reaches the top (power 88, speed 88, fielding 88, velocity
+  150, breaking 86, control 86, power 92 for the big moment).
+- **Bad (8).** Habits to train away: tight grip (at chances), glass body (hurt more
+  often), streaky, wild, long ball, wild throws, slow start, rattled. Some players are born
+  with one; each goes when the stat behind it reaches a level (control 55 for wild, fielding
+  60 for wild throws, and so on).
+- A player holds up to four good or gold traits; bad habits take no slot. He learns a good
+  one when a stat crosses its threshold, from some events, and from talks.
+
 ## The month's practice (practice instruction)
 
 Emma: 「月に1回練習指示で能力向上も基本は自動にしたい」.
