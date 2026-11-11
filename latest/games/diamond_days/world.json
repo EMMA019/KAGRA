@@ -191,6 +191,90 @@
         "who": "any"
       },
       {
+        "choices": [],
+        "drill": "Pitching",
+        "hurt": 0,
+        "id": "bullpen",
+        "mood": 0,
+        "points": 8.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "A college pitcher from the next town throws in the bullpen for the club to watch. Nobody blinks.",
+        "text_ja": "近くの町の大学生投手がブルペンで投げて見せてくれた。みんな真剣に見ていた。",
+        "weight": 1.0,
+        "who": "any"
+      },
+      {
+        "choices": [],
+        "drill": "Strength",
+        "hurt": 0,
+        "id": "weights",
+        "mood": 0,
+        "points": 8.0,
+        "reputation": 0.0,
+        "stamina": -5,
+        "text": "The judo club lends the team its weight room for the week. Everyone feels a size bigger.",
+        "text_ja": "一週間、トレーニング室を使わせてもらった。みんな体がひと回り大きくなった気がする。",
+        "weight": 1.0,
+        "who": "any"
+      },
+      {
+        "choices": [],
+        "drill": null,
+        "hurt": 0,
+        "id": "heat",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": -12,
+        "text": "The hottest day of the year. Even the cicadas give up by noon.",
+        "text_ja": "真夏日。セミの声も聞こえない。",
+        "weight": 0.7,
+        "who": "any"
+      },
+      {
+        "choices": [],
+        "drill": null,
+        "hurt": 0,
+        "id": "stray_dog",
+        "mood": 1,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 5,
+        "text": "A stray dog wanders onto the ground and joins the warm-up run. It beats half the team.",
+        "text_ja": "どこかのイヌがグラウンドに入ってきて、準備運動のランニングに混ざった。半分以上の部員が負けた。",
+        "weight": 1.0,
+        "who": "any"
+      },
+      {
+        "choices": [],
+        "drill": null,
+        "hurt": 0,
+        "id": "cherry",
+        "mood": 1,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 5,
+        "text": "The cherry tree behind the ground is in full bloom. Practice keeps stopping to look.",
+        "text_ja": "グラウンド裏の桜が満開。練習の手が、つい止まってしまう。",
+        "weight": 1.0,
+        "who": "any"
+      },
+      {
+        "choices": [],
+        "drill": null,
+        "hurt": 0,
+        "id": "uniform",
+        "mood": 2,
+        "points": 0.0,
+        "reputation": 1.0,
+        "stamina": 0,
+        "text": "New uniforms arrive, paid for by the supporters' association. The team stands a little taller.",
+        "text_ja": "後援会の寄付で新しいユニフォームが届いた。みんな少し背筋が伸びた。",
+        "weight": 0.6,
+        "who": "any"
+      },
+      {
         "choices": [
           {
             "drill": "Batting",
@@ -394,6 +478,170 @@
         "text_ja": "1年生の{name}が青い顔をしている。「先輩たちすごすぎて……僕、やっていけますか」",
         "weight": 0.9,
         "who": "rookie"
+      },
+      {
+        "choices": [
+          {
+            "drill": "Pitching",
+            "mood": 0,
+            "points": 10.0,
+            "reply": "Fifty pitches, then fifty more. {name}'s last ball is the best of the day.",
+            "reply_ja": "50球、さらに50球。最後の一球が{name}の今日一番だった。",
+            "reputation": 0.0,
+            "stamina": -10,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Throw until the doubt is gone",
+            "text_ja": "とことん投げ込め"
+          },
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "{name} laughs, a little embarrassed. \"Right. I knew that.\"",
+            "reply_ja": "{name}は照れくさそうに笑った。「……ですよね」",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Tell him nobody wins alone",
+            "text_ja": "野球は一人で勝てない"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "ace_pressure",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "{name} keeps looking at the number 1 on his back. \"Everyone thinks I have to win it on my own.\"",
+        "text_ja": "{name}が背番号1を何度も見ている。「僕ひとりで勝たなきゃいけない気がして……」",
+        "weight": 0.9,
+        "who": "pitcher"
+      },
+      {
+        "choices": [
+          {
+            "drill": "Fielding",
+            "mood": 1,
+            "points": 8.0,
+            "reply": "Grounders until dark. {name} does not miss one.",
+            "reply_ja": "日が暮れるまでノック。{name}は一球もこぼさなかった。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Show me in the field, today",
+            "text_ja": "今日の守備で見せてみろ"
+          },
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "{name}'s face lights up. The whole bench hears, and trains harder.",
+            "reply_ja": "{name}の顔がぱっと明るくなった。聞いていたベンチ全員が、練習にも力が入った。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 1,
+            "team_stamina": 0,
+            "text": "Promise him the next practice game",
+            "text_ja": "次の練習試合で使うと約束する"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "bench_chance",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "{name} is always first to practice and last in the game. \"Coach... will my turn come?\"",
+        "text_ja": "{name}は誰より早く来て、試合にはなかなか出られない。「監督……僕にも出番、来ますか」",
+        "weight": 0.9,
+        "who": "any"
+      },
+      {
+        "choices": [
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "{name} bows deeper. On the days he comes, he gives everything.",
+            "reply_ja": "{name}は深く頭を下げた。来られる日の練習は、誰より集中していた。",
+            "reputation": 0.0,
+            "stamina": 5,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Family comes first, go",
+            "text_ja": "うちのことが先だ、行ってこい"
+          },
+          {
+            "drill": "Strength",
+            "mood": 1,
+            "points": 8.0,
+            "reply": "{name} laughs. Carrying crates all summer does build an arm.",
+            "reply_ja": "{name}が笑った。夏の間ずっと荷物を運べば、たしかに腕は太くなる。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "The shop work is training too",
+            "text_ja": "店の荷物運びも筋トレだ"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "family_shop",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "Third-year {name} bows his head. \"My family's shop is short-handed. I may miss some practices.\"",
+        "text_ja": "3年の{name}が頭を下げた。「うちの店が人手不足で……練習、休む日があるかもしれません」",
+        "weight": 0.9,
+        "who": "senior"
+      },
+      {
+        "choices": [
+          {
+            "drill": null,
+            "mood": 2,
+            "points": 0.0,
+            "reply": "You tell him about the alumni who still play. {name} nods, eyes bright.",
+            "reply_ja": "今も大学で投げている先輩の話をした。{name}は目を輝かせてうなずいた。",
+            "reputation": 0.5,
+            "stamina": 0,
+            "team_mood": 0,
+            "team_stamina": 0,
+            "text": "Talk about the college clubs",
+            "text_ja": "大学の野球部の話をする"
+          },
+          {
+            "drill": null,
+            "mood": 1,
+            "points": 0.0,
+            "reply": "The other third-years are listening. The clubhouse is quiet, in a good way.",
+            "reply_ja": "ほかの3年生も聞いていた。部室が静かになった。いい意味で。",
+            "reputation": 0.0,
+            "stamina": 0,
+            "team_mood": 1,
+            "team_stamina": 0,
+            "text": "Baseball does not end at graduation",
+            "text_ja": "野球は卒業で終わりじゃない"
+          }
+        ],
+        "drill": null,
+        "hurt": 0,
+        "id": "after_graduation",
+        "mood": 0,
+        "points": 0.0,
+        "reputation": 0.0,
+        "stamina": 0,
+        "text": "Third-year {name} asks quietly, \"Coach, can someone like me keep playing baseball after I graduate?\"",
+        "text_ja": "3年の{name}が静かに聞いた。「監督、僕みたいな選手でも、卒業してから野球を続けられますか」",
+        "weight": 0.9,
+        "who": "senior"
       }
     ],
     "id": "diamond_days",
@@ -433,24 +681,20 @@
       {
         "train": "Strength"
       },
-      {
-        "train": "Batting"
-      },
+      "film",
       "spirit",
       {
         "train": "Running"
       },
       "event",
-      {
-        "train": "Pitching"
-      }
+      "grounds"
     ],
     "school": "Hinata High",
     "school_ja": "日向高校",
     "seed": 11,
     "step_secs": 0.22,
     "title": "Diamond Days",
-    "train_points": 7.0,
+    "train_points": 8.0,
     "weekly_rest": 8,
     "years": 3
   },
