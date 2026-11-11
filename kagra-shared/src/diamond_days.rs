@@ -187,6 +187,8 @@ enum Mode {
     Bracket,
     /// The coach decides something for the club (the ace's number, the captain).
     Decide(Decide),
+    /// April: the extra-scout gacha, pulls still in hand.
+    Gacha,
 }
 
 /// What the coach is asked to decide.
@@ -227,6 +229,9 @@ struct Note {
     title: String,
     title_ja: String,
     lines: Vec<(String, String)>,
+    /// The extra-scout tier this card reports, when it tells of a pull: the
+    /// card wears the tier's colour. Presentation only.
+    rarity: Option<team::Rarity>,
     /// Players shown with their faces (family, given): who graduates, who joins.
     faces: Vec<(String, String)>,
     /// A line under each face (a destination, both languages).
@@ -307,6 +312,16 @@ struct Save {
     /// Graduates who went pro: full name and the career year they left.
     #[serde(default)]
     pros: Vec<(String, u32)>,
+    /// Extra-scout (gacha) tickets: earned at milestones, kept across years, at most 9.
+    #[serde(default)]
+    gacha_tickets: u8,
+    /// Free gacha pulls dealt at the year turn. April only: they do not keep.
+    #[serde(default)]
+    gacha_free: u8,
+    /// Pulls since the last Promising-or-better one: at 10 the next pull is
+    /// Promising or better. Kept across years.
+    #[serde(default)]
+    gacha_pity: u8,
     /// The tournament being played: its next game (the round). The board waits.
     #[serde(default)]
     cup: Option<Fixture>,
@@ -430,6 +445,9 @@ pub struct DiamondDays {
     report: Option<Report>,
     /// Double speed in a game.
     fast: bool,
+    /// The coach closed the April gacha for now (it opens again next April, or
+    /// from the Plan screen while pulls are left).
+    gacha_closed: bool,
     /// The order was opened from the pre-game screen (closing it goes back there).
     lineup_from_intro: bool,
     /// The coach asked to call the next plate appearance (any batter, not only chances).
@@ -475,6 +493,7 @@ impl DiamondDays {
             fixture: None,
             report: None,
             fast: false,
+            gacha_closed: false,
             lineup_from_intro: false,
             want_call: false,
             pending_rival: None,
@@ -595,6 +614,155 @@ impl DiamondDays {
         }
     }
 
+    // ---- the April extra-scout gacha
+
+    /// Pulls in hand: this April's free ones first, then the tickets that keep.
+    fn gacha_left(&self) -> u8 {
+        self.s.gacha_free.saturating_add(self.s.gacha_tickets)
+    }
+
+    /// The gacha can be pulled now: April, with a pull in hand.
+    fn gacha_open(&self) -> bool {
+        board::month(self.s.week) == 4 && self.gacha_left() > 0
+    }
+
+    /// A ticket from a milestone (at most 9 ride along). True when one really came.
+    fn grant_ticket(&mut self) -> bool {
+        if self.s.gacha_tickets >= 9 {
+            return false;
+        }
+        self.s.gacha_tickets += 1;
+        true
+    }
+
+    /// The year turn deals the free pulls: two, three at a famous school. Dealt by
+    /// assignment, so a reload can neither deal them twice nor keep last April's.
+    fn deal_gacha(&mut self) {
+        self.s.gacha_free = if self.s.reputation >= 60.0 { 3 } else { 2 };
+        self.gacha_closed = false;
+    }
+
+    /// Done with the gacha for now: the week goes on as it would have.
+    fn close_gacha(&mut self) {
+        self.gacha_closed = true;
+        self.mode = Mode::Plan;
+        self.begin_week();
+    }
+
+    /// One pull: the tier is drawn, the boy walks in as a first-year at once (he
+    /// does not count in the walk-in numbers, and he is not a scouted promise).
+    fn gacha_draw(&mut self) {
+        if self.mode != Mode::Gacha || self.gacha_left() == 0 {
+            return;
+        }
+        // The pull itself clicks; who walks in gets his own fanfare below.
+        crate::mixer::cue_sfx("card");
+        if self.s.gacha_free > 0 {
+            self.s.gacha_free -= 1;
+        } else {
+            self.s.gacha_tickets = self.s.gacha_tickets.saturating_sub(1);
+        }
+        let pity = self.s.gacha_pity >= 10;
+        let rarity = team::roll_rarity(&mut self.rng, self.s.reputation, pity);
+        if rarity.at_least_sr() {
+            self.s.gacha_pity = 0;
+        } else {
+            self.s.gacha_pity = self.s.gacha_pity.saturating_add(1);
+        }
+        // A Legend wears a name the school knows: one of its own pros if it has
+        // one (a family the club is free of, when it can choose), else a name
+        // from the old days.
+        let mut pro_line: Option<(String, String)> = None;
+        let legend_name = if rarity == team::Rarity::Legend {
+            let taken: Vec<&str> = self
+                .s
+                .team
+                .players
+                .iter()
+                .map(|p| p.family.as_str())
+                .collect();
+            let free = |full: &str| !taken.contains(&full.split(' ').next().unwrap_or(full));
+            let start = if self.s.pros.is_empty() {
+                0
+            } else {
+                (self.rng.next_u32() as usize) % self.s.pros.len()
+            };
+            let pro = (0..self.s.pros.len())
+                .map(|k| &self.s.pros[(start + k) % self.s.pros.len()])
+                .find(|(full, _)| free(full))
+                .or_else(|| self.s.pros.get(start));
+            match pro {
+                Some((full, year)) => {
+                    let mut parts = full.splitn(2, ' ');
+                    let family = parts.next().unwrap_or(full).to_string();
+                    let given = parts.next().unwrap_or_default().to_string();
+                    pro_line = Some((
+                        format!("He went pro in year {year}. Now he is back, a first-year again."),
+                        format!(
+                            "彼は{year}年目にプロ入りしたOB。時を越えて、1年生として帰ってきた。"
+                        ),
+                    ));
+                    Some((family, given))
+                }
+                None => {
+                    pro_line = Some((
+                        "They say a legend wore this uniform, long ago. He is back.".into(),
+                        "ずっと昔、この学校にいたという伝説の選手。その人が帰ってきた。".into(),
+                    ));
+                    Some(team::legend_name(&mut self.rng, &taken))
+                }
+            }
+        } else {
+            None
+        };
+        let p = Team::gacha(&mut self.rng, self.s.reputation, rarity, legend_name);
+        let (fam, given) = (p.family.clone(), p.given.clone());
+        let rating = if p.pitcher() {
+            p.pitch_rating()
+        } else {
+            p.bat_rating()
+        };
+        let g = team::grade(rating.round().clamp(1.0, 99.0) as u8);
+        let mut lines = vec![(
+            format!(
+                "[{}] {} ({}) joins the club! Rated {g}.",
+                rarity.label(false),
+                p.full_name(),
+                p.pos.short(false)
+            ),
+            format!(
+                "【{}】{}（{}）が入部！評価{g}。",
+                rarity.label(true),
+                p.full_name(),
+                p.pos.short(true)
+            ),
+        )];
+        if !p.abilities.is_empty() {
+            let en: Vec<&str> = p.abilities.iter().map(|a| a.label(false)).collect();
+            let ja: Vec<&str> = p.abilities.iter().map(|a| a.label(true)).collect();
+            lines.push((
+                format!("Traits: {}.", en.join(", ")),
+                format!("特能：{}。", ja.join("、")),
+            ));
+        }
+        if let Some(line) = pro_line {
+            lines.push(line);
+        }
+        self.s.team.players.push(p);
+        self.s.team.unique_names();
+        crate::mixer::cue_sfx(match rarity {
+            team::Rarity::Legend => "win",
+            team::Rarity::Star => "homer",
+            team::Rarity::Promising => "train",
+            _ => "event",
+        });
+        self.note("Extra scout", "追加スカウト", lines);
+        if let Some(n) = self.notes.last_mut() {
+            n.faces = vec![(fam, given)];
+            n.rarity = Some(rarity);
+        }
+    }
+
     // ---- flow
 
     pub fn confirm(&mut self) {
@@ -621,6 +789,7 @@ impl DiamondDays {
                 self.notes.clear();
                 self.game = None;
                 self.pre_walk = None;
+                self.gacha_closed = false;
                 // Calls are asked again in a new run.
                 self.auto_orders = false;
                 self.flow.enter_play();
@@ -687,6 +856,7 @@ impl DiamondDays {
             title: title.into(),
             title_ja: title_ja.into(),
             lines,
+            rarity: None,
             faces: Vec::new(),
             captions: Vec::new(),
             roles: Vec::new(),
@@ -744,10 +914,23 @@ impl DiamondDays {
             }
             return;
         }
+        // April's free gacha pulls do not keep: once the month turns they are
+        // gone (the tickets ride along to next April instead).
+        if month != 4 {
+            self.s.gacha_free = 0;
+        }
         // The new team still needs its captain.
         if self.s.need_captain {
             if self.notes.is_empty() {
                 self.mode = Mode::Decide(Decide::Captain);
+            }
+            return;
+        }
+        // April, with pulls in hand and the coach still willing: the extra scout
+        // comes before the week does.
+        if self.gacha_open() && !self.gacha_closed {
+            if self.notes.is_empty() {
+                self.mode = Mode::Gacha;
             }
             return;
         }
@@ -1316,6 +1499,12 @@ impl DiamondDays {
                             "県大会優勝！夏の大舞台へ！".into(),
                         ));
                         self.record("Prefectural champions", "県大会優勝");
+                        if self.grant_ticket() {
+                            lines.push((
+                                "A champions' perk: an extra-scout ticket for April.".into(),
+                                "優勝のごほうび：追加スカウトのチケットを手に入れた。".into(),
+                            ));
+                        }
                     }
                 } else {
                     self.s.summer_in = false;
@@ -1327,6 +1516,13 @@ impl DiamondDays {
                 }
             }
             Fixture::National(_) => {
+                // Just standing on this stage turns heads back home.
+                if r == 1 && self.grant_ticket() {
+                    lines.push((
+                        "The Summer Stadium makes the school's name: an extra-scout ticket for April.".into(),
+                        "夏の大舞台に出て学校の名が広まった。追加スカウトのチケットを手に入れた。".into(),
+                    ));
+                }
                 if won {
                     self.bump_rep(6.0);
                     if last {
@@ -2094,6 +2290,8 @@ impl DiamondDays {
     /// level at a time as the on-screen Back does. False on a main screen.
     fn go_back(&mut self) -> bool {
         match self.mode {
+            // Closing the gacha is a decision, not just a screen: the week goes on.
+            Mode::Gacha => self.close_gacha(),
             Mode::Roster => self.mode = Mode::Plan,
             Mode::Player(_) => self.mode = Mode::Roster,
             // Picking a player for a slot: back to the order, not out of it.
@@ -2233,11 +2431,20 @@ impl DiamondDays {
             }
             Square::Scout => {
                 if self.s.scouted.len() >= 4 {
-                    lines.push((
-                        "Four middle-schoolers already promised to come. Enough for one year."
-                            .into(),
-                        "中学生4人がもう入部を約束してくれた。今年はこれで十分。".into(),
-                    ));
+                    // A full scout book is not a wasted stop: it becomes a ticket
+                    // for April's extra scout instead.
+                    if self.grant_ticket() {
+                        lines.push((
+                            "Four are already promised this year, so the scout leaves an extra-scout ticket instead.".into(),
+                            "今年は4人がもう約束済み。代わりに追加スカウトのチケットをもらった。".into(),
+                        ));
+                    } else {
+                        lines.push((
+                            "Four middle-schoolers already promised to come. Enough for one year."
+                                .into(),
+                            "中学生4人がもう入部を約束してくれた。今年はこれで十分。".into(),
+                        ));
+                    }
                 } else {
                     let p = Team::prospect(&mut self.rng, self.s.reputation);
                     let rating = if p.pitcher() {
@@ -2456,6 +2663,7 @@ impl DiamondDays {
             .s
             .team
             .recruit(&mut self.rng, self.s.reputation, scouted);
+        self.deal_gacha();
         if left > 0 {
             self.push_graduation(left, &leaving);
         }
@@ -2695,6 +2903,7 @@ impl DiamondDays {
             .s
             .team
             .recruit(&mut self.rng, self.s.reputation, scouted);
+        self.deal_gacha();
         self.note(
             "Next generation",
             "次の世代",
@@ -3391,6 +3600,14 @@ impl DiamondDays {
                     Mode::Plan
                 }
             }
+            hud::Btn::Gacha => {
+                if self.gacha_open() {
+                    self.mode = Mode::Gacha;
+                    crate::mixer::cue_sfx("card");
+                }
+            }
+            hud::Btn::GachaDraw => self.gacha_draw(),
+            hud::Btn::GachaDone => self.close_gacha(),
             hud::Btn::PlayBall => self.play_ball(),
             hud::Btn::Continue => self.after_match(),
             hud::Btn::Speed => self.fast = !self.fast,
@@ -3464,6 +3681,7 @@ impl DiamondDays {
             Mode::CampTalk { .. } => "camp",
             Mode::Epilogue { .. } => "epilogue",
             Mode::Bracket => "bracket",
+            Mode::Gacha => "gacha",
             Mode::Decide(Decide::Ace) => "numbers",
             Mode::Decide(Decide::Captain) => "captain",
         };
@@ -3576,6 +3794,9 @@ fn fresh_save(seed: u32) -> Save {
         history: Vec::new(),
         year_from: (0, 0),
         pros: Vec::new(),
+        gacha_tickets: 0,
+        gacha_free: 0,
+        gacha_pity: 0,
         cup: None,
         cup_path: Vec::new(),
         cup_scores: Vec::new(),

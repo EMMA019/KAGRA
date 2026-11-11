@@ -102,6 +102,8 @@ fn play_week(g: &mut DiamondDays) {
             Mode::MatchIntro => press(g, hud::Btn::PlayBall),
             Mode::MatchEnd => press(g, hud::Btn::Continue),
             Mode::Bracket | Mode::Decide(_) => press(g, hud::Btn::Choose(0)),
+            // The test coach leaves the April gacha alone and gets on with the year.
+            Mode::Gacha => press(g, hud::Btn::GachaDone),
         }
         if g.flow.phase != FlowPhase::Play {
             return;
@@ -2941,4 +2943,146 @@ fn match_button_labels_fit_in_english() {
         checked += 1;
     }
     assert!(checked >= 4, "{checked} labels found");
+}
+
+#[test]
+fn the_gacha_comes_with_april_and_a_pull_joins_at_once() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Plan);
+    // The last week ends the year: the turn deals the free pulls.
+    g.s.week = board::WEEKS;
+    g.end_week();
+    assert_eq!(g.s.year, 2);
+    assert_eq!(g.s.gacha_free, 2, "reputation 5 deals two free pulls");
+    // Through the graduation and new-faces cards, the gacha opens on its own.
+    for _ in 0..30 {
+        match g.mode {
+            Mode::Notice => tap(&mut g, 195.0, 400.0),
+            Mode::Gacha => break,
+            ref m => panic!("on the way to the gacha: {m:?}"),
+        }
+    }
+    assert_eq!(g.mode, Mode::Gacha);
+    let before = g.s.team.players.len();
+    press(&mut g, hud::Btn::GachaDraw);
+    assert_eq!(g.s.team.players.len(), before + 1, "the boy joins at once");
+    assert_eq!(g.s.team.players.last().unwrap().grade, 1);
+    assert_eq!(g.s.gacha_free, 1);
+    assert_eq!(g.mode, Mode::Notice, "the pull is told on a card");
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Gacha, "pulls left: the list opens again");
+    press(&mut g, hud::Btn::GachaDone);
+    assert_eq!(g.mode, Mode::Plan);
+    // The ticket purse never holds more than nine.
+    g.s.gacha_tickets = 9;
+    assert!(!g.grant_ticket());
+    g.s.gacha_tickets = 3;
+    assert!(g.grant_ticket());
+    assert_eq!(g.s.gacha_tickets, 4);
+}
+
+/// PR2's dressing on the gacha: the screen shows its two purses, and the
+/// pull's card knows (and wears) the tier that was drawn.
+#[test]
+fn the_gacha_screen_shows_its_purses_and_the_card_wears_the_tier() {
+    let texts = |g: &DiamondDays| -> Vec<String> {
+        all_texts(&g.hud(W, H, false))
+            .map(|t| t.text.clone())
+            .collect()
+    };
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Plan);
+    g.s.week = board::WEEKS;
+    g.end_week();
+    assert_eq!(g.s.gacha_free, 2);
+    for _ in 0..30 {
+        match g.mode {
+            Mode::Notice => tap(&mut g, 195.0, 400.0),
+            Mode::Gacha => break,
+            ref m => panic!("on the way to the gacha: {m:?}"),
+        }
+    }
+    assert_eq!(g.mode, Mode::Gacha);
+    g.set_lang("ja");
+    let now = texts(&g);
+    assert!(now.contains(&"無料 2回".to_string()), "free purse: {now:?}");
+    assert!(
+        now.contains(&"チケット 0枚".to_string()),
+        "ticket purse: {now:?}"
+    );
+    press(&mut g, hud::Btn::GachaDraw);
+    assert_eq!(g.mode, Mode::Notice, "the pull is told on a card");
+    let rarity = g
+        .notes
+        .first()
+        .and_then(|n| n.rarity)
+        .expect("the card knows the pull's tier");
+    for (lang, ja) in [("ja", true), ("en", false)] {
+        g.set_lang(lang);
+        let now = texts(&g);
+        assert!(
+            now.iter().any(|t| t == rarity.label(ja)),
+            "{lang}: the tier band {:?} rides the card: {now:?}",
+            rarity.label(ja)
+        );
+    }
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Gacha, "pulls left: the list opens again");
+    press(&mut g, hud::Btn::GachaDone);
+    assert_eq!(g.mode, Mode::Plan);
+}
+
+/// PR2: a reborn alumnus (legend) is badged on the roster and on his page,
+/// in both languages; nobody else wears the chip.
+#[test]
+fn a_reborn_alumnus_wears_a_chip_on_the_roster_and_his_page() {
+    let texts = |g: &DiamondDays| -> Vec<String> {
+        all_texts(&g.hud(W, H, false))
+            .map(|t| t.text.clone())
+            .collect()
+    };
+    let mut g = started();
+    g.notes.clear();
+    g.s.team.players[0].legend = true;
+    for (lang, want) in [("ja", "転生OB"), ("en", "Reborn OB")] {
+        g.set_lang(lang);
+        g.mode = Mode::Roster;
+        assert!(
+            texts(&g).iter().any(|t| t == want),
+            "{lang}: the roster chip"
+        );
+        g.mode = Mode::Player(0);
+        assert!(
+            texts(&g).iter().any(|t| t == want),
+            "{lang}: the player-page chip"
+        );
+    }
+    g.s.team.players[0].legend = false;
+    g.set_lang("ja");
+    g.mode = Mode::Roster;
+    assert!(
+        !texts(&g).iter().any(|t| t == "転生OB"),
+        "no legend, no chip"
+    );
+}
+
+#[test]
+fn an_old_save_without_the_gacha_fields_still_loads() {
+    let g = started();
+    let mut v = serde_json::to_value(&g.s).unwrap();
+    let obj = v.as_object_mut().unwrap();
+    obj.remove("gacha_tickets");
+    obj.remove("gacha_free");
+    obj.remove("gacha_pity");
+    for p in v["team"]["players"].as_array_mut().unwrap() {
+        p.as_object_mut().unwrap().remove("legend");
+    }
+    let s: Save = serde_json::from_value(v).unwrap();
+    assert_eq!(s.gacha_tickets, 0);
+    assert_eq!(s.gacha_free, 0);
+    assert_eq!(s.gacha_pity, 0);
+    assert!(s.team.players.iter().all(|p| !p.legend));
 }
