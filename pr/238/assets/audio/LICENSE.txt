@@ -1,0 +1,14 @@
+KAGRA synthesized audio
+=======================
+
+The WAV files in this directory (`jump.wav`, `fire.wav`, `card.wav`, `bgm.wav`)
+are original tones synthesized for KAGRA. They are not recordings of anyone
+else's work.
+
+They are dedicated to the public domain under the CC0 1.0 Universal dedication.
+
+https://creativecommons.org/publicdomain/zero/1.0/
+
+You can copy, modify, and ship them with the Windows zip and the Android APK.
+No attribution is required. The engine still plays if a device is missing:
+the mixer no-ops instead of failing the frame.

@@ -1,0 +1,7 @@
+{
+  "title": "Meteor Cat",
+  "version": "0.1.0",
+  "slug": "meteor_cat",
+  "entry": "examples/meteor_cat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/meteor_cat_world.json"
+}
