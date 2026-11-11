@@ -290,6 +290,9 @@ pub struct Player {
     /// The drill this player works on in individual practice every week.
     #[serde(default = "default_menu")]
     pub menu: Drill,
+    /// The coach chose `menu` by hand: the monthly automatic menus leave him alone.
+    #[serde(default)]
+    pub menu_hand: bool,
     /// Zero, one or two special traits.
     #[serde(default)]
     pub abilities: Vec<Ability>,
@@ -573,6 +576,36 @@ impl Player {
         }
     }
 
+    /// The drill that feeds his weakest stat for his job (the monthly automatic menu): a
+    /// pitcher's arm first, a fielder's bat, glove and legs, whichever is furthest behind.
+    pub fn suggested_menu(&self) -> Drill {
+        let scale = |st: Stat| -> u16 {
+            if st == Stat::Velo {
+                // 120 km/h is a weak arm, 150 a strong one: on the 0-99 scale.
+                (self.velo as u16).saturating_sub(110).saturating_mul(2)
+            } else {
+                self.stat(st) as u16
+            }
+        };
+        let wanted: &[Stat] = if self.pitcher() {
+            &[Stat::Velo, Stat::Control, Stat::Stamina, Stat::Breaking]
+        } else {
+            &[
+                Stat::Contact,
+                Stat::Power,
+                Stat::Speed,
+                Stat::Field,
+                Stat::Arm,
+            ]
+        };
+        wanted
+            .iter()
+            .copied()
+            .min_by_key(|&st| scale(st))
+            .map(Stat::pool)
+            .unwrap_or_else(|| self.menu)
+    }
+
     /// Spend every point that can be spent, on the lowest stat each pool feeds first (the
     /// "leave it to the coach" button, and the test bots). Returns the steps taken.
     pub fn auto_raise(&mut self) -> usize {
@@ -705,7 +738,7 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
     };
     let family = FAMILY[(rng.next_u32() as usize) % FAMILY.len()].to_string();
     let given = GIVEN[(rng.next_u32() as usize) % GIVEN.len()].to_string();
-    Player {
+    let mut p = Player {
         family,
         given,
         grade,
@@ -728,13 +761,17 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         } else {
             Drill::Batting
         },
+        menu_hand: false,
         abilities: roll_abilities(rng, pitcher),
         study: 0,
         role: Role::Regular,
         legend: false,
         season: Stats::default(),
         career: Stats::default(),
-    }
+    };
+    // He starts on the drill he needs most (the monthly automatic menu).
+    p.menu = p.suggested_menu();
+    p
 }
 
 /// The traits a pitcher / a fielder can be born with.

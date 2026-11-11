@@ -122,6 +122,10 @@ impl DiamondDaysSpec {
     }
 }
 
+fn yes() -> bool {
+    true
+}
+
 fn default_audio() -> Value {
     let sfx = "assets/audio/oga-retro-synth-sfx/";
     let cue =
@@ -189,6 +193,9 @@ enum Mode {
     Decide(Decide),
     /// April: the extra-scout gacha, pulls still in hand.
     Gacha,
+    /// The month's practice: every player's menu, set automatically unless the coach
+    /// chose one by hand.
+    Menus,
 }
 
 /// What the coach is asked to decide.
@@ -335,6 +342,10 @@ struct Save {
     seeded: bool,
     #[serde(default)]
     seed_next: bool,
+    /// The practice menus are set automatically every month (by job and weakest stat),
+    /// except a player the coach set by hand.
+    #[serde(default = "yes")]
+    menu_auto: bool,
     /// The next game's opponent was studied the day before: it plays a little weaker.
     #[serde(default)]
     studied: bool,
@@ -881,25 +892,37 @@ impl DiamondDays {
         if self.s.grown != (self.s.year, month) {
             self.s.grown = (self.s.year, month);
             let steps: usize = self.s.team.players.iter_mut().map(|p| p.auto_raise()).sum();
+            // The month's practice: each player works on what he lacks most, unless the
+            // coach chose his menu by hand.
+            let changed = if self.s.menu_auto {
+                self.auto_menus()
+            } else {
+                0
+            };
+            let mut lines = Vec::new();
             if steps > 0 {
-                self.note(
-                    "A new month",
-                    "月替わり",
-                    vec![
-                        (
-                            format!(
-                                "The season turned a page: the points saved up became growth on their own, {steps} steps across the team."
-                            ),
-                            format!(
-                                "月が変わった。たまったポイントが自動で成長に変わり、チーム全体で{steps}段階アップした。"
-                            ),
-                        ),
-                        (
-                            "Points still gather every week, and a player's page can still spend them by hand.".into(),
-                            "ポイントは毎週たまっていく。選手ページでは、これまでどおり手動でも上げられる。".into(),
-                        ),
-                    ],
-                );
+                lines.push((
+                    format!(
+                        "The season turned a page: the points saved up became growth on their own, {steps} steps across the team."
+                    ),
+                    format!(
+                        "月が変わった。たまったポイントが自動で成長に変わり、チーム全体で{steps}段階アップした。"
+                    ),
+                ));
+            }
+            if changed > 0 {
+                lines.push((
+                    format!("This month's practice: {changed} players move to the drill they need most."),
+                    format!("今月の練習指示：{changed}人の個人練習を、いちばん足りないところに切り替えた。"),
+                ));
+            }
+            if !lines.is_empty() {
+                lines.push((
+                    "Leave it to the staff, or set it yourself: Club → Practice.".into(),
+                    "おまかせのままでも、自分で決めても大丈夫。部員 → 練習指示 から変えられる。"
+                        .into(),
+                ));
+                self.note("A new month", "月替わり", lines);
             }
         }
         // A tournament under way: the draw, then the next game.
@@ -2293,6 +2316,23 @@ impl DiamondDays {
     }
 
     /// The coach stops on a square: it happens.
+    /// Set every player's menu to the drill he needs most, except the ones the coach set by
+    /// hand. Returns how many changed.
+    fn auto_menus(&mut self) -> usize {
+        let mut changed = 0;
+        for p in &mut self.s.team.players {
+            if p.menu_hand {
+                continue;
+            }
+            let d = p.suggested_menu();
+            if d != p.menu {
+                p.menu = d;
+                changed += 1;
+            }
+        }
+        changed
+    }
+
     /// Close the screen on top (the roster, a player's page, the order, the bench), one
     /// level at a time as the on-screen Back does. False on a main screen.
     fn go_back(&mut self) -> bool {
@@ -2300,7 +2340,7 @@ impl DiamondDays {
             // Closing the gacha is a decision, not just a screen: the week goes on.
             Mode::Gacha => self.close_gacha(),
             Mode::Roster => self.mode = Mode::Plan,
-            Mode::Player(_) => self.mode = Mode::Roster,
+            Mode::Player(_) | Mode::Menus => self.mode = Mode::Roster,
             // Picking a player for a slot: back to the order, not out of it.
             Mode::Lineup { pick: Some(_) } => self.mode = Mode::Lineup { pick: None },
             Mode::Epilogue { schools: true } => self.mode = Mode::Epilogue { schools: false },
@@ -3615,9 +3655,45 @@ impl DiamondDays {
             }
             hud::Btn::Menu(d) => {
                 if let Mode::Player(i) = self.mode {
-                    self.s.team.players[i].menu = d;
+                    let p = &mut self.s.team.players[i];
+                    p.menu = d;
+                    // The coach's own choice: the monthly menus leave it alone.
+                    p.menu_hand = true;
                     crate::mixer::cue_sfx("card");
                 }
+            }
+            hud::Btn::Menus => {
+                self.mode = Mode::Menus;
+                crate::mixer::cue_sfx("card");
+            }
+            hud::Btn::MenuRow(i) => {
+                if let Some(p) = self.s.team.players.get_mut(i) {
+                    // The next drill he can use (a fielder has no pitching to learn).
+                    let all = Drill::ALL;
+                    let at = all.iter().position(|d| *d == p.menu).unwrap_or(0);
+                    let next = (1..=all.len())
+                        .map(|k| all[(at + k) % all.len()])
+                        .find(|d| p.pitcher() || *d != Drill::Pitching)
+                        .unwrap_or(p.menu);
+                    p.menu = next;
+                    p.menu_hand = true;
+                    crate::mixer::cue_sfx("card");
+                }
+            }
+            hud::Btn::MenuAuto => {
+                self.s.menu_auto = !self.s.menu_auto;
+                if self.s.menu_auto {
+                    self.auto_menus();
+                }
+                crate::mixer::cue_sfx("card");
+            }
+            hud::Btn::MenuReset => {
+                for p in &mut self.s.team.players {
+                    p.menu_hand = false;
+                }
+                self.s.menu_auto = true;
+                self.auto_menus();
+                crate::mixer::cue_sfx("train");
             }
             hud::Btn::Back => match self.mode {
                 Mode::Epilogue { schools: true } => {
@@ -3718,6 +3794,7 @@ impl DiamondDays {
             Mode::MatchEnd => "match_end",
             Mode::Roster => "roster",
             Mode::Player(_) => "player",
+            Mode::Menus => "menus",
             Mode::Lineup { .. } => "lineup",
             Mode::CampTalk { .. } => "camp",
             Mode::Epilogue { .. } => "epilogue",
@@ -3843,6 +3920,7 @@ fn fresh_save(seed: u32) -> Save {
         cup_scores: Vec::new(),
         seeded: false,
         seed_next: false,
+        menu_auto: true,
         studied: false,
         numbers_year: 0,
         draft_year: 0,

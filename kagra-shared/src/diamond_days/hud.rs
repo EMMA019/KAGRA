@@ -42,6 +42,12 @@ pub enum Btn {
     ToChange,
     /// Close every notice waiting, not one at a time.
     SkipNotes,
+    /// The team's practice menus (from the roster), a player's row there (next drill),
+    /// automatic menus on or off, and everyone back to automatic.
+    Menus,
+    MenuRow(usize),
+    MenuAuto,
+    MenuReset,
     /// A player's page: raise a stat, spend everything, change the practice menu, back.
     Raise(Stat),
     AutoRaise,
@@ -201,8 +207,17 @@ impl DiamondDays {
                     }
                 }
                 b.push((Btn::Lineup, [10.0, hh - 60.0, 88.0, 48.0]));
-                b.push((Btn::AutoRaise, [106.0, hh - 60.0, 156.0, 48.0]));
-                b.push((Btn::Close, [270.0, hh - 60.0, 120.0, 48.0]));
+                b.push((Btn::Menus, [104.0, hh - 60.0, 96.0, 48.0]));
+                b.push((Btn::AutoRaise, [206.0, hh - 60.0, 84.0, 48.0]));
+                b.push((Btn::Close, [296.0, hh - 60.0, 94.0, 48.0]));
+            }
+            Mode::Menus => {
+                b.push((Btn::MenuAuto, [246.0, 78.0, 140.0, 34.0]));
+                for (i, r) in self.menu_cells(hh) {
+                    b.push((Btn::MenuRow(i), r));
+                }
+                b.push((Btn::MenuReset, [10.0, hh - 60.0, 186.0, 48.0]));
+                b.push((Btn::Back, [204.0, hh - 60.0, 186.0, 48.0]));
             }
             Mode::Lineup { pick } => {
                 if pick.is_some() {
@@ -404,6 +419,11 @@ impl DiamondDays {
                 art::backdrop(&mut p, month, self.clock);
                 self.draw_bar(&mut p);
                 self.draw_roster(&mut p, &l);
+            }
+            Mode::Menus => {
+                art::backdrop(&mut p, month, self.clock);
+                self.draw_bar(&mut p);
+                self.draw_menus(&mut p, &l);
             }
             Mode::Lineup { pick } => {
                 art::backdrop(&mut p, month, self.clock);
@@ -1694,6 +1714,183 @@ impl DiamondDays {
 
     // ---- the roster and a player's page
 
+    /// The team practice screen's cells: two columns, one per player, in roster order.
+    pub(super) fn menu_cells(&self, stage_h: f32) -> Vec<(usize, [f32; 4])> {
+        let n = self.s.team.players.len();
+        let rows = n.div_ceil(2).max(1);
+        let top = 124.0;
+        let room = stage_h - top - 74.0;
+        let rh = (room / rows as f32).clamp(30.0, 50.0);
+        (0..n)
+            .map(|i| {
+                let (col, row) = (i % 2, i / 2);
+                (
+                    i,
+                    [
+                        10.0 + col as f32 * 192.0,
+                        top + row as f32 * rh,
+                        188.0,
+                        rh - 4.0,
+                    ],
+                )
+            })
+            .collect()
+    }
+
+    fn draw_menus(&self, p: &mut Painter, l: &Layout) {
+        let ja = self.lang_ja;
+        p.panel(
+            10.0,
+            72.0,
+            380.0,
+            46.0,
+            14.0,
+            [44, 58, 104, 245],
+            [26, 34, 68, 245],
+            8.0,
+        );
+        p.text(
+            self.tr("This month's practice", "今月の練習指示"),
+            24.0,
+            84.0,
+            18.0,
+            WHITE,
+            TextAlign::Left,
+        );
+        for (b, r) in &l.buttons {
+            let [x, y, w, h] = *r;
+            match *b {
+                Btn::MenuAuto => {
+                    let on = self.s.menu_auto;
+                    p.button(
+                        x,
+                        y,
+                        w,
+                        h,
+                        if on {
+                            self.tr("AUTO: ON", "おまかせ ON")
+                        } else {
+                            self.tr("AUTO: OFF", "おまかせ OFF")
+                        },
+                        14.0,
+                        if on {
+                            [70, 150, 90, 255]
+                        } else {
+                            [110, 116, 140, 255]
+                        },
+                        true,
+                    );
+                }
+                Btn::MenuRow(i) => {
+                    let Some(pl) = self.s.team.players.get(i) else {
+                        continue;
+                    };
+                    p.panel(
+                        x,
+                        y,
+                        w,
+                        h,
+                        10.0,
+                        [255, 253, 246, 240],
+                        [244, 236, 220, 240],
+                        4.0,
+                    );
+                    let size = (h * 0.36).clamp(11.0, 15.0);
+                    p.text(
+                        &pl.family,
+                        x + 10.0,
+                        y + (h - size) * 0.5,
+                        size,
+                        INK,
+                        TextAlign::Left,
+                    );
+                    p.text(
+                        pl.pos.short(ja),
+                        x + 66.0,
+                        y + (h - size * 0.85) * 0.5,
+                        size * 0.85,
+                        INK_SOFT,
+                        TextAlign::Left,
+                    );
+                    // The drill as a coloured chip; a hand-set one has a mark.
+                    let c = art::drill_color(pl.menu);
+                    let (cw, ch) = (78.0, (h - 12.0).max(18.0));
+                    let (cx, cy) = (x + w - cw - 8.0, y + (h - ch) * 0.5);
+                    p.panel(cx, cy, cw, ch, ch * 0.5, c, vector::shade(c, -0.15), 2.0);
+                    p.text(
+                        drill_label(pl.menu, ja),
+                        cx + cw * 0.5,
+                        cy + (ch - size) * 0.5,
+                        size,
+                        WHITE,
+                        TextAlign::Center,
+                    );
+                    if pl.menu_hand {
+                        p.text(
+                            self.tr("set", "指定"),
+                            cx - 4.0,
+                            cy + (ch - size * 0.75) * 0.5,
+                            size * 0.75,
+                            ORANGE,
+                            TextAlign::Right,
+                        );
+                    }
+                }
+                Btn::MenuReset => {
+                    super::sprites::button(
+                        p,
+                        [x, y, w, h],
+                        self.tr("ALL TO AUTO", "全員おまかせに"),
+                        15.0,
+                        false,
+                    );
+                }
+                Btn::Back => {
+                    p.button(
+                        x,
+                        y,
+                        w,
+                        h,
+                        self.tr("BACK", "もどる"),
+                        16.0,
+                        [110, 116, 140, 255],
+                        true,
+                    );
+                }
+                _ => {}
+            }
+        }
+        let help = crate::text::wrap(
+            self.tr(
+                "Tap a player to change his drill. Auto picks what each one lacks most, every month.",
+                "選手をタップでメニュー変更。おまかせは毎月、いちばん足りないところを選びます。",
+            ),
+            12.0,
+            356.0,
+        );
+        let hy = l.st.h - 72.0 - help.len() as f32 * 17.0 - 8.0;
+        p.panel(
+            10.0,
+            hy,
+            380.0,
+            help.len() as f32 * 17.0 + 10.0,
+            10.0,
+            [255, 253, 246, 225],
+            [244, 236, 220, 225],
+            0.0,
+        );
+        for (k, line) in help.iter().enumerate() {
+            p.text(
+                line,
+                200.0,
+                hy + 5.0 + k as f32 * 17.0,
+                12.0,
+                INK_SOFT,
+                TextAlign::Center,
+            );
+        }
+    }
+
     fn draw_roster(&self, p: &mut Painter, l: &Layout) {
         let ja = self.lang_ja;
         p.panel(
@@ -1737,6 +1934,15 @@ impl DiamondDays {
                 }
                 Btn::AutoRaise => {
                     super::sprites::button(p, [x, y, w, h], self.tr("SPEND", "育成"), 15.0, true);
+                }
+                Btn::Menus => {
+                    super::sprites::button(
+                        p,
+                        [x, y, w, h],
+                        self.tr("PRACTICE", "練習指示"),
+                        15.0,
+                        false,
+                    );
                 }
                 Btn::Close => {
                     p.button(

@@ -98,6 +98,20 @@ call at chances and pinches (below). "Skip" plays the rest at once.
 - **Scout** squares find a middle-schooler (position, a rating) who joins next April,
   up to four a year.
 
+## The month's practice (practice instruction)
+
+Emma: 「月に1回練習指示で能力向上も基本は自動にしたい」.
+
+- Every month the staff sets each player's individual drill to what he lacks most for his
+  job (a pitcher's velocity, control, stamina or breaking ball; a fielder's bat, power,
+  legs, glove or arm), and the points saved up turn into growth on their own. A short
+  "A new month" card says what moved.
+- **Club → Practice** (練習指示) shows the whole team in two columns, one chip per player.
+  A tap moves a player to the next drill (a fielder never gets pitching) and marks it the
+  coach's own: the monthly automatic menus leave it alone. **Auto** turns the monthly
+  menus off; **All to auto** clears every hand-set menu and sets them again.
+- A new player starts on the drill he needs most.
+
 ## The extra scout (April gacha)
 
 April has one more door: after the usual intake, the coach may pull the **extra scout**

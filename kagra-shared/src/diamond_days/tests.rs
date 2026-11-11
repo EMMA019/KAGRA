@@ -104,6 +104,7 @@ fn play_week(g: &mut DiamondDays) {
             Mode::Bracket | Mode::Decide(_) => press(g, hud::Btn::Choose(0)),
             // The test coach leaves the April gacha alone and gets on with the year.
             Mode::Gacha => press(g, hud::Btn::GachaDone),
+            Mode::Menus => press(g, hud::Btn::Back),
         }
         if g.flow.phase != FlowPhase::Play {
             return;
@@ -3106,4 +3107,73 @@ fn road_with_a_game_square_to_png() {
     crate::raster2d::picture(&g.hud(W, H, false), W, H)
         .save_png(&std::path::Path::new(&dir).join("road_game_square.png"))
         .unwrap();
+}
+
+/// The month's practice: menus are set automatically by default (each player on what he
+/// lacks most), a menu the coach sets by hand stays, and the team screen changes them.
+#[test]
+fn the_months_practice_is_automatic_unless_the_coach_sets_it() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    // A slow fielder: his weakest is speed, so running.
+    let i = g.s.team.players.iter().position(|p| !p.pitcher()).unwrap();
+    {
+        let p = &mut g.s.team.players[i];
+        p.speed = 5;
+        p.contact = 60;
+        p.power = 60;
+        p.field = 60;
+        p.arm = 60;
+        p.menu = Drill::Batting;
+    }
+    assert_eq!(g.s.team.players[i].suggested_menu(), Drill::Running);
+    // A pitcher set by hand keeps his menu.
+    let k = g.s.team.players.iter().position(|p| p.pitcher()).unwrap();
+    g.s.team.players[k].menu = Drill::Strength;
+    g.s.team.players[k].menu_hand = true;
+    // The month turns.
+    g.notes.clear();
+    g.s.week = 5;
+    g.s.grown = (g.s.year, 4);
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert_eq!(g.s.team.players[i].menu, Drill::Running);
+    assert_eq!(g.s.team.players[k].menu, Drill::Strength, "hand-set stays");
+    assert!(g
+        .notes
+        .iter()
+        .any(|n| n.lines.iter().any(|l| l.1.contains("練習指示"))));
+    // The team screen: tap a row to change; the change is the coach's own.
+    g.notes.clear();
+    g.mode = Mode::Roster;
+    press(&mut g, hud::Btn::Menus);
+    assert_eq!(g.mode, Mode::Menus);
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "今月の練習指示"), "{texts:?}");
+    if let Ok(dir) = std::env::var("KAGRA_SHOTS") {
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join("menus_phone.png"))
+            .unwrap();
+    }
+    press(&mut g, hud::Btn::MenuRow(i));
+    assert_ne!(g.s.team.players[i].menu, Drill::Running);
+    assert!(g.s.team.players[i].menu_hand);
+    // A fielder never gets the pitching drill.
+    for _ in 0..10 {
+        press(&mut g, hud::Btn::MenuRow(i));
+        assert_ne!(g.s.team.players[i].menu, Drill::Pitching);
+    }
+    // Auto off: next month nothing moves. All back to auto: the suggestions again.
+    press(&mut g, hud::Btn::MenuAuto);
+    assert!(!g.s.menu_auto);
+    press(&mut g, hud::Btn::MenuReset);
+    assert!(g.s.menu_auto);
+    assert!(g.s.team.players.iter().all(|p| !p.menu_hand));
+    assert_eq!(g.s.team.players[i].menu, Drill::Running);
+    // Back closes the screen to the roster.
+    assert!(g.on_key(crate::session::BACK_KEY, true));
+    assert_eq!(g.mode, Mode::Roster);
 }
