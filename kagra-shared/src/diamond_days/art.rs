@@ -632,6 +632,25 @@ pub fn square_icon(p: &mut Painter, c: P, s: f32, sq: Square, ink: Rgba) {
                 Paint::Solid(ink),
             );
         }
+        Square::Game => {
+            // A ball over a home plate: a game today.
+            let plate = [
+                [x - s * 0.3, y + s * 0.08],
+                [x + s * 0.3, y + s * 0.08],
+                [x + s * 0.3, y + s * 0.26],
+                [x, y + s * 0.44],
+                [x - s * 0.3, y + s * 0.26],
+            ];
+            p.fill_ink(&plate, WHITE, ink, s * 0.05);
+            let (bx, by, r) = (x, y - s * 0.16, s * 0.22);
+            p.dot(bx, by, r, WHITE);
+            p.outline(&vector::circle(bx, by, r), s * 0.05, ink);
+            let pi = std::f32::consts::PI;
+            for (cx, a) in [(bx - r * 1.3, 0.0f32), (bx + r * 1.3, pi)] {
+                let seam = vector::arc(cx, by, r * 0.95, r * 0.95, a - 0.6, a + 0.6, 8);
+                p.line(&seam, s * 0.04, [220, 60, 60, 255]);
+            }
+        }
         Square::Grounds => {
             // A rake: handle, crossbar, teeth.
             p.line(

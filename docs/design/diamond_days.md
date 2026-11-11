@@ -28,6 +28,9 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
    - Scout: a middle-schooler promises to join next April.
    - Film: game film together — fielding and batting points, and nobody tires.
    - Grounds: the club keeps the field tidy — a little rest, and reputation rises.
+   - Game: a practice game against a nearby school this week (in winter, red against
+     white for points). Practice games come only from these squares, so the coach decides
+     how often the club plays: Emma, "無駄な試合が多い", asked for practice first.
 4. **Fatigue.** Training costs stamina; a tired player trains worse and can be hurt.
 5. **The calendar moves.** Some weeks are game weeks (below); the board waits.
 
@@ -38,14 +41,13 @@ The year follows a real high-school club (the scenario and why: `diamond_days_sc
 | Weeks | What |
 |---|---|
 | 1 | April: first-years join (after year 1) |
-| 4 | Spring prefectural (3 rounds). The last four are seeded in the summer |
-| 6, 10, 22, 30 | Practice games against a nearby school |
+| any week but winter | A practice game when the coach lands on a **Game** square on the road (two per lap). In winter the same square is a game among ourselves, for points |
 | 11 | Training camp |
 | 12 | Summer numbers (the coach gives number 1 to a pitcher) and the draw |
-| 13 | Summer prefectural (6 rounds; a seed starts in round 2). Lose once and the third-years' summer is over |
+| 13 | Summer prefectural (6 rounds; a seed, last autumn's last four, starts in round 2). Lose once and the third-years' summer is over |
 | 17 | Summer Stadium, the national tournament (5 rounds), if we won the prefecture |
 | the day our summer ends | The third-years retire (a word from each), then the new team names a captain |
-| 24 | Autumn tournament of the new team (4 rounds) |
+| 24 | Autumn tournament of the new team (4 rounds). The last four are seeded next summer |
 | 27 | The pro draft: a retired third-year may be picked |
 | 33 to 44 | Winter: no games with other schools; training counts for 25% more |
 | 37 | Selection day: a deep autumn run waits by the phone for the March invitation |
@@ -71,10 +73,27 @@ the region names the school by its fame stars: 無名校 (Unknown), 注目校 (N
 Each player has a name, a grade (1 to 3), a position, and stats from 1 to 99, shown as
 letter grades (S, A to G):
 
-- Batting: Contact, Power, Speed, Fielding, Arm.
-- Pitching (pitchers): Velocity (km/h), Control, Stamina, Breaking ball.
+- Batting: Contact, Power, Speed, Fielding, Catching, Arm.
+- Pitching (pitchers): Velocity (km/h), Control, Stamina, Breaking ball, and **pitches**
+  besides the fastball (slider, curve, cutter, splitter, two-seam, sinker, changeup), each
+  at a level 1 to 7.
+- **Hands**: right or left (the same for throwing and batting), shown on his page
+  (右投右打 / 左投左打) and in the ballpark.
 
 Plus condition (Great, Good, Normal, Poor, Awful), stamina (0 to 100), and weeks hurt.
+
+### Left and right, pitches, errors (round 7)
+
+- A batter facing a pitcher from his own side loses contact and some power; from the
+  other side he sees the ball better.
+- A slider, curve or cutter breaks away from a batter on the pitcher's side; a two-seam,
+  sinker or changeup away from the other side; a splitter gets swings and misses from
+  anyone. Three pitches or more keep every batter guessing.
+- The breaking ball grows into pitches: a second at 40, a third at 65, and every eight
+  points of breaking ball a pitch moves more.
+- **Catching** decides errors: a ball that would be an out can be dropped (ERROR!), the
+  batter reaches and runners move up a base. A team of shaky hands drops several a week;
+  sure hands almost none.
 
 ## Games
 
@@ -95,6 +114,41 @@ call at chances and pinches (below). "Skip" plays the rest at once.
 - A **card** can carry a player's name: that week he trains twice as hard.
 - **Scout** squares find a middle-schooler (position, a rating) who joins next April,
   up to four a year.
+
+## Traits: good, gold and bad (round 7)
+
+37 traits instead of 8, each with a real effect in the game or in practice, all names
+original:
+
+- **Good (21).** The first eight (big moment, fireman, late grit, burner, iron body, spark,
+  good eye, heater) and thirteen more: pull power, all fields, table setter (leading off),
+  bunt artist, smart feet, soft hands, rocket arm; for pitchers bat misser (strikeouts),
+  keeps it low (fewer home runs), paint brush (few walks), long haul (stamina), quick move
+  (fewer steals), warms up (better later).
+- **Gold (8).** The step above a good trait, replacing it and still counting as it: big
+  stage, moonshot, gale, iron wall, roaring heat, K machine, ice heart, unbreakable. A good
+  trait turns gold when its stat reaches the top (power 88, speed 88, fielding 88, velocity
+  150, breaking 86, control 86, power 92 for the big moment).
+- **Bad (8).** Habits to train away: tight grip (at chances), glass body (hurt more
+  often), streaky, wild, long ball, wild throws, slow start, rattled. Some players are born
+  with one; each goes when the stat behind it reaches a level (control 55 for wild, fielding
+  60 for wild throws, and so on).
+- A player holds up to four good or gold traits; bad habits take no slot. He learns a good
+  one when a stat crosses its threshold, from some events, and from talks.
+
+## The month's practice (practice instruction)
+
+Emma: 「月に1回練習指示で能力向上も基本は自動にしたい」.
+
+- Every month the staff sets each player's individual drill to what he lacks most for his
+  job (a pitcher's velocity, control, stamina or breaking ball; a fielder's bat, power,
+  legs, glove or arm), and the points saved up turn into growth on their own. A short
+  "A new month" card says what moved.
+- **Club → Practice** (練習指示) shows the whole team in two columns, one chip per player.
+  A tap moves a player to the next drill (a fielder never gets pitching) and marks it the
+  coach's own: the monthly automatic menus leave it alone. **Auto** turns the monthly
+  menus off; **All to auto** clears every hand-set menu and sets them again.
+- A new player starts on the drill he needs most.
 
 ## The extra scout (April gacha)
 

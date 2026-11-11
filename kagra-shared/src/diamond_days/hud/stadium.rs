@@ -613,7 +613,7 @@ fn flight(kind: PlayKind) -> (f32, f32) {
         PlayKind::Hit(2) => (86.0, 14.0),
         PlayKind::Hit(_) => (52.0, 5.0),
         PlayKind::FlyOut | PlayKind::SacFly => (76.0, 28.0),
-        PlayKind::GroundOut | PlayKind::DoublePlay => (34.0, 0.0),
+        PlayKind::GroundOut | PlayKind::DoublePlay | PlayKind::Error => (34.0, 0.0),
         PlayKind::Bunt => (9.0, 0.0),
         _ => (0.0, 0.0),
     }
@@ -1449,7 +1449,8 @@ impl DiamondDays {
             // A grounder: low hops.
             ((kk * PI * 5.0).sin().abs() * 0.7 * (1.0 - kk)).max(0.08)
         };
-        let out_play = !matches!(pl.kind, PlayKind::Hit(_));
+        // An error: the ball gets past the fielder like a hit.
+        let out_play = !matches!(pl.kind, PlayKind::Hit(_) | PlayKind::Error);
         // The fielder nearest where it comes down goes for it.
         let chaser = (1..9)
             .filter(|i| *i != 1)
@@ -1552,6 +1553,7 @@ impl DiamondDays {
         );
         let ahead = match pl.kind {
             PlayKind::Hit(n) => n,
+            PlayKind::Error => 1,
             PlayKind::SacFly if runners.0 & 4 != 0 => 1,
             _ => 0,
         };

@@ -104,6 +104,7 @@ fn play_week(g: &mut DiamondDays) {
             Mode::Bracket | Mode::Decide(_) => press(g, hud::Btn::Choose(0)),
             // The test coach leaves the April gacha alone and gets on with the year.
             Mode::Gacha => press(g, hud::Btn::GachaDone),
+            Mode::Menus => press(g, hud::Btn::Back),
         }
         if g.flow.phase != FlowPhase::Play {
             return;
@@ -167,7 +168,7 @@ fn a_game_stops_at_chances_and_pinches_for_the_coachs_call() {
     tap(&mut g, 195.0, 400.0);
     // Jump to the week of the first practice game.
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     // Game day is its own screen: the opponent and our order, then the coach starts it.
     assert_eq!(g.mode, Mode::MatchIntro);
     g.set_lang("en");
@@ -380,9 +381,13 @@ fn a_whole_year_turns_over_and_the_coach_may_retire_after_three() {
         weeks += 1;
     }
     assert_eq!(g.s.year, 2, "a year is 48 weeks: {weeks}");
+    // At least the summer and autumn openers; practice games come only when the road
+    // lands on one.
     assert!(
-        g.s.wins + g.s.losses >= 5,
-        "practice games and tournaments played"
+        g.s.wins + g.s.losses >= 2,
+        "the tournaments were played: {} {}",
+        g.s.wins,
+        g.s.losses
     );
     assert_eq!(g.s.results.len(), 1, "the year's result is kept");
     assert!(g.s.team.players.len() >= founding - thirds + 4);
@@ -422,12 +427,19 @@ fn the_run_is_kept_on_the_device_and_resumes() {
 #[test]
 fn a_link_can_start_at_a_game_week() {
     let mut world = DiamondDays::new(DiamondDaysSpec::default()).world_value();
-    world["week"] = json!("6");
+    world["week"] = json!("24");
     let mut g = DiamondDays::from_json(&world.to_string()).unwrap();
     g.confirm();
-    assert_eq!(g.s.week, 6);
-    tap(&mut g, 195.0, 400.0);
-    assert_eq!(g.mode, Mode::MatchIntro);
+    assert_eq!(g.s.week, 24);
+    while g.mode == Mode::Notice {
+        tap(&mut g, 195.0, 400.0);
+    }
+    assert_eq!(g.s.cup.map(|f| f.round()), Some(1), "the autumn tournament");
+    assert!(
+        matches!(g.mode, Mode::MatchIntro | Mode::Bracket),
+        "{:?}",
+        g.mode
+    );
 }
 
 #[test]
@@ -675,7 +687,7 @@ fn screens_to_png() {
     press(&mut g, hud::Btn::Back);
     press(&mut g, hud::Btn::Close);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     run(&mut g, 0.3);
     shot(&g, "07_curtain");
     run(&mut g, 1.2);
@@ -928,7 +940,7 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     g.s.week = 22;
     g.mode = Mode::Plan;
     g.game = None;
-    g.begin_week();
+    practice_day(&mut g);
     assert_eq!(g.mode, Mode::MatchIntro);
     let rival = g.s.rivals[g.rival_idx.unwrap()].name.clone();
     press(&mut g, hud::Btn::PlayBall);
@@ -938,7 +950,7 @@ fn abilities_lineup_rivals_and_the_next_chapter() {
     g.s.year = 2;
     g.s.week = 22;
     g.game = None;
-    g.begin_week();
+    practice_day(&mut g);
     let again = g.s.rivals[g.rival_idx.unwrap()].name.clone();
     assert_eq!(again, rival, "year 2 is a rematch");
 
@@ -1083,7 +1095,7 @@ fn no_more_calls_from_the_bench_picker_plays_on() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     for _ in 0..20000 {
         match g.mode {
@@ -1137,7 +1149,7 @@ fn the_pitches_show_the_game_as_it_was_before_the_play() {
     g.set_lang("ja");
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     let label = |inning: u8, top: bool| format!("{}回{}", inning, if top { "表" } else { "裏" });
     let mut checked = (false, false);
@@ -1209,7 +1221,7 @@ fn the_coach_calls_the_next_batter_on_request() {
     g.set_lang("ja");
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     press(&mut g, hud::Btn::Orders);
     assert!(g.want_call);
@@ -1255,7 +1267,7 @@ fn players_keep_their_numbers_and_the_year_names_its_best() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     skip_whole_game(&mut g);
     let rep = g.report.clone().unwrap();
@@ -1323,7 +1335,7 @@ fn calls_wipes_subs_and_the_scorebook() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     // A raw tap on Play Ball while the curtain is still closed does nothing.
     let r = g
         .hud_buttons(W as f32, H as f32)
@@ -1385,7 +1397,7 @@ fn a_starter_taken_out_keeps_his_line() {
         g.confirm();
         tap(&mut g, 195.0, 400.0);
         g.s.week = 6;
-        g.begin_week();
+        practice_day(&mut g);
         press(&mut g, hud::Btn::PlayBall);
         let mut subbed = None;
         for _ in 0..20000 {
@@ -1560,7 +1572,7 @@ fn the_runners_on_screen_are_the_ones_on_base() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     let mut seen = 0;
     for _ in 0..60000 {
@@ -1618,7 +1630,7 @@ fn every_fielder_is_someone_else() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     press(&mut g, hud::Btn::PlayBall);
     let gm = g.game.as_ref().unwrap();
     for side in 0..2 {
@@ -1653,7 +1665,7 @@ fn the_throw_to_first_meets_a_raised_glove() {
         g.confirm();
         tap(&mut g, 195.0, 400.0);
         g.s.week = 6;
-        g.begin_week();
+        practice_day(&mut g);
         press(&mut g, hud::Btn::PlayBall);
         let mut nearest: Option<(f32, f32)> = None;
         for _ in 0..60000 {
@@ -1664,10 +1676,14 @@ fn the_throw_to_first_meets_a_raised_glove() {
                 Mode::Match { .. } => g.tick(DT),
                 _ => break,
             }
+            // Ground balls to the left side and up the middle: those are thrown to first
+            // (one up the right side the first baseman can take himself).
             let kind = match (&g.mode, g.game.as_ref()) {
-                (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => {
-                    gm.log.get(shown - 1).map(|p| p.kind)
-                }
+                (Mode::Match { shown, .. }, Some(gm)) if *shown > 0 => gm
+                    .log
+                    .get(shown - 1)
+                    .filter(|p| p.dir < 12.0)
+                    .map(|p| p.kind),
                 _ => None,
             };
             if kind != Some(sim::PlayKind::GroundOut) {
@@ -1719,21 +1735,25 @@ fn opening_a_kept_run_says_where_it_stands_first() {
         g.s.week = week;
         serde_json::from_str::<Value>(&g.save_json().unwrap()).unwrap()
     };
-    // A game week: the greeting first, the game day after the tap.
-    let mut h = world_with(kept(6), None);
+    // A tournament week: the greeting first, the game day after the taps.
+    let mut h = world_with(kept(24), None);
     let _ = h.hud(W, H, false);
     h.confirm();
     assert_eq!(h.mode, Mode::Notice);
     assert_eq!(h.notes[0].title_ja, "おかえりなさい、監督");
     assert!(
-        h.notes[0].lines[1].1.contains("練習試合"),
+        h.notes[0].lines[1].1.contains("秋季大会"),
         "{:?}",
         h.notes[0].lines
     );
     while h.mode == Mode::Notice {
         tap(&mut h, 195.0, 400.0);
     }
-    assert_eq!(h.mode, Mode::MatchIntro);
+    assert!(
+        matches!(h.mode, Mode::MatchIntro | Mode::Bracket),
+        "{:?}",
+        h.mode
+    );
     // A practice week: the greeting, then the cards.
     let mut h = world_with(kept(2), None);
     let _ = h.hud(W, H, false);
@@ -1847,12 +1867,18 @@ fn games_to_the_end(
         .collect()
 }
 
+/// A practice game this week (they come from a square on the road now, not the calendar).
+fn practice_day(g: &mut DiamondDays) {
+    g.begin_week();
+    g.prepare_game(Fixture::Practice);
+}
+
 fn on_game_day() -> DiamondDays {
     let mut g = started();
     g.set_lang("ja");
     tap(&mut g, 195.0, 400.0);
     g.s.week = 6;
-    g.begin_week();
+    practice_day(&mut g);
     assert_eq!(g.mode, Mode::MatchIntro);
     press(&mut g, hud::Btn::PlayBall);
     g
@@ -2132,12 +2158,16 @@ fn drive(
 fn a_tournament_is_a_run_of_game_days_on_its_draw() {
     let mut g = started();
     tap(&mut g, 195.0, 400.0);
-    g.s.week = 4;
+    g.s.week = 24;
     g.mode = Mode::Plan;
     g.begin_week();
-    assert_eq!(g.s.cup, Some(Fixture::SpringPref(1)));
-    assert_eq!(g.s.cup_path.len(), 3, "a school drawn for every round");
-    assert!(g.notes.iter().any(|n| n.title_ja == "春季県大会"));
+    assert_eq!(g.s.cup, Some(Fixture::Autumn(1)));
+    assert_eq!(g.s.cup_path.len(), 4, "a school drawn for every round");
+    assert!(
+        g.notes.iter().any(|n| n.title_ja == "秋季大会"),
+        "{:?}",
+        g.notes.iter().map(|n| &n.title_ja).collect::<Vec<_>>()
+    );
     tap(&mut g, 195.0, 400.0);
     assert_eq!(g.mode, Mode::Bracket);
     let hud = g.hud(W, H, false);
@@ -2170,7 +2200,7 @@ fn a_tournament_is_a_run_of_game_days_on_its_draw() {
             assert_eq!(g.mode, Mode::Bracket, "back to the draw");
             assert_eq!(g.s.cup_scores.len(), g.s.cup.unwrap().round() as usize - 1);
         } else {
-            assert_eq!(g.s.week, board::cup_end(Fixture::SpringPref(1)));
+            assert_eq!(g.s.week, board::cup_end(Fixture::Autumn(1)));
             break;
         }
     }
@@ -3085,4 +3115,235 @@ fn an_old_save_without_the_gacha_fields_still_loads() {
     assert_eq!(s.gacha_free, 0);
     assert_eq!(s.gacha_pity, 0);
     assert!(s.team.players.iter().all(|p| !p.legend));
+}
+
+/// Practice games are squares on the road: landing on one is the week's game (a nearby
+/// school), and in winter a game among ourselves for points instead. Until the game ends
+/// a save keeps the week as it was before the card.
+#[test]
+fn a_practice_game_square_is_the_weeks_game() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    assert_eq!(g.mode, Mode::Plan);
+    let game_at = g.spec.ring.iter().position(|s| *s == Square::Game).unwrap();
+    let n = g.spec.ring.len();
+    // Stand three squares before it and play a three.
+    g.s.pos = (game_at + n - 3) % n;
+    g.s.hand[0].steps = 3;
+    let week = g.s.week;
+    press(&mut g, hud::Btn::Card(0));
+    tap(&mut g, 195.0, 300.0);
+    assert_eq!(g.s.pos, game_at);
+    assert_eq!(g.mode, Mode::MatchIntro, "the square starts a game");
+    assert_eq!(g.s.week, week, "the game is this week");
+    let saved: Value = serde_json::from_str(&g.save_json().unwrap()).unwrap();
+    assert_eq!(
+        saved["pos"],
+        json!((game_at + n - 3) % n),
+        "a reload replays the week"
+    );
+    press(&mut g, hud::Btn::PlayBall);
+    skip_whole_game(&mut g);
+    assert_eq!(g.mode, Mode::MatchEnd);
+    assert_eq!(g.s.week, week + 1, "the game was the week");
+    assert!(g.s.cup.is_none());
+    // Winter: red against white, points and no game.
+    let mut w = started();
+    tap(&mut w, 195.0, 400.0);
+    w.s.week = *board::WINTER.start() + 2;
+    w.s.pos = (game_at + n - 2) % n;
+    w.s.hand[0].steps = 2;
+    let xp = |g: &DiamondDays| -> u32 {
+        g.s.team
+            .players
+            .iter()
+            .map(|p| p.xp.iter().map(|&x| x as u32).sum::<u32>())
+            .sum()
+    };
+    let before = xp(&w);
+    press(&mut w, hud::Btn::Card(0));
+    tap(&mut w, 195.0, 300.0);
+    assert_eq!(w.mode, Mode::Notice);
+    assert!(w.game.is_none());
+    assert!(xp(&w) > before);
+    assert!(w
+        .notes
+        .iter()
+        .any(|n| n.lines.iter().any(|l| l.1.contains("紅白戦"))));
+}
+
+/// The autumn's last four are next summer's seeds (there is no spring tournament).
+#[test]
+fn the_autumn_seeds_the_next_summer() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    g.s.seed_next = true;
+    g.new_season();
+    assert!(g.s.seeded && !g.s.seed_next);
+    g.new_season();
+    assert!(!g.s.seeded, "one summer only");
+}
+
+/// `KAGRA_SHOTS=dir`: the road with a practice-game square ahead.
+#[test]
+fn road_with_a_game_square_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS") else {
+        return;
+    };
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    let game_at = g.spec.ring.iter().position(|s| *s == Square::Game).unwrap();
+    let n = g.spec.ring.len();
+    g.s.pos = (game_at + n - 3) % n;
+    run(&mut g, 1.6);
+    std::fs::create_dir_all(&dir).unwrap();
+    crate::raster2d::picture(&g.hud(W, H, false), W, H)
+        .save_png(&std::path::Path::new(&dir).join("road_game_square.png"))
+        .unwrap();
+}
+
+/// The month's practice: menus are set automatically by default (each player on what he
+/// lacks most), a menu the coach sets by hand stays, and the team screen changes them.
+#[test]
+fn the_months_practice_is_automatic_unless_the_coach_sets_it() {
+    let mut g = started();
+    g.set_lang("ja");
+    tap(&mut g, 195.0, 400.0);
+    // A slow fielder: his weakest is speed, so running.
+    let i = g.s.team.players.iter().position(|p| !p.pitcher()).unwrap();
+    {
+        let p = &mut g.s.team.players[i];
+        p.speed = 5;
+        p.contact = 60;
+        p.power = 60;
+        p.field = 60;
+        p.arm = 60;
+        p.menu = Drill::Batting;
+    }
+    assert_eq!(g.s.team.players[i].suggested_menu(), Drill::Running);
+    // A pitcher set by hand keeps his menu.
+    let k = g.s.team.players.iter().position(|p| p.pitcher()).unwrap();
+    g.s.team.players[k].menu = Drill::Strength;
+    g.s.team.players[k].menu_hand = true;
+    // The month turns.
+    g.notes.clear();
+    g.s.week = 5;
+    g.s.grown = (g.s.year, 4);
+    g.mode = Mode::Plan;
+    g.begin_week();
+    assert_eq!(g.s.team.players[i].menu, Drill::Running);
+    assert_eq!(g.s.team.players[k].menu, Drill::Strength, "hand-set stays");
+    assert!(g
+        .notes
+        .iter()
+        .any(|n| n.lines.iter().any(|l| l.1.contains("練習指示"))));
+    // The team screen: tap a row to change; the change is the coach's own.
+    g.notes.clear();
+    g.mode = Mode::Roster;
+    press(&mut g, hud::Btn::Menus);
+    assert_eq!(g.mode, Mode::Menus);
+    let texts: Vec<String> = all_texts(&g.hud(W, H, false))
+        .map(|t| t.text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "今月の練習指示"), "{texts:?}");
+    if let Ok(dir) = std::env::var("KAGRA_SHOTS") {
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join("menus_phone.png"))
+            .unwrap();
+    }
+    press(&mut g, hud::Btn::MenuRow(i));
+    assert_ne!(g.s.team.players[i].menu, Drill::Running);
+    assert!(g.s.team.players[i].menu_hand);
+    // A fielder never gets the pitching drill.
+    for _ in 0..10 {
+        press(&mut g, hud::Btn::MenuRow(i));
+        assert_ne!(g.s.team.players[i].menu, Drill::Pitching);
+    }
+    // Auto off: next month nothing moves. All back to auto: the suggestions again.
+    press(&mut g, hud::Btn::MenuAuto);
+    assert!(!g.s.menu_auto);
+    press(&mut g, hud::Btn::MenuReset);
+    assert!(g.s.menu_auto);
+    assert!(g.s.team.players.iter().all(|p| !p.menu_hand));
+    assert_eq!(g.s.team.players[i].menu, Drill::Running);
+    // Back closes the screen to the roster.
+    assert!(g.on_key(crate::session::BACK_KEY, true));
+    assert_eq!(g.mode, Mode::Roster);
+}
+
+/// `KAGRA_SHOTS=dir`: a player page with good, gold and bad traits.
+#[test]
+fn player_traits_to_png() {
+    let Ok(dir) = std::env::var("KAGRA_SHOTS") else {
+        return;
+    };
+    for (lang, tag) in [("ja", "ja"), ("en", "en")] {
+        let mut g = started();
+        g.set_lang(lang);
+        tap(&mut g, 195.0, 400.0);
+        let i = g.s.team.players.iter().position(|p| !p.pitcher()).unwrap();
+        {
+            let p = &mut g.s.team.players[i];
+            p.abilities = vec![
+                team::Ability::Gale,
+                team::Ability::Slugger,
+                team::Ability::Glove,
+                team::Ability::Leadoff,
+                team::Ability::Streaky,
+            ];
+        }
+        g.mode = Mode::Player(i);
+        run(&mut g, 1.6);
+        std::fs::create_dir_all(&dir).unwrap();
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join(format!("player_traits_{tag}.png")))
+            .unwrap();
+        // A pitcher: hands, three pitches and the stat rows down to catching.
+        let i = g.s.team.players.iter().position(|p| p.pitcher()).unwrap();
+        g.s.team.players[i].pitches = vec![
+            (team::PitchKind::Slider, 4),
+            (team::PitchKind::Fork, 3),
+            (team::PitchKind::Change, 2),
+        ];
+        g.mode = Mode::Player(i);
+        run(&mut g, 1.6);
+        crate::raster2d::picture(&g.hud(W, H, false), W, H)
+            .save_png(&std::path::Path::new(&dir).join(format!("player_pitcher_{tag}.png")))
+            .unwrap();
+    }
+}
+
+/// No pitcher can take the ball: the last ones were third-years and retired after their
+/// final summer, or every pitcher is hurt. A fielder goes to the mound and the game is
+/// played (it used to stop the game with an empty side).
+#[test]
+fn a_club_with_no_pitcher_who_can_play_still_plays() {
+    for hurt in [false, true] {
+        let mut g = started();
+        tap(&mut g, 195.0, 400.0);
+        if hurt {
+            for p in g.s.team.players.iter_mut().filter(|p| p.pitcher()) {
+                p.hurt = 3;
+            }
+        } else {
+            let (gone, stay): (Vec<_>, Vec<_>) = std::mem::take(&mut g.s.team.players)
+                .into_iter()
+                .partition(|p| p.pitcher());
+            g.s.team.players = stay;
+            g.s.seniors = gone;
+        }
+        assert!(g.s.team.ace().is_none());
+        let mound = g.s.team.mound().expect("someone takes the ball");
+        let nine = g.s.team.resolved();
+        assert_eq!(nine.len(), 9, "nine still take the field");
+        assert!(nine.contains(&(mound, team::Pos::P)), "he is on the mound");
+        g.prepare_game(Fixture::Practice);
+        press(&mut g, hud::Btn::PlayBall);
+        let before = g.s.wins + g.s.losses;
+        skip_whole_game(&mut g);
+        assert_eq!(g.mode, Mode::MatchEnd, "hurt: {hurt}");
+        assert_eq!(g.s.wins + g.s.losses, before + 1);
+    }
 }
