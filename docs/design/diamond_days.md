@@ -28,6 +28,9 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
    - Scout: a middle-schooler promises to join next April.
    - Film: game film together — fielding and batting points, and nobody tires.
    - Grounds: the club keeps the field tidy — a little rest, and reputation rises.
+   - Game: a practice game against a nearby school this week (in winter, red against
+     white for points). Practice games come only from these squares, so the coach decides
+     how often the club plays: Emma, "無駄な試合が多い", asked for practice first.
 4. **Fatigue.** Training costs stamina; a tired player trains worse and can be hurt.
 5. **The calendar moves.** Some weeks are game weeks (below); the board waits.
 
@@ -38,14 +41,13 @@ The year follows a real high-school club (the scenario and why: `diamond_days_sc
 | Weeks | What |
 |---|---|
 | 1 | April: first-years join (after year 1) |
-| 4 | Spring prefectural (3 rounds). The last four are seeded in the summer |
-| 6, 10, 22, 30 | Practice games against a nearby school |
+| any week but winter | A practice game when the coach lands on a **Game** square on the road (two per lap). In winter the same square is a game among ourselves, for points |
 | 11 | Training camp |
 | 12 | Summer numbers (the coach gives number 1 to a pitcher) and the draw |
-| 13 | Summer prefectural (6 rounds; a seed starts in round 2). Lose once and the third-years' summer is over |
+| 13 | Summer prefectural (6 rounds; a seed, last autumn's last four, starts in round 2). Lose once and the third-years' summer is over |
 | 17 | Summer Stadium, the national tournament (5 rounds), if we won the prefecture |
 | the day our summer ends | The third-years retire (a word from each), then the new team names a captain |
-| 24 | Autumn tournament of the new team (4 rounds) |
+| 24 | Autumn tournament of the new team (4 rounds). The last four are seeded next summer |
 | 27 | The pro draft: a retired third-year may be picked |
 | 33 to 44 | Winter: no games with other schools; training counts for 25% more |
 | 37 | Selection day: a deep autumn run waits by the phone for the March invitation |

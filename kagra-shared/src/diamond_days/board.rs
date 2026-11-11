@@ -20,6 +20,9 @@ pub enum Square {
     Film,
     /// Keep the ground tidy: a little rest, and word travels.
     Grounds,
+    /// A practice game against a nearby school this week (in winter, a game among
+    /// ourselves: no games with other schools from December to February).
+    Game,
 }
 
 impl Square {
@@ -36,6 +39,7 @@ impl Square {
             (Square::Scout, false) => "Scout",
             (Square::Film, false) => "Film",
             (Square::Grounds, false) => "Grounds",
+            (Square::Game, false) => "Game",
             (Square::Train(Drill::Batting), true) => "打撃",
             (Square::Train(Drill::Pitching), true) => "投球",
             (Square::Train(Drill::Fielding), true) => "守備",
@@ -47,6 +51,7 @@ impl Square {
             (Square::Scout, true) => "スカウト",
             (Square::Film, true) => "映像",
             (Square::Grounds, true) => "整備",
+            (Square::Game, true) => "練習試合",
         }
     }
 
@@ -63,6 +68,7 @@ impl Square {
             Square::Scout => [255, 190, 110],
             Square::Film => [110, 120, 185],
             Square::Grounds => [180, 150, 105],
+            Square::Game => [236, 84, 72],
         }
     }
 }
@@ -78,6 +84,7 @@ pub fn default_ring() -> Vec<Square> {
         Event,
         Train(Running),
         Train(Pitching),
+        Game,
         Train(Strength),
         Spirit,
         Train(Batting),
@@ -88,6 +95,7 @@ pub fn default_ring() -> Vec<Square> {
         Scout,
         Train(Strength),
         Film,
+        Game,
         Spirit,
         Train(Running),
         Event,
@@ -752,9 +760,9 @@ pub const EXAM_WEEK: u8 = 40;
 
 /// The fixture that starts in week `w`, if any (a tournament's first round).
 pub fn fixture(w: u8) -> Option<Fixture> {
+    // Two tournaments a year (the summer and the new team's autumn), and the stages they
+    // lead to. Practice games are squares on the road (`Square::Game`), not dates.
     match w {
-        4 => Some(Fixture::SpringPref(1)),
-        6 | 10 | 22 | 30 => Some(Fixture::Practice),
         13 => Some(Fixture::Summer(1)),
         17 => Some(Fixture::National(1)),
         24 => Some(Fixture::Autumn(1)),
@@ -1168,8 +1176,10 @@ mod tests {
 
     #[test]
     fn the_calendar_has_the_tournaments_in_their_months() {
-        // Each tournament starts in its month and runs on as game days from there.
-        assert_eq!(fixture(4), Some(Fixture::SpringPref(1)));
+        // Each tournament starts in its month and runs on as game days from there. No
+        // spring prefectural, and no practice games on dates: those are road squares.
+        assert_eq!(fixture(4), None);
+        assert_eq!(fixture(6), None);
         assert_eq!(fixture(13), Some(Fixture::Summer(1)));
         assert_eq!(fixture(14), None);
         assert_eq!(fixture(17), Some(Fixture::National(1)));
@@ -1183,9 +1193,10 @@ mod tests {
         assert_eq!(month(13), 7);
         assert_eq!(month(45), 3);
         assert_eq!(month(48), 3);
-        // Four practice games and five tournaments, none in the winter.
+        // The summer and the autumn, and the stages they lead to; none in the winter.
         let n = (1..=WEEKS).filter(|w| fixture(*w).is_some()).count();
-        assert_eq!(n, 4 + 5);
+        assert_eq!(n, 4);
+        assert!((1..=WEEKS).all(|w| fixture(w) != Some(Fixture::Practice)));
         assert!(WINTER.clone().all(|w| fixture(w).is_none()));
         assert!(rival_level(Fixture::National(1), 1) > rival_level(Fixture::Summer(5), 1));
         let (en, ja, _) = away_school(3, 1);
@@ -1204,8 +1215,11 @@ mod tests {
         assert_eq!(Fixture::National(1).rounds(), 5);
         assert_eq!(Fixture::Autumn(1).rounds(), 4);
         assert_eq!(Fixture::Spring(1).rounds(), 3);
+        // Tournament games a year at most: the summer (6), the national stage (5), the
+        // autumn (4) and March (3). A usual year is far fewer, plus the practice games the
+        // road brings.
         let most: u8 = (1..=WEEKS).filter_map(fixture).map(|f| f.rounds()).sum();
-        assert_eq!(most, 25);
+        assert_eq!(most, 18);
         assert_eq!(Fixture::Summer(5).next(), Some(Fixture::Summer(6)));
         assert_eq!(Fixture::Summer(6).next(), None);
         assert!(Fixture::National(5).is_final() && !Fixture::Practice.is_cup());
@@ -1282,7 +1296,7 @@ mod tests {
             }
         }
         assert!(pick_happening(&mut rng, &list).is_some());
-        assert_eq!(default_ring().len(), 20);
+        assert_eq!(default_ring().len(), 22);
     }
 
     #[test]
@@ -1317,14 +1331,20 @@ mod tests {
     #[test]
     fn the_ring_has_two_of_each_drill_and_the_two_new_squares() {
         let ring = default_ring();
-        assert_eq!(ring.len(), 20);
+        assert_eq!(ring.len(), 22);
+        // Two practice-game squares, apart from each other.
+        let games: Vec<usize> = (0..ring.len())
+            .filter(|&i| ring[i] == Square::Game)
+            .collect();
+        assert_eq!(games.len(), 2);
+        assert!(games[1] - games[0] >= 6, "{games:?}");
         for d in Drill::ALL {
             let n = ring.iter().filter(|s| **s == Square::Train(d)).count();
             assert_eq!(n, 2, "two {d:?} squares");
         }
         assert_eq!(ring.iter().filter(|s| **s == Square::Film).count(), 1);
         assert_eq!(ring.iter().filter(|s| **s == Square::Grounds).count(), 1);
-        for sq in [Square::Film, Square::Grounds] {
+        for sq in [Square::Film, Square::Grounds, Square::Game] {
             assert!(!sq.label(false).is_empty() && !sq.label(true).is_empty());
         }
     }

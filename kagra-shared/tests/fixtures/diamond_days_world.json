@@ -662,6 +662,7 @@
       {
         "train": "Pitching"
       },
+      "game",
       {
         "train": "Strength"
       },
@@ -682,6 +683,7 @@
         "train": "Strength"
       },
       "film",
+      "game",
       "spirit",
       {
         "train": "Running"

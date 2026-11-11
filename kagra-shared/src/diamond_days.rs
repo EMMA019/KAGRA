@@ -329,9 +329,12 @@ struct Save {
     /// Our score in each round played so far (us, them).
     #[serde(default)]
     cup_scores: Vec<(u8, u8)>,
-    /// Seeded in the summer off the spring: the summer starts in round 2.
+    /// Seeded in the summer: the summer starts in round 2. Earned by reaching the last
+    /// four of the autumn before (`seed_next`, which becomes this at the April turn).
     #[serde(default)]
     seeded: bool,
+    #[serde(default)]
+    seed_next: bool,
     /// The next game's opponent was studied the day before: it plays a little weaker.
     #[serde(default)]
     studied: bool,
@@ -1211,8 +1214,8 @@ impl DiamondDays {
                 ));
                 if self.s.seeded {
                     lines.push((
-                        "Seeded off the spring: we start in round 2.".into(),
-                        "春の結果でシード。2回戦から登場。".into(),
+                        "Seeded off the autumn: we start in round 2.".into(),
+                        "秋の結果でシード。2回戦から登場。".into(),
                     ));
                 }
             }
@@ -1221,8 +1224,8 @@ impl DiamondDays {
                 "夏の大舞台。ここにいるのは、どこも県を勝ち抜いた学校だ。勝てば校歌が流れる。".into(),
             )),
             Fixture::Autumn(_) => lines.push((
-                "The new team's first tournament. Go deep and March may call.".into(),
-                "新チーム最初の大会。勝ち進めば、春の招待舞台が見えてくる。".into(),
+                "The new team's first tournament. The last four are seeded next summer, and a deep run may bring a call for March.".into(),
+                "新チーム最初の大会。ベスト4なら来年の夏はシード。勝ち進めば、春の招待舞台も見えてくる。".into(),
             )),
             Fixture::Spring(_) => lines.push((
                 "The Blossom Invitational. The first big stage of the year.".into(),
@@ -1377,6 +1380,8 @@ impl DiamondDays {
             return;
         };
         self.want_call = false;
+        // A practice game from a square on the road: the week the card started is over.
+        self.pre_walk = None;
         let won = g.won() == Some(true);
         let f = self.game_this_week().unwrap_or(Fixture::Practice);
         let (title, title_ja) = Self::fixture_name(f);
@@ -1546,6 +1551,15 @@ impl DiamondDays {
                     self.record(&format!("Autumn round {r}"), &format!("秋季大会 {rn}敗退"));
                 }
                 if !won || last {
+                    // The last four (a semifinal) are seeded next summer.
+                    let reached = if won { r + 1 } else { r };
+                    self.s.seed_next = reached >= f.rounds() - 1;
+                    if self.s.seed_next {
+                        lines.push((
+                            "The last four in the autumn: we are seeded next summer.".into(),
+                            "秋はベスト4以上。来年の夏はシード校だ。".into(),
+                        ));
+                    }
                     lines.push(if self.s.autumn_wins >= 3 {
                         (
                             "That run should put us on the list for March. The answer comes in January.".into(),
@@ -2134,7 +2148,8 @@ impl DiamondDays {
         self.s.national_in = false;
         self.s.spring_in = false;
         self.s.autumn_wins = 0;
-        self.s.seeded = false;
+        // Last autumn's last four are this summer's seeds.
+        self.s.seeded = std::mem::take(&mut self.s.seed_next);
         self.s.cup = None;
         self.s.cup_path.clear();
         self.s.cup_scores.clear();
@@ -2336,6 +2351,13 @@ impl DiamondDays {
             self.happen(pick.map(|p| p.0));
             return;
         }
+        // A nearby school can play us this week: the game is the week. Until it ends, a
+        // save keeps the week as it was before the card (a reload plays the week again).
+        if sq == Square::Game && !board::WINTER.contains(&self.s.week) {
+            crate::mixer::cue_sfx("event");
+            self.prepare_game(Fixture::Practice);
+            return;
+        }
         self.pre_walk = None;
         let (title, title_ja) = (sq.label(false).to_string(), sq.label(true).to_string());
         let mut lines = Vec::new();
@@ -2476,6 +2498,33 @@ impl DiamondDays {
                     format!("映像で守備位置とスイングを確認。チームで{pts}ポイント獲得。"),
                 ));
             }
+            Square::Game if board::WINTER.contains(&self.s.week) => {
+                // December to February: no games with other schools. A game among
+                // ourselves instead, red caps against white.
+                let base = self.spec.train_points * (1.0 + self.s.grounds as f32 * 0.08);
+                let mut pts = 0u32;
+                for p in &mut self.s.team.players {
+                    pts += p.train(Drill::Batting, base * 0.5) as u32;
+                    pts += p.train(
+                        if p.pitcher() {
+                            Drill::Pitching
+                        } else {
+                            Drill::Fielding
+                        },
+                        base * 0.5,
+                    ) as u32;
+                    p.tire(6);
+                }
+                crate::mixer::cue_sfx("train");
+                lines.push((
+                    format!(
+                        "No games with other schools in winter: red against white instead. The team earned {pts} points."
+                    ),
+                    format!("冬は対外試合ができないので、紅白戦。チームで{pts}ポイント獲得。"),
+                ));
+            }
+            // Handled above (outside the winter).
+            Square::Game => {}
             Square::Grounds => {
                 for p in &mut self.s.team.players {
                     p.rest(10);
@@ -3793,6 +3842,7 @@ fn fresh_save(seed: u32) -> Save {
         cup_path: Vec::new(),
         cup_scores: Vec::new(),
         seeded: false,
+        seed_next: false,
         studied: false,
         numbers_year: 0,
         draft_year: 0,
