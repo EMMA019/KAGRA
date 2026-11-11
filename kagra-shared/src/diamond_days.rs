@@ -2375,7 +2375,7 @@ impl DiamondDays {
         // A talk waits for the coach's answer (a save meanwhile replays the week).
         if sq == Square::Event {
             let list = self.spec.happenings.clone();
-            let pick = board::pick_happening(&mut self.rng, &list)
+            let pick = board::pick_happening_in(&mut self.rng, &list, board::month(self.s.week))
                 .map(|h| (h.id.clone(), h.who, !h.choices.is_empty()));
             if let Some((id, who, true)) = pick.clone() {
                 if let (Some(h), Some(w)) = (
@@ -2603,10 +2603,39 @@ impl DiamondDays {
             if h.id == "exams" {
                 self.push_red_marks(&mut lines);
             }
+            // An event that teaches: the player it suits best, if he lacks it.
+            if let Some(a) = h.grant {
+                if let Some(p) = self.best_learner(a) {
+                    let fam = p.family.clone();
+                    if p.grant(a) {
+                        lines.push((
+                            format!("{fam} picked up something: {}.", a.label(false)),
+                            format!("{fam}が新しい特技を身につけた：{}。", a.label(true)),
+                        ));
+                    }
+                }
+            }
             crate::mixer::cue_sfx("event");
         }
         self.note(&title, &title_ja, lines);
         self.end_week();
+    }
+
+    /// Who learns a trait from an event: a player who lacks it and can use it (a pitcher
+    /// for a pitching trait), the best at what it rests on.
+    fn best_learner(&mut self, a: Ability) -> Option<&mut team::Player> {
+        self.s
+            .team
+            .players
+            .iter_mut()
+            .filter(|p| p.can_learn(a) && p.hurt == 0)
+            .max_by_key(|p| {
+                if p.pitcher() {
+                    p.control as u32 + p.breaking as u32
+                } else {
+                    p.contact as u32 + p.power as u32 + p.speed as u32
+                }
+            })
     }
 
     /// The coach answers a talk: it takes effect, the reply is told, the week ends.

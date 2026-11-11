@@ -151,6 +151,10 @@ pub struct Happening {
     pub choices: Vec<Choice>,
     /// Who speaks in a talk.
     pub who: Who,
+    /// Only in these months (4 = April .. 3 = March). Empty: any month.
+    pub months: Vec<u8>,
+    /// Teaches this trait to one player who lacks it (the best at what it needs).
+    pub grant: Option<Ability>,
 }
 
 /// Who speaks in a talk event.
@@ -201,6 +205,8 @@ impl Default for Happening {
             weight: 1.0,
             choices: Vec::new(),
             who: Who::Any,
+            months: Vec::new(),
+            grant: None,
         }
     }
 }
@@ -606,6 +612,349 @@ pub fn default_happenings() -> Vec<Happening> {
                 },
             ],
         ),
+        // ---- round 7: more kinds of days (seasons, school life, the town, the game) ----
+        Happening {
+            months: vec![6],
+            stamina: 10,
+            drill: Some(Drill::Strength),
+            points: 6.0,
+            ..h(
+                "rainy_season",
+                "The rainy season sets in. A week of stairs and push-ups in the gym corridor.",
+                "梅雨入り。一週間、体育館の廊下で階段ダッシュと腕立て伏せ。",
+            )
+        },
+        Happening {
+            months: vec![5, 9],
+            drill: Some(Drill::Running),
+            points: 7.0,
+            mood: 1,
+            ..h(
+                "sports_day",
+                "Sports day. The baseball club sweeps the relay, and the whole school cheers.",
+                "体育祭。野球部がリレーを総なめにして、学校中が盛り上がった。",
+            )
+        },
+        Happening {
+            months: vec![10, 11],
+            mood: 1,
+            stamina: -5,
+            reputation: 1.0,
+            ..h(
+                "school_festival",
+                "The school festival. The club runs a pitching-speed booth; the line goes round the gym.",
+                "文化祭。野球部はスピードガン当ての出し物。体育館を一周する行列ができた。",
+            )
+        },
+        Happening {
+            months: vec![11],
+            stamina: 20,
+            mood: 1,
+            ..h(
+                "school_trip",
+                "The second-years go on the school trip. The first-years hold the fort, and everyone comes back rested.",
+                "2年生は修学旅行。1年生が留守を守り、みんな元気になって戻ってきた。",
+            )
+        },
+        Happening {
+            months: vec![8],
+            mood: 1,
+            stamina: 10,
+            ..h(
+                "fireworks",
+                "The town fireworks. The club watches from the riverbank, still in their practice shirts.",
+                "町の花火大会。部員たちは練習着のまま、河原から見上げた。",
+            )
+        },
+        Happening {
+            months: vec![12],
+            mood: 1,
+            stamina: 10,
+            ..h(
+                "year_end",
+                "The year's last practice ends with rice cakes pounded on the field. Kotori keeps count.",
+                "今年最後の練習は、グラウンドでの餅つきで締めた。数えているのはことりだ。",
+            )
+        },
+        Happening {
+            months: vec![1, 2],
+            drill: Some(Drill::Strength),
+            points: 7.0,
+            stamina: -8,
+            ..h(
+                "snow",
+                "Snow overnight. The club shovels the whole ground before a single throw. Legs of iron.",
+                "夜のうちに雪。投げる前にグラウンド全部を雪かき。足腰が鍛えられた。",
+            )
+        },
+        Happening {
+            months: vec![1],
+            mood: 1,
+            ..h(
+                "shrine",
+                "New Year at the shrine. Every fortune drawn says \"great luck\", which seems unlikely.",
+                "初詣。全員が引いたおみくじが「大吉」。さすがに出来すぎだ。",
+            )
+        },
+        Happening {
+            months: vec![7, 8],
+            stamina: 12,
+            ..h(
+                "heat_rest",
+                "A heat warning. The coach moves practice to the evening and makes everyone drink.",
+                "高温注意報。練習を夕方に移し、全員にしっかり水分をとらせた。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Fielding),
+            points: 7.0,
+            grant: Some(Ability::Steal),
+            weight: 0.6,
+            ..h(
+                "sprint_clinic",
+                "A track coach from the university gives a running clinic: first steps, leans, turns.",
+                "大学の陸上部コーチが走塁教室。一歩目、前傾、ベースの回り方。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Batting),
+            points: 9.0,
+            ..h(
+                "batting_center",
+                "The batting center by the highway gives the club an evening for free. Thousands of swings.",
+                "国道沿いのバッティングセンターが、夜をまるごと貸してくれた。何千本も打ち込んだ。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Fielding),
+            points: 8.0,
+            ..h(
+                "umpire_clinic",
+                "A local umpire teaches the rules that win games: tag-ups, infield flies, the obstruction call.",
+                "地元の審判さんがルール講習。タッチアップ、インフィールドフライ、走塁妨害。",
+            )
+        },
+        Happening {
+            reputation: 2.0,
+            mood: 1,
+            ..h(
+                "kids_clinic",
+                "The club runs a clinic for the town's little league. The kids want autographs.",
+                "町の少年野球に教えに行った。子どもたちにサインをねだられた。",
+            )
+        },
+        Happening {
+            reputation: 3.0,
+            mood: 1,
+            stamina: -5,
+            weight: 0.6,
+            ..h(
+                "tv_crew",
+                "A local TV crew films practice for the evening news. Everyone runs a little faster.",
+                "地元テレビの取材。夕方のニュースで流れるらしい。みんな少し足が速くなった。",
+            )
+        },
+        Happening {
+            reputation: 1.0,
+            stamina: 10,
+            weight: 0.7,
+            ..h(
+                "ob_gift",
+                "The alumni association sends new balls and a pitching machine. The old one retires with honours.",
+                "OB会から新しいボールとピッチングマシンが届いた。古いマシンは名誉の引退。",
+            )
+        },
+        Happening {
+            mood: 1,
+            weight: 0.6,
+            ..h(
+                "pro_scout",
+                "A man with a radar gun sits behind the backstop all afternoon. Nobody says the word \"scout\".",
+                "スピードガンを持った男性が、午後ずっとバックネット裏にいた。誰も「スカウト」とは口にしない。",
+            )
+        },
+        Happening {
+            mood: -1,
+            weight: 0.5,
+            ..h(
+                "broken_bats",
+                "Three bats crack in one day. The budget meeting is not a happy one.",
+                "一日でバットが3本折れた。部費の会議は暗い雰囲気だった。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Pitching),
+            points: 7.0,
+            grant: Some(Ability::Pinch),
+            weight: 0.5,
+            ..h(
+                "bullpen_catcher",
+                "A retired catcher from the town team catches every pitcher's bullpen and talks them through the jams.",
+                "町のチームの元捕手が、投手全員のブルペンを受けて、ピンチの考え方を教えてくれた。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Batting),
+            points: 6.0,
+            grant: Some(Ability::Eye),
+            weight: 0.5,
+            ..h(
+                "eye_drill",
+                "A week of tracking drills: numbers on the balls, called out before they reach the plate.",
+                "ボールに書いた数字を、ホームに届く前に読み上げる練習を一週間。",
+            )
+        },
+        Happening {
+            stamina: -10,
+            drill: Some(Drill::Running),
+            points: 9.0,
+            ..h(
+                "beach_run",
+                "Sand running at the beach in the morning mist. Some cry. All finish.",
+                "朝もやの砂浜ダッシュ。泣く者もいたが、全員が走りきった。",
+            )
+        },
+        Happening {
+            mood: 1,
+            reputation: 1.0,
+            ..h(
+                "rival_visit",
+                "A rival school's captain comes by to borrow the ground. He stays to watch, and leaves impressed.",
+                "ライバル校の主将がグラウンドを借りに来た。練習を見て、感心して帰っていった。",
+            )
+        },
+        Happening {
+            months: vec![2],
+            mood: 1,
+            ..h(
+                "chocolate",
+                "Mid-February. A box of chocolates appears in the clubhouse, \"for everyone\". Nobody admits a thing.",
+                "2月半ば。部室に「みんなへ」とチョコの箱。誰も何も言わない。",
+            )
+        },
+        Happening {
+            months: vec![4],
+            mood: 1,
+            ..h(
+                "new_gloves",
+                "The first-years break in their new gloves, oiling and folding them every night.",
+                "1年生が新しいグラブの型付けに夢中。毎晩オイルを塗って畳んでいる。",
+            )
+        },
+        talk(
+            "quit_thinking",
+            Who::Rookie,
+            "First-year {name} stays behind with his bag packed. \"Coach... I don't think I'm good enough for this club.\"",
+            "1年の{name}が荷物をまとめたまま残っていた。「監督……僕、この部にいてもいいんでしょうか」",
+            vec![
+                Choice {
+                    mood: 2,
+                    drill: Some(Drill::Batting),
+                    points: 6.0,
+                    ..answer(
+                        "Stay. Swing with me tomorrow",
+                        "残れ。明日、一緒に振ろう",
+                        "The next morning {name} is the first one on the field.",
+                        "次の朝、グラウンドに一番乗りしたのは{name}だった。",
+                    )
+                },
+                Choice {
+                    mood: 1,
+                    team_mood: 1,
+                    ..answer(
+                        "Ask the third-years what they thought at your age",
+                        "3年生に同じ頃の話を聞いてこい",
+                        "The third-years laugh: every one of them thought the same. {name} stays.",
+                        "3年生は笑った。全員が同じことを考えていたらしい。{name}は残ることにした。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "position_change",
+            Who::Any,
+            "{name} brings a request: \"Coach, let me try the outfield. My arm wants room.\"",
+            "{name}が相談に来た。「監督、外野をやらせてください。肩を思いきり使いたいんです」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Fielding),
+                    points: 10.0,
+                    mood: 1,
+                    ..answer(
+                        "Try it this week",
+                        "今週やってみろ",
+                        "{name} chases fly balls till dark, grinning the whole time.",
+                        "{name}は暗くなるまでフライを追いかけた。ずっと笑顔だった。",
+                    )
+                },
+                Choice {
+                    drill: Some(Drill::Batting),
+                    points: 8.0,
+                    ..answer(
+                        "First, earn it with your bat",
+                        "まずはバットで認めさせろ",
+                        "{name} takes it as a challenge and doubles his swings.",
+                        "{name}は挑戦と受け取り、素振りを倍にした。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "exam_or_ball",
+            Who::Senior,
+            "Third-year {name} looks worried. \"My parents want me at cram school. But the summer...\"",
+            "3年の{name}が浮かない顔。「親に塾へ行けって言われて。でも、夏が……」",
+            vec![
+                Choice {
+                    mood: 1,
+                    stamina: 15,
+                    ..answer(
+                        "Do both: mornings here, evenings there",
+                        "両方やろう。朝は練習、夜は塾",
+                        "{name} keeps both, and sleeps on the bus between them.",
+                        "{name}は両方を続け、移動のバスで眠ることにした。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    team_mood: 1,
+                    ..answer(
+                        "Talk to his parents yourself",
+                        "監督から親御さんに話す",
+                        "His parents come to the next practice game, and cheer the loudest.",
+                        "次の練習試合に親御さんが来て、誰よりも大きな声で応援してくれた。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "kotori_idea",
+            Who::Any,
+            "Kotori waves a notebook. \"I've charted every pitch they threw at us. Want to see where we keep missing?\"",
+            "ことりがノートを振っている。「打たれた球、全部記録しました。どこを打ち損じてるか見ます？」",
+            vec![
+                Choice {
+                    team_mood: 1,
+                    reputation: 0.5,
+                    ..answer(
+                        "Show the whole club",
+                        "部員全員に見せよう",
+                        "The club crowds round the notebook. {name} spots his own habit first.",
+                        "部員がノートを囲んだ。最初に自分のくせに気づいたのは{name}だった。",
+                    )
+                },
+                Choice {
+                    drill: Some(Drill::Batting),
+                    points: 10.0,
+                    ..answer(
+                        "Make a drill out of it",
+                        "それで練習メニューを作ろう",
+                        "A week of swings at exactly those pitches. {name} goes first.",
+                        "その球だけを打つ練習を一週間。最初に打席に入ったのは{name}だった。",
+                    )
+                },
+            ],
+        ),
     ]
 }
 
@@ -680,16 +1029,27 @@ pub fn apply_choice(c: &Choice, team: &mut Team, who: usize) {
 }
 
 /// Pick an event by weight.
+#[cfg(test)]
 pub fn pick_happening<'a>(rng: &mut Rng, list: &'a [Happening]) -> Option<&'a Happening> {
-    let total: f32 = list.iter().map(|h| h.weight.max(0.0)).sum();
+    pick_happening_in(rng, list, 0)
+}
+
+/// [`pick_happening`] among the events that can happen in `month` (0: any event).
+pub fn pick_happening_in<'a>(
+    rng: &mut Rng,
+    list: &'a [Happening],
+    month: u8,
+) -> Option<&'a Happening> {
+    let fits = |h: &&Happening| month == 0 || h.months.is_empty() || h.months.contains(&month);
+    let total: f32 = list.iter().filter(fits).map(|h| h.weight.max(0.0)).sum();
     let mut r = rng.unit() * total;
-    for h in list {
+    for h in list.iter().filter(fits) {
         r -= h.weight.max(0.0);
         if r <= 0.0 {
             return Some(h);
         }
     }
-    list.last()
+    list.iter().rfind(fits)
 }
 
 /// Apply an event to the team. Returns the name of a player it hurt.
@@ -1300,13 +1660,13 @@ mod tests {
     }
 
     #[test]
-    fn the_event_deck_is_twenty_four_and_every_event_is_complete() {
+    fn the_event_deck_is_fifty_one_and_every_event_is_complete() {
         let list = default_happenings();
-        assert_eq!(list.len(), 24);
+        assert_eq!(list.len(), 51);
         let mut ids: Vec<&str> = list.iter().map(|h| h.id.as_str()).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), 24, "event ids are unique");
+        assert_eq!(ids.len(), 51, "event ids are unique");
         for h in &list {
             assert!(!h.text.is_empty() && !h.text_ja.is_empty(), "{}", h.id);
             assert!(h.weight > 0.0, "{}", h.id);
@@ -1316,7 +1676,29 @@ mod tests {
             }
         }
         let talks = list.iter().filter(|h| !h.choices.is_empty()).count();
-        assert_eq!(talks, 9, "nine talks among the singles");
+        assert_eq!(talks, 13, "thirteen talks among the singles");
+        // Every month has its own events besides the ones that come any time, and an
+        // event that teaches does so with a trait some player can learn.
+        for m in (1..=12u8).filter(|m| !matches!(m, 3)) {
+            assert!(
+                list.iter().any(|h| h.months.contains(&m)) || m == 3,
+                "month {m}"
+            );
+        }
+        for h in list.iter().filter(|h| h.grant.is_some()) {
+            let a = h.grant.unwrap();
+            assert!(a.fits(true) || a.fits(false), "{}", h.id);
+        }
+        // A month draw never picks an event of another month.
+        let mut rng2 = Rng::new(9);
+        for _ in 0..400 {
+            let h = pick_happening_in(&mut rng2, &list, 6).unwrap();
+            assert!(
+                h.months.is_empty() || h.months.contains(&6),
+                "{} in June",
+                h.id
+            );
+        }
         // The bullpen visit feeds the pitching pool, for fielders too.
         let mut rng = Rng::new(3);
         let mut t = Team::founding(&mut rng);

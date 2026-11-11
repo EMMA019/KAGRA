@@ -185,6 +185,11 @@ impl Ability {
         1 << (self as u8)
     }
 
+    /// Whether a pitcher (`true`) or a fielder can use it (the traits each is born with).
+    pub fn fits(self, pitcher: bool) -> bool {
+        ability_pool(pitcher).contains(&self)
+    }
+
     /// What the screen shouts when it fires.
     pub fn label(self, ja: bool) -> &'static str {
         match (self, ja) {
@@ -470,11 +475,16 @@ impl Player {
 
     /// Learn `a` if there is room and he does not already have it.
     pub fn grant(&mut self, a: Ability) -> bool {
-        if self.has(a) || self.abilities.len() >= 2 {
+        if !self.can_learn(a) {
             return false;
         }
         self.abilities.push(a);
         true
+    }
+
+    /// Room for `a`, he lacks it, and his job can use it.
+    pub fn can_learn(&self, a: Ability) -> bool {
+        !self.has(a) && self.abilities.len() < 2 && a.fits(self.pitcher())
     }
 
     /// Make room for a trait the story insists on (the ace's heavy ball, the captain's spark).
