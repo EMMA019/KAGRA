@@ -1069,6 +1069,23 @@ impl Team {
             .map(|(i, _)| i)
     }
 
+    /// Who takes the ball: the ace, or, when no pitcher can play (every one hurt, or the
+    /// last ones were third-years and retired after their final summer), the fielder with
+    /// the strongest arm. None only when nobody at all can play.
+    pub fn mound(&self) -> Option<usize> {
+        self.ace().or_else(|| {
+            self.players
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.can_play())
+                .max_by(|a, b| {
+                    let score = |p: &Player| p.pitch_rating() + p.arm as f32 * 0.1;
+                    score(a.1).total_cmp(&score(b.1))
+                })
+                .map(|(i, _)| i)
+        })
+    }
+
     /// Nine batters (indices), the best one per position, then the best left, in a batting
     /// order: speed first, the strongest third and fourth. The pitcher bats ninth.
     pub fn lineup(&self, pitcher: usize) -> Vec<usize> {
@@ -1136,7 +1153,7 @@ impl Team {
         if let Some(nine) = self.try_card() {
             return nine;
         }
-        let Some(p) = self.ace() else {
+        let Some(p) = self.mound() else {
             return Vec::new();
         };
         let order = self.lineup(p);
@@ -1262,7 +1279,11 @@ impl Team {
         let n = (4 + (reputation / 25.0) as usize).saturating_sub(signed / 2);
         let level = 33.0 + reputation * 0.25;
         let mut need: Vec<Pos> = Vec::new();
-        if self.players.iter().filter(|p| p.pitcher()).count() < 3 {
+        // A pitcher when there are few, or when every one is a third-year: they retire
+        // after the summer and the new team would have no one for the mound.
+        if self.players.iter().filter(|p| p.pitcher()).count() < 3
+            || !self.players.iter().any(|p| p.pitcher() && p.grade < 3)
+        {
             need.push(Pos::P);
         }
         if !self.players.iter().any(|p| p.pos == Pos::C) {
@@ -1356,11 +1377,14 @@ fn assign_spots(players: &[Player], order: &[usize]) -> Vec<Pos> {
     let mut spots: Vec<Option<Pos>> = vec![None; order.len()];
     let mut used = [false; 9];
     let index = |pos: Pos| Pos::FIELD.iter().position(|p| *p == pos).unwrap_or(0);
+    // The pitcher takes the mound. With no pitcher in the order (none can play), the last
+    // man does: [`Team::lineup`] puts whoever takes the ball last.
     if let Some(k) = order
         .iter()
         .enumerate()
         .rev()
         .find_map(|(k, &i)| players.get(i).and_then(|p| p.pitcher().then_some(k)))
+        .or_else(|| order.len().checked_sub(1))
     {
         spots[k] = Some(Pos::P);
         used[index(Pos::P)] = true;
@@ -1393,6 +1417,23 @@ fn assign_spots(players: &[Player], order: &[usize]) -> Vec<Pos> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pitchers enough, but every one in his last year: a first-year pitcher joins, so the
+    /// new team after the summer has someone for the mound.
+    #[test]
+    fn a_pitcher_joins_when_every_pitcher_is_a_third_year() {
+        let mut rng = Rng::new(9);
+        let mut t = Team::founding(&mut rng);
+        for _ in 0..3 {
+            t.players.push(rookie(&mut rng, 3, Pos::P, 50.0));
+        }
+        for p in t.players.iter_mut().filter(|p| p.pitcher()) {
+            p.grade = 3;
+        }
+        assert!(t.players.iter().filter(|p| p.pitcher()).count() >= 3);
+        t.recruit(&mut rng, 0.0, Vec::new());
+        assert!(t.players.iter().any(|p| p.pitcher() && p.grade == 1));
+    }
 
     #[test]
     fn the_founding_club_fields_nine_with_a_pitcher_batting_ninth() {
