@@ -1106,7 +1106,7 @@ impl Team {
                 Pos::FIELD[1 + (rng.next_u32() as usize) % 8]
             };
             self.players
-                .push(rookie(rng, 2, pos, 30.0 + reputation * 0.15));
+                .push(rookie(rng, 2, pos, 33.0 + reputation * 0.15));
             self.unique_names();
             if let Some(p) = self.players.last() {
                 names.push(p.family.clone());
@@ -1124,7 +1124,7 @@ impl Team {
             self.players.push(p);
         }
         let n = (4 + (reputation / 25.0) as usize).saturating_sub(signed / 2);
-        let level = 30.0 + reputation * 0.25;
+        let level = 33.0 + reputation * 0.25;
         let mut need: Vec<Pos> = Vec::new();
         if self.players.iter().filter(|p| p.pitcher()).count() < 3 {
             need.push(Pos::P);
@@ -1153,7 +1153,7 @@ impl Team {
     pub fn prospect(rng: &mut Rng, reputation: f32) -> Player {
         let pos = Pos::FIELD[(rng.next_u32() as usize) % 9];
         let gem = if rng.unit() < 0.25 { 10.0 } else { 0.0 };
-        rookie(rng, 1, pos, 38.0 + reputation * 0.25 + gem)
+        rookie(rng, 1, pos, 41.0 + reputation * 0.25 + gem)
     }
 }
 

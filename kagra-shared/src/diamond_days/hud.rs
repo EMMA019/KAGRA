@@ -2331,6 +2331,8 @@ pub(in crate::diamond_days) fn square_label(sq: Square, ja: bool) -> &'static st
         (Square::Event, false) => "EVENT",
         (Square::Spirit, false) => "SPIRIT",
         (Square::Scout, false) => "SCOUT",
+        (Square::Film, false) => "FILM",
+        (Square::Grounds, false) => "GROUNDS",
         _ => sq.label(ja),
     }
 }

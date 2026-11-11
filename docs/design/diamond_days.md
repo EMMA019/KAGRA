@@ -25,6 +25,9 @@ assets (Kenney mini characters, platformer tiles) and the shared engine parts.
    - Event: something happens (a sponsor brings drinks, an alumnus coaches, a player
      twists an ankle, rain). Events are JSON.
    - Spirit: the whole team's condition goes up.
+   - Scout: a middle-schooler promises to join next April.
+   - Film: game film together — fielding and batting points, and nobody tires.
+   - Grounds: the club keeps the field tidy — a little rest, and reputation rises.
 4. **Fatigue.** Training costs stamina; a tired player trains worse and can be hurt.
 5. **The calendar moves.** Some weeks are game weeks (below); the board waits.
 
