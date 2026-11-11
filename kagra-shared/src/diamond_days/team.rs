@@ -158,19 +158,161 @@ pub enum Ability {
     Eye = 6,
     /// A heavy fastball: pitching stuff up.
     Heavy = 7,
+    // ---- more good traits (round 7) ----
+    /// Pulls the ball into the seats: power up.
+    Slugger = 8,
+    /// Hits it where it is pitched: a little more contact, fewer strikeouts.
+    Spray = 9,
+    /// Leading off an inning he takes walks and puts the ball in play.
+    Leadoff = 10,
+    /// Bunts and squeezes almost always work.
+    Bunter = 11,
+    /// Reads the ball off the bat: a better runner than his legs.
+    Runner = 12,
+    /// Sure hands: fielding up.
+    Glove = 13,
+    /// A strong, accurate arm in the field.
+    Cannon = 14,
+    /// Misses bats: more strikeouts.
+    Strikeout = 15,
+    /// Keeps it down: fewer home runs.
+    Sinker = 16,
+    /// Lives on the corners without walking anyone.
+    Command = 17,
+    /// Goes deep into games.
+    Workhorse = 18,
+    /// A quick move to first: runners steal less.
+    Pickoff = 19,
+    /// Gets better the longer he pitches.
+    Settles = 20,
+    // ---- gold: the step above a good trait (replaces it) ----
+    /// Gold of `Chance`: the bigger the moment, the better he hits.
+    BigStage = 21,
+    /// Gold of `Slugger`: balls leave the park.
+    OutOfPark = 22,
+    /// Gold of `Steal`: nobody throws him out.
+    Gale = 23,
+    /// Gold of `Glove`: nothing gets through.
+    IronWall = 24,
+    /// Gold of `Heavy`: a fastball that bends bats.
+    Roaring = 25,
+    /// Gold of `Strikeout`: strikeouts in bunches.
+    KPile = 26,
+    /// Gold of `Pinch`: calmest with the bases full.
+    IceHeart = 27,
+    /// Gold of `Durable`: never hurt in practice.
+    Unbreakable = 28,
+    // ---- bad: habits to train away ----
+    /// Tightens up with runners on.
+    Shrinks = 29,
+    /// Gets hurt more easily in practice.
+    Fragile = 30,
+    /// Hot one day, cold the next.
+    Streaky = 31,
+    /// Walks batters.
+    Wild = 32,
+    /// Leaves pitches up: more home runs against him.
+    HomerProne = 33,
+    /// Throws it away: fielding down.
+    Butterfingers = 34,
+    /// A shaky first inning.
+    ShakyStart = 35,
+    /// Loses the zone with runners in scoring position.
+    Rattled = 36,
 }
 
-pub const BIT_CHANCE: u8 = 1 << 0;
-pub const BIT_PINCH: u8 = 1 << 1;
-pub const BIT_CLUTCH: u8 = 1 << 2;
-pub const BIT_STEAL: u8 = 1 << 3;
-pub const BIT_DURABLE: u8 = 1 << 4;
-pub const BIT_MOOD: u8 = 1 << 5;
-pub const BIT_EYE: u8 = 1 << 6;
-pub const BIT_HEAVY: u8 = 1 << 7;
+pub const BIT_CHANCE: u64 = 1 << 0;
+pub const BIT_PINCH: u64 = 1 << 1;
+pub const BIT_CLUTCH: u64 = 1 << 2;
+pub const BIT_STEAL: u64 = 1 << 3;
+pub const BIT_DURABLE: u64 = 1 << 4;
+pub const BIT_MOOD: u64 = 1 << 5;
+pub const BIT_EYE: u64 = 1 << 6;
+pub const BIT_HEAVY: u64 = 1 << 7;
+
+/// The kind of a trait: good, the gold step above a good one, or a bad habit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tier {
+    Good,
+    Gold,
+    Bad,
+}
+
+/// At most this many good or gold traits (bad habits do not take a slot).
+pub const TRAIT_SLOTS: usize = 4;
+
+/// A pitch a pitcher throws besides his fastball. Each has a level, 1 to 7 (how much it
+/// moves).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PitchKind {
+    Slider,
+    Curve,
+    Cutter,
+    Fork,
+    Shuuto,
+    Sinker,
+    Change,
+}
+
+/// Which batters a pitch troubles most.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Breaks {
+    /// Away from a batter on the pitcher's own side (a right-hander's slider to a
+    /// right-handed batter).
+    SameSide,
+    /// Away from a batter on the other side.
+    OtherSide,
+    /// Down: a swing and a miss against anyone.
+    Down,
+}
+
+impl PitchKind {
+    pub const ALL: [PitchKind; 7] = [
+        PitchKind::Slider,
+        PitchKind::Curve,
+        PitchKind::Cutter,
+        PitchKind::Fork,
+        PitchKind::Shuuto,
+        PitchKind::Sinker,
+        PitchKind::Change,
+    ];
+
+    pub fn breaks(self) -> Breaks {
+        match self {
+            PitchKind::Slider | PitchKind::Curve | PitchKind::Cutter => Breaks::SameSide,
+            PitchKind::Shuuto | PitchKind::Sinker | PitchKind::Change => Breaks::OtherSide,
+            PitchKind::Fork => Breaks::Down,
+        }
+    }
+
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (PitchKind::Slider, false) => "Slider",
+            (PitchKind::Curve, false) => "Curve",
+            (PitchKind::Cutter, false) => "Cutter",
+            (PitchKind::Fork, false) => "Splitter",
+            (PitchKind::Shuuto, false) => "Two-seam",
+            (PitchKind::Sinker, false) => "Sinker",
+            (PitchKind::Change, false) => "Changeup",
+            (PitchKind::Slider, true) => "スライダー",
+            (PitchKind::Curve, true) => "カーブ",
+            (PitchKind::Cutter, true) => "カット",
+            (PitchKind::Fork, true) => "フォーク",
+            (PitchKind::Shuuto, true) => "シュート",
+            (PitchKind::Sinker, true) => "シンカー",
+            (PitchKind::Change, true) => "チェンジアップ",
+        }
+    }
+}
+
+/// Bats and throws left? From the name, the same way the ballpark draws him.
+pub fn lefty(name: &str) -> bool {
+    super::art::bats_left(name)
+}
 
 impl Ability {
-    pub const ALL: [Ability; 8] = [
+    pub const ALL: [Ability; 37] = [
         Ability::Chance,
         Ability::Pinch,
         Ability::Clutch,
@@ -179,10 +321,163 @@ impl Ability {
         Ability::Mood,
         Ability::Eye,
         Ability::Heavy,
+        Ability::Slugger,
+        Ability::Spray,
+        Ability::Leadoff,
+        Ability::Bunter,
+        Ability::Runner,
+        Ability::Glove,
+        Ability::Cannon,
+        Ability::Strikeout,
+        Ability::Sinker,
+        Ability::Command,
+        Ability::Workhorse,
+        Ability::Pickoff,
+        Ability::Settles,
+        Ability::BigStage,
+        Ability::OutOfPark,
+        Ability::Gale,
+        Ability::IronWall,
+        Ability::Roaring,
+        Ability::KPile,
+        Ability::IceHeart,
+        Ability::Unbreakable,
+        Ability::Shrinks,
+        Ability::Fragile,
+        Ability::Streaky,
+        Ability::Wild,
+        Ability::HomerProne,
+        Ability::Butterfingers,
+        Ability::ShakyStart,
+        Ability::Rattled,
     ];
 
-    pub fn bit(self) -> u8 {
+    pub fn bit(self) -> u64 {
         1 << (self as u8)
+    }
+
+    pub fn tier(self) -> Tier {
+        match self as u8 {
+            21..=28 => Tier::Gold,
+            29.. => Tier::Bad,
+            _ => Tier::Good,
+        }
+    }
+
+    /// The gold step above this good trait, and the good trait a gold one grew from.
+    pub fn gold(self) -> Option<Ability> {
+        Some(match self {
+            Ability::Chance => Ability::BigStage,
+            Ability::Slugger => Ability::OutOfPark,
+            Ability::Steal => Ability::Gale,
+            Ability::Glove => Ability::IronWall,
+            Ability::Heavy => Ability::Roaring,
+            Ability::Strikeout => Ability::KPile,
+            Ability::Pinch => Ability::IceHeart,
+            Ability::Durable => Ability::Unbreakable,
+            _ => return None,
+        })
+    }
+
+    pub fn base(self) -> Option<Ability> {
+        Ability::ALL
+            .iter()
+            .copied()
+            .find(|a| a.gold() == Some(self))
+    }
+
+    /// Whether a pitcher (`true`) or a fielder can use it.
+    pub fn fits(self, pitcher: bool) -> bool {
+        use Ability::*;
+        match self {
+            Heavy | Pinch | Strikeout | Sinker | Command | Workhorse | Pickoff | Settles
+            | Roaring | KPile | IceHeart | Wild | HomerProne | ShakyStart | Rattled => pitcher,
+            Chance | Steal | Slugger | Spray | Leadoff | Bunter | Runner | Glove | Cannon
+            | BigStage | OutOfPark | Gale | IronWall | Shrinks | Butterfingers => !pitcher,
+            // Both: and a pitcher bats too, so a good eye still helps him.
+            Clutch | Durable | Mood | Eye | Unbreakable | Fragile | Streaky => true,
+        }
+    }
+
+    /// One line on what it does (the player page).
+    pub fn blurb(self, ja: bool) -> &'static str {
+        use Ability::*;
+        match (self, ja) {
+            (Chance, false) => "Hits better with runners in scoring position",
+            (Chance, true) => "得点圏で打撃が上がる",
+            (Pinch, false) => "Pitches better with runners in scoring position",
+            (Pinch, true) => "得点圏に走者がいると投球が上がる",
+            (Clutch, false) => "Better late in a close game",
+            (Clutch, true) => "終盤の接戦で力を出す",
+            (Steal, false) => "Steals more, and more safely",
+            (Steal, true) => "盗塁がよく決まる",
+            (Durable, false) => "Rarely hurt; shrugs off a red mark",
+            (Durable, true) => "ケガをしにくい。赤点でも休まない",
+            (Mood, false) => "Lifts the whole order",
+            (Mood, true) => "打線全体が少し上向く",
+            (Eye, false) => "Draws more walks",
+            (Eye, true) => "四球を選びやすい",
+            (Heavy, false) => "A heavy fastball: more strikeouts, weaker contact",
+            (Heavy, true) => "重い速球。打たれても飛ばない",
+            (Slugger, false) => "More power",
+            (Slugger, true) => "長打が出やすい",
+            (Spray, false) => "A little more contact, fewer strikeouts",
+            (Spray, true) => "ミートが少し上がり、三振が減る",
+            (Leadoff, false) => "Gets on base leading off an inning",
+            (Leadoff, true) => "先頭打者のとき出塁しやすい",
+            (Bunter, false) => "Bunts and squeezes almost always work",
+            (Bunter, true) => "バントとスクイズがほぼ決まる",
+            (Runner, false) => "Runs the bases better than his legs",
+            (Runner, true) => "足の速さ以上に走塁がうまい",
+            (Glove, false) => "Sure hands: better fielding",
+            (Glove, true) => "守備がうまい",
+            (Cannon, false) => "A strong arm in the field",
+            (Cannon, true) => "肩が強く、送球が正確",
+            (Strikeout, false) => "More strikeouts",
+            (Strikeout, true) => "三振を奪いやすい",
+            (Sinker, false) => "Keeps it low: fewer home runs",
+            (Sinker, true) => "低めに集まり、本塁打を打たれにくい",
+            (Command, false) => "Rarely walks anyone",
+            (Command, true) => "四球を出しにくい",
+            (Workhorse, false) => "Goes deeper into games",
+            (Workhorse, true) => "スタミナが長持ちする",
+            (Pickoff, false) => "Runners steal less",
+            (Pickoff, true) => "盗塁を許しにくい",
+            (Settles, false) => "Better as the game goes on",
+            (Settles, true) => "回を追うごとに調子が上がる",
+            (BigStage, false) => "Gold: the bigger the moment, the better he hits",
+            (BigStage, true) => "金：大事な場面ほど打つ",
+            (OutOfPark, false) => "Gold: balls leave the park",
+            (OutOfPark, true) => "金：打球がスタンドまで飛ぶ",
+            (Gale, false) => "Gold: nobody throws him out",
+            (Gale, true) => "金：盗塁を刺されない",
+            (IronWall, false) => "Gold: nothing gets through",
+            (IronWall, true) => "金：守備で打球を通さない",
+            (Roaring, false) => "Gold: a fastball that bends bats",
+            (Roaring, true) => "金：バットを押し込む速球",
+            (KPile, false) => "Gold: strikeouts in bunches",
+            (KPile, true) => "金：三振の山を築く",
+            (IceHeart, false) => "Gold: calmest with the bases full",
+            (IceHeart, true) => "金：ピンチほど落ち着く",
+            (Unbreakable, false) => "Gold: never hurt in practice",
+            (Unbreakable, true) => "金：練習でケガをしない",
+            (Shrinks, false) => "Bad: tightens up with runners on",
+            (Shrinks, true) => "悪：得点圏で打撃が下がる",
+            (Fragile, false) => "Bad: gets hurt more easily",
+            (Fragile, true) => "悪：ケガをしやすい",
+            (Streaky, false) => "Bad: hot one day, cold the next",
+            (Streaky, true) => "悪：日によって打撃が上下する",
+            (Wild, false) => "Bad: walks batters",
+            (Wild, true) => "悪：四球が多い",
+            (HomerProne, false) => "Bad: gives up home runs",
+            (HomerProne, true) => "悪：本塁打を打たれやすい",
+            (Butterfingers, false) => "Bad: throws it away",
+            (Butterfingers, true) => "悪：送球がそれる",
+            (ShakyStart, false) => "Bad: a shaky first inning",
+            (ShakyStart, true) => "悪：初回に不安定",
+            (Rattled, false) => "Bad: loses the zone in a pinch",
+            (Rattled, true) => "悪：ピンチで制球を乱す",
+        }
     }
 
     /// What the screen shouts when it fires.
@@ -204,6 +499,64 @@ impl Ability {
             (Ability::Mood, true) => "元気印",
             (Ability::Eye, true) => "見極め",
             (Ability::Heavy, true) => "剛球",
+            (Ability::Slugger, false) => "Pull Power",
+            (Ability::Spray, false) => "All Fields",
+            (Ability::Leadoff, false) => "Table Setter",
+            (Ability::Bunter, false) => "Bunt Artist",
+            (Ability::Runner, false) => "Smart Feet",
+            (Ability::Glove, false) => "Soft Hands",
+            (Ability::Cannon, false) => "Rocket Arm",
+            (Ability::Strikeout, false) => "Bat Misser",
+            (Ability::Sinker, false) => "Keeps It Low",
+            (Ability::Command, false) => "Paint Brush",
+            (Ability::Workhorse, false) => "Long Haul",
+            (Ability::Pickoff, false) => "Quick Move",
+            (Ability::Settles, false) => "Warms Up",
+            (Ability::BigStage, false) => "Big Stage",
+            (Ability::OutOfPark, false) => "Moonshot",
+            (Ability::Gale, false) => "Gale",
+            (Ability::IronWall, false) => "Iron Wall",
+            (Ability::Roaring, false) => "Roaring Heat",
+            (Ability::KPile, false) => "K Machine",
+            (Ability::IceHeart, false) => "Ice Heart",
+            (Ability::Unbreakable, false) => "Unbreakable",
+            (Ability::Shrinks, false) => "Tight Grip",
+            (Ability::Fragile, false) => "Glass Body",
+            (Ability::Streaky, false) => "Streaky",
+            (Ability::Wild, false) => "Wild",
+            (Ability::HomerProne, false) => "Long Ball",
+            (Ability::Butterfingers, false) => "Wild Throws",
+            (Ability::ShakyStart, false) => "Slow Start",
+            (Ability::Rattled, false) => "Rattled",
+            (Ability::Slugger, true) => "引っ張り長打",
+            (Ability::Spray, true) => "打ち分け",
+            (Ability::Leadoff, true) => "切り込み隊長",
+            (Ability::Bunter, true) => "バントの名手",
+            (Ability::Runner, true) => "走塁センス",
+            (Ability::Glove, true) => "柔らかい手",
+            (Ability::Cannon, true) => "鉄砲肩",
+            (Ability::Strikeout, true) => "空振りを奪う",
+            (Ability::Sinker, true) => "低め集中",
+            (Ability::Command, true) => "四隅を突く",
+            (Ability::Workhorse, true) => "長い回もへっちゃら",
+            (Ability::Pickoff, true) => "素早いけん制",
+            (Ability::Settles, true) => "投げるほど調子づく",
+            (Ability::BigStage, true) => "大舞台の主役",
+            (Ability::OutOfPark, true) => "場外へ",
+            (Ability::Gale, true) => "疾風",
+            (Ability::IronWall, true) => "鉄壁",
+            (Ability::Roaring, true) => "唸る速球",
+            (Ability::KPile, true) => "三振の山",
+            (Ability::IceHeart, true) => "氷の心臓",
+            (Ability::Unbreakable, true) => "不死身",
+            (Ability::Shrinks, true) => "固くなる",
+            (Ability::Fragile, true) => "ガラスの体",
+            (Ability::Streaky, true) => "日替わり",
+            (Ability::Wild, true) => "荒れ球",
+            (Ability::HomerProne, true) => "一発注意",
+            (Ability::Butterfingers, true) => "悪送球癖",
+            (Ability::ShakyStart, true) => "立ち上がり不安",
+            (Ability::Rattled, true) => "ピンチで乱れる",
         }
     }
 }
@@ -280,6 +633,14 @@ pub struct Player {
     pub control: u8,
     pub stamina_p: u8,
     pub breaking: u8,
+    /// Sure hands (catching the ball cleanly; errors). 0 in a save from before it
+    /// existed: read as his fielding.
+    #[serde(default)]
+    pub catching: u8,
+    /// A pitcher's pitches besides the fastball, with their levels (1 to 7). Empty in a
+    /// save from before: read from his breaking ball (see [`Player::repertoire`]).
+    #[serde(default)]
+    pub pitches: Vec<(PitchKind, u8)>,
     pub mood: Mood,
     /// 0 to 100: tiredness taken away; low stamina trains badly and risks injury.
     pub stamina: u8,
@@ -290,6 +651,9 @@ pub struct Player {
     /// The drill this player works on in individual practice every week.
     #[serde(default = "default_menu")]
     pub menu: Drill,
+    /// The coach chose `menu` by hand: the monthly automatic menus leave him alone.
+    #[serde(default)]
+    pub menu_hand: bool,
     /// Zero, one or two special traits.
     #[serde(default)]
     pub abilities: Vec<Ability>,
@@ -366,14 +730,16 @@ pub enum Stat {
     Control,
     Stamina,
     Breaking,
+    Catching,
 }
 
 impl Stat {
-    pub const ALL: [Stat; 9] = [
+    pub const ALL: [Stat; 10] = [
         Stat::Contact,
         Stat::Power,
         Stat::Speed,
         Stat::Field,
+        Stat::Catching,
         Stat::Arm,
         Stat::Velo,
         Stat::Control,
@@ -387,7 +753,7 @@ impl Stat {
             Stat::Contact => Drill::Batting,
             Stat::Power | Stat::Stamina => Drill::Strength,
             Stat::Speed => Drill::Running,
-            Stat::Field | Stat::Arm => Drill::Fielding,
+            Stat::Field | Stat::Arm | Stat::Catching => Drill::Fielding,
             Stat::Velo | Stat::Control | Stat::Breaking => Drill::Pitching,
         }
     }
@@ -411,6 +777,7 @@ impl Stat {
             (Stat::Control, false) => "Control",
             (Stat::Stamina, false) => "Stamina",
             (Stat::Breaking, false) => "Breaking",
+            (Stat::Catching, false) => "Catching",
             (Stat::Contact, true) => "ミート",
             (Stat::Power, true) => "パワー",
             (Stat::Speed, true) => "走力",
@@ -420,6 +787,7 @@ impl Stat {
             (Stat::Control, true) => "制球",
             (Stat::Stamina, true) => "スタミナ",
             (Stat::Breaking, true) => "変化球",
+            (Stat::Catching, true) => "捕球",
         }
     }
 }
@@ -457,21 +825,78 @@ impl Player {
         self.hurt == 0 && self.study == 0
     }
 
+    /// He has `a`, or the gold step it grew into (a gold steal is still a steal).
     pub fn has(&self, a: Ability) -> bool {
-        self.abilities.contains(&a)
+        self.abilities
+            .iter()
+            .any(|x| *x == a || x.base() == Some(a))
     }
 
-    pub fn bits(&self) -> u8 {
-        self.abilities.iter().fold(0, |n, a| n | a.bit())
+    /// How likely practice hurts him, against an ordinary player: a fragile body twice as
+    /// likely; a gold "unbreakable" never.
+    pub fn injury_risk(&self) -> f32 {
+        if self.has(Ability::Unbreakable) {
+            0.0
+        } else if self.has(Ability::Fragile) {
+            2.0
+        } else {
+            1.0
+        }
+    }
+
+    /// His traits as bits, a gold one also counting as the good one it grew from (a gold
+    /// steal is still a steal wherever the sim asks for one).
+    pub fn bits(&self) -> u64 {
+        self.abilities
+            .iter()
+            .fold(0, |n, a| n | a.bit() | a.base().map_or(0, Ability::bit))
+    }
+
+    /// Good and gold traits (bad habits do not take a slot).
+    pub fn slots_used(&self) -> usize {
+        self.abilities
+            .iter()
+            .filter(|a| a.tier() != Tier::Bad)
+            .count()
+    }
+
+    /// A good trait grows into its gold step (the good one makes room). True when it did.
+    pub fn upgrade(&mut self, good: Ability) -> bool {
+        let Some(gold) = good.gold() else {
+            return false;
+        };
+        match self.abilities.iter().position(|a| *a == good) {
+            Some(i) if !self.has(gold) => {
+                self.abilities[i] = gold;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Lose a bad habit. True when he had it.
+    pub fn shed(&mut self, bad: Ability) -> bool {
+        let before = self.abilities.len();
+        self.abilities.retain(|a| *a != bad);
+        before != self.abilities.len()
     }
 
     /// Learn `a` if there is room and he does not already have it.
     pub fn grant(&mut self, a: Ability) -> bool {
-        if self.has(a) || self.abilities.len() >= 2 {
+        if !self.can_learn(a) {
             return false;
         }
         self.abilities.push(a);
         true
+    }
+
+    /// Room for `a`, he lacks it (and its gold step), and his job can use it. A bad habit
+    /// takes no slot.
+    pub fn can_learn(&self, a: Ability) -> bool {
+        !self.has(a)
+            && a.gold().is_none_or(|g| !self.has(g))
+            && (a.tier() == Tier::Bad || self.slots_used() < TRAIT_SLOTS)
+            && a.fits(self.pitcher())
     }
 
     /// Make room for a trait the story insists on (the ace's heavy ball, the captain's spark).
@@ -479,8 +904,10 @@ impl Player {
         if self.has(a) {
             return;
         }
-        if self.abilities.len() >= 2 {
-            self.abilities.pop();
+        if a.tier() != Tier::Bad && self.slots_used() >= TRAIT_SLOTS {
+            if let Some(i) = self.abilities.iter().rposition(|x| x.tier() != Tier::Bad) {
+                self.abilities.remove(i);
+            }
         }
         self.abilities.push(a);
     }
@@ -508,7 +935,71 @@ impl Player {
             Stat::Control => self.control,
             Stat::Stamina => self.stamina_p,
             Stat::Breaking => self.breaking,
+            Stat::Catching => self.catching(),
         }
+    }
+
+    /// Sure hands (a save from before catching existed reads his fielding).
+    pub fn catching(&self) -> u8 {
+        if self.catching == 0 {
+            self.field
+        } else {
+            self.catching
+        }
+    }
+
+    /// His pitches besides the fastball (a save from before reads them off his breaking
+    /// ball: a slider, and a curve once it is good).
+    pub fn repertoire(&self) -> Vec<(PitchKind, u8)> {
+        if !self.pitches.is_empty() || !self.pitcher() {
+            return self.pitches.clone();
+        }
+        let mut out = vec![(PitchKind::Slider, (self.breaking / 18).clamp(1, 5))];
+        if self.breaking >= 50 {
+            out.push((PitchKind::Curve, (self.breaking / 25).clamp(1, 4)));
+        }
+        out
+    }
+
+    /// Bats (and throws) left?
+    pub fn left(&self) -> bool {
+        lefty(&self.family)
+    }
+
+    /// A better breaking ball: a new pitch at 40 and 65, otherwise the weakest one
+    /// moves more. True when something changed.
+    fn grow_pitch(&mut self) -> bool {
+        let mut rep = self.repertoire();
+        let want = if self.breaking >= 65 {
+            3
+        } else if self.breaking >= 40 {
+            2
+        } else {
+            1
+        };
+        if rep.len() < want {
+            // The next kind in the list for him, by his name, that he does not throw yet.
+            let start =
+                (super::art::hash(&self.family) as usize + rep.len()) % PitchKind::ALL.len();
+            if let Some(k) = (0..PitchKind::ALL.len())
+                .map(|i| PitchKind::ALL[(start + i) % PitchKind::ALL.len()])
+                .find(|k| rep.iter().all(|(h, _)| h != k))
+            {
+                rep.push((k, 1));
+                self.pitches = rep;
+                return true;
+            }
+        }
+        if let Some(weak) = rep
+            .iter_mut()
+            .filter(|(_, l)| *l < 7)
+            .min_by_key(|(_, l)| *l)
+        {
+            weak.1 += 1;
+            self.pitches = rep;
+            return true;
+        }
+        false
     }
 
     fn stat_mut(&mut self, st: Stat) -> &mut u8 {
@@ -522,6 +1013,12 @@ impl Player {
             Stat::Control => &mut self.control,
             Stat::Stamina => &mut self.stamina_p,
             Stat::Breaking => &mut self.breaking,
+            Stat::Catching => {
+                if self.catching == 0 {
+                    self.catching = self.field;
+                }
+                &mut self.catching
+            }
         }
     }
 
@@ -558,19 +1055,91 @@ impl Player {
     /// Crossing a threshold can teach a trait. One step, once.
     fn maybe_learn(&mut self, st: Stat) {
         let v = self.stat(st);
+        let pitcher = self.pitcher();
         let learned = match (st, v) {
             (Stat::Speed, 70) => Some(Ability::Steal),
+            (Stat::Speed, 64) => Some(Ability::Runner),
             (Stat::Contact, 72) => Some(Ability::Eye),
+            (Stat::Contact, 66) => Some(Ability::Spray),
+            (Stat::Contact, 78) => Some(Ability::Leadoff),
             (Stat::Power, 74) => Some(Ability::Chance),
+            (Stat::Power, 68) => Some(Ability::Slugger),
             (Stat::Power, 82) => Some(Ability::Clutch),
-            (Stat::Velo, 140) if self.pitcher() => Some(Ability::Heavy),
-            (Stat::Control, 66) if self.pitcher() => Some(Ability::Pinch),
+            (Stat::Velo, 140) if pitcher => Some(Ability::Heavy),
+            (Stat::Control, 66) if pitcher => Some(Ability::Pinch),
+            (Stat::Control, 74) if pitcher => Some(Ability::Command),
+            (Stat::Stamina, 72) if pitcher => Some(Ability::Workhorse),
+            (Stat::Breaking, 70) if pitcher => Some(Ability::Strikeout),
+            (Stat::Breaking, 62) if pitcher => Some(Ability::Sinker),
             (Stat::Field, 74) => Some(Ability::Durable),
+            (Stat::Field, 68) => Some(Ability::Glove),
+            (Stat::Arm, 72) if !pitcher => Some(Ability::Cannon),
             _ => None,
         };
         if let Some(a) = learned {
             self.grant(a);
         }
+        if st == Stat::Breaking && pitcher && v.is_multiple_of(8) {
+            self.grow_pitch();
+        }
+        // The gold step: a good trait and a stat at the top.
+        let gold = match (st, v) {
+            (Stat::Power, 88) => Some(Ability::Slugger),
+            (Stat::Power, 92) => Some(Ability::Chance),
+            (Stat::Speed, 88) => Some(Ability::Steal),
+            (Stat::Field, 88) => Some(Ability::Glove),
+            (Stat::Velo, 150) if pitcher => Some(Ability::Heavy),
+            (Stat::Breaking, 86) if pitcher => Some(Ability::Strikeout),
+            (Stat::Control, 86) if pitcher => Some(Ability::Pinch),
+            _ => None,
+        };
+        if let Some(good) = gold {
+            self.upgrade(good);
+        }
+        // Bad habits trained away.
+        let shed = match (st, v) {
+            (Stat::Control, 55) if pitcher => Some(Ability::Wild),
+            (Stat::Control, 70) if pitcher => Some(Ability::Rattled),
+            (Stat::Stamina, 60) if pitcher => Some(Ability::ShakyStart),
+            (Stat::Breaking, 60) if pitcher => Some(Ability::HomerProne),
+            (Stat::Field, 60) | (Stat::Catching, 60) => Some(Ability::Butterfingers),
+            (Stat::Contact, 70) => Some(Ability::Streaky),
+            (Stat::Power, 70) => Some(Ability::Shrinks),
+            _ => None,
+        };
+        if let Some(bad) = shed {
+            self.shed(bad);
+        }
+    }
+
+    /// The drill that feeds his weakest stat for his job (the monthly automatic menu): a
+    /// pitcher's arm first, a fielder's bat, glove and legs, whichever is furthest behind.
+    pub fn suggested_menu(&self) -> Drill {
+        let scale = |st: Stat| -> u16 {
+            if st == Stat::Velo {
+                // 120 km/h is a weak arm, 150 a strong one: on the 0-99 scale.
+                (self.velo as u16).saturating_sub(110).saturating_mul(2)
+            } else {
+                self.stat(st) as u16
+            }
+        };
+        let wanted: &[Stat] = if self.pitcher() {
+            &[Stat::Velo, Stat::Control, Stat::Stamina, Stat::Breaking]
+        } else {
+            &[
+                Stat::Contact,
+                Stat::Power,
+                Stat::Speed,
+                Stat::Field,
+                Stat::Arm,
+            ]
+        };
+        wanted
+            .iter()
+            .copied()
+            .min_by_key(|&st| scale(st))
+            .map(Stat::pool)
+            .unwrap_or_else(|| self.menu)
     }
 
     /// Spend every point that can be spent, on the lowest stat each pool feeds first (the
@@ -705,7 +1274,7 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
     };
     let family = FAMILY[(rng.next_u32() as usize) % FAMILY.len()].to_string();
     let given = GIVEN[(rng.next_u32() as usize) % GIVEN.len()].to_string();
-    Player {
+    let mut p = Player {
         family,
         given,
         grade,
@@ -719,6 +1288,8 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         control,
         stamina_p,
         breaking,
+        catching: 0,
+        pitches: Vec::new(),
         mood: Mood::Normal,
         stamina: 100,
         hurt: 0,
@@ -728,35 +1299,46 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         } else {
             Drill::Batting
         },
+        menu_hand: false,
         abilities: roll_abilities(rng, pitcher),
         study: 0,
         role: Role::Regular,
         legend: false,
         season: Stats::default(),
         career: Stats::default(),
-    }
+    };
+    // Sure hands near his fielding, a little either way (by name: no extra dice, so the
+    // rest of the club comes out as before).
+    p.catching =
+        (p.field as i16 + (super::art::hash(&p.family) % 13) as i16 - 6).clamp(5, 95) as u8;
+    // He starts on the drill he needs most (the monthly automatic menu).
+    p.menu = p.suggested_menu();
+    p
 }
 
 /// The traits a pitcher / a fielder can be born with.
-fn ability_pool(pitcher: bool) -> [Ability; 6] {
+fn ability_pool(pitcher: bool) -> &'static [Ability] {
+    use Ability::*;
     if pitcher {
-        [
-            Ability::Heavy,
-            Ability::Pinch,
-            Ability::Clutch,
-            Ability::Durable,
-            Ability::Mood,
-            Ability::Eye,
+        &[
+            Heavy, Pinch, Clutch, Durable, Mood, Eye, Strikeout, Sinker, Command, Workhorse,
+            Pickoff, Settles,
         ]
     } else {
-        [
-            Ability::Chance,
-            Ability::Steal,
-            Ability::Eye,
-            Ability::Clutch,
-            Ability::Mood,
-            Ability::Durable,
+        &[
+            Chance, Steal, Eye, Clutch, Mood, Durable, Slugger, Spray, Leadoff, Bunter, Runner,
+            Glove, Cannon,
         ]
+    }
+}
+
+/// The bad habits a pitcher / a fielder can be born with.
+fn habit_pool(pitcher: bool) -> &'static [Ability] {
+    use Ability::*;
+    if pitcher {
+        &[Wild, HomerProne, ShakyStart, Rattled, Fragile]
+    } else {
+        &[Shrinks, Streaky, Butterfingers, Fragile]
     }
 }
 
@@ -787,6 +1369,11 @@ fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
         if !out.contains(&a) {
             out.push(a);
         }
+    }
+    // Some come with a habit to train away.
+    if rng.unit() < 0.18 {
+        let bad = habit_pool(pitcher);
+        out.push(bad[(rng.next_u32() as usize) % bad.len()]);
     }
     out
 }
@@ -1338,7 +1925,7 @@ impl Team {
         let mut p = rookie(rng, 1, pos, level);
         match rarity {
             Rarity::Promising => {
-                if p.abilities.is_empty() {
+                if p.slots_used() == 0 {
                     if let Some(a) = pick_ability(rng, p.pitcher(), &p.abilities) {
                         p.grant(a);
                     }
@@ -1351,6 +1938,8 @@ impl Team {
                     let signs = [Ability::Chance, Ability::Clutch, Ability::Eye];
                     signs[(rng.next_u32() as usize) % signs.len()]
                 };
+                // Exactly two traits, the signature and one more, and no bad habit.
+                p.abilities.clear();
                 p.grant_force(sign);
                 if p.abilities.len() < 2 {
                     if let Some(a) = pick_ability(rng, p.pitcher(), &p.abilities) {
@@ -1499,10 +2088,12 @@ mod tests {
     }
 
     #[test]
-    fn players_carry_at_most_two_abilities_and_the_ace_throws_heavy() {
+    fn players_are_born_with_few_traits_and_the_ace_throws_heavy() {
         let mut rng = Rng::new(3);
         let t = Team::founding(&mut rng);
-        assert!(t.players.iter().all(|p| p.abilities.len() <= 2));
+        // Born with at most two good traits and maybe one bad habit.
+        assert!(t.players.iter().all(|p| p.slots_used() <= 2
+            && p.abilities.iter().filter(|a| a.tier() == Tier::Bad).count() <= 1));
         let ace = t.ace().unwrap();
         assert_eq!(t.players[ace].role, Role::Ace);
         assert!(t.players[ace].has(Ability::Heavy));
@@ -1519,7 +2110,21 @@ mod tests {
         assert!(!kid.grant(Ability::Steal));
         kid.grant_force(Ability::Chance);
         kid.grant_force(Ability::Eye);
-        assert_eq!(kid.abilities.len(), 2);
+        assert_eq!(kid.abilities.len(), 3);
+        // Four good traits at most; a bad habit takes no slot; a gold step replaces the
+        // good one and still counts as it.
+        kid.grant_force(Ability::Runner);
+        kid.grant_force(Ability::Glove);
+        assert_eq!(kid.slots_used(), TRAIT_SLOTS);
+        assert!(!kid.grant(Ability::Spray), "no room");
+        assert!(kid.grant(Ability::Butterfingers), "a habit takes no slot");
+        assert!(kid.upgrade(Ability::Steal));
+        assert!(kid.has(Ability::Gale) && kid.has(Ability::Steal));
+        assert_eq!(kid.slots_used(), TRAIT_SLOTS);
+        kid.field = 59;
+        kid.xp[Drill::Fielding.index()] = 500;
+        assert!(kid.raise(Stat::Field));
+        assert!(!kid.has(Ability::Butterfingers), "trained away at 60");
     }
 
     #[test]
@@ -1687,5 +2292,90 @@ mod tests {
         // The stand-in names never pick a family the club already has.
         let (family, _) = legend_name(&mut rng, &["佐々木", "長谷川", "近藤"]);
         assert!(!["佐々木", "長谷川", "近藤"].contains(&family.as_str()));
+    }
+}
+
+#[cfg(test)]
+mod trait_tests {
+    use super::*;
+
+    /// A pitcher's breaking ball grows into pitches: a second at 40, a third at 65, and
+    /// each moves more up to level 7. A fielder throws none; catching reads his fielding
+    /// in a save from before it existed.
+    #[test]
+    fn breaking_balls_grow_into_pitches() {
+        let mut rng = Rng::new(5);
+        let mut p = rookie(&mut rng, 1, Pos::P, 50.0);
+        p.pitches.clear();
+        p.breaking = 30;
+        let first = p.repertoire();
+        assert_eq!(first.len(), 1, "{first:?}");
+        p.breaking = 45;
+        assert!(p.grow_pitch());
+        assert_eq!(p.pitches.len(), 2);
+        p.breaking = 70;
+        assert!(p.grow_pitch());
+        assert_eq!(p.pitches.len(), 3);
+        let kinds: std::collections::HashSet<_> = p.pitches.iter().map(|x| x.0).collect();
+        assert_eq!(kinds.len(), 3, "no pitch twice");
+        for _ in 0..40 {
+            p.grow_pitch();
+        }
+        assert!(p.pitches.iter().all(|x| x.1 == 7));
+        assert!(!p.grow_pitch(), "nothing left to grow");
+
+        let mut f = rookie(&mut rng, 1, Pos::SS, 50.0);
+        assert!(f.repertoire().is_empty());
+        assert!((5..=95).contains(&f.catching));
+        f.catching = 0;
+        assert_eq!(f.catching(), f.field);
+    }
+
+    /// Every trait has a name in both languages, a line on what it does, a job that can use
+    /// it, and the gold steps pair with good traits one to one.
+    #[test]
+    fn every_trait_is_named_explained_and_usable() {
+        let mut names = std::collections::HashSet::new();
+        for a in Ability::ALL {
+            for ja in [false, true] {
+                assert!(!a.label(ja).is_empty() && !a.blurb(ja).is_empty(), "{a:?}");
+                assert!(names.insert((ja, a.label(ja))), "{a:?} shares a name");
+            }
+            assert!(a.fits(true) || a.fits(false), "{a:?}");
+            match a.tier() {
+                Tier::Gold => {
+                    let base = a.base().expect("a gold step has a base");
+                    assert_eq!(base.tier(), Tier::Good);
+                    assert_eq!(base.gold(), Some(a));
+                }
+                Tier::Good => assert!(a.base().is_none()),
+                Tier::Bad => assert!(a.gold().is_none() && a.base().is_none()),
+            }
+        }
+        let count = |t: Tier| Ability::ALL.iter().filter(|a| a.tier() == t).count();
+        assert_eq!(
+            (count(Tier::Good), count(Tier::Gold), count(Tier::Bad)),
+            (21, 8, 8)
+        );
+        // The bits fit and do not collide.
+        let all = Ability::ALL.iter().fold(0u64, |n, a| {
+            assert_eq!(n & a.bit(), 0);
+            n | a.bit()
+        });
+        assert_eq!(all.count_ones(), 37);
+    }
+
+    /// Saves from before keep their traits: the names on disk did not change.
+    #[test]
+    fn trait_names_on_disk_are_stable() {
+        let old: Vec<Ability> = serde_json::from_str(
+            r#"["chance","pinch","clutch","steal","durable","mood","eye","heavy"]"#,
+        )
+        .unwrap();
+        assert_eq!(old.len(), 8);
+        assert_eq!(
+            serde_json::to_string(&Ability::OutOfPark).unwrap(),
+            r#""out_of_park""#
+        );
     }
 }
