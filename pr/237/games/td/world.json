@@ -1,0 +1,1233 @@
+{
+  "version": 1,
+  "genre": "td_lane",
+  "half": 18.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 80,
+  "ground": false,
+  "sky": [
+    168,
+    198,
+    214,
+    255
+  ],
+  "ibl": 0.4,
+  "exposure": 1.05,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [
+      -12.0,
+      0.95,
+      2.0
+    ],
+    "yaw": 0.6,
+    "face": 0.6,
+    "on_ground": true,
+    "model": "knight",
+    "gltf": "knight"
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [
+        0,
+        -0.06,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        36,
+        0.12,
+        28
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        92,
+        128,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:path-0",
+      "type": "prop",
+      "name": "path",
+      "position": [
+        0,
+        0.08,
+        -6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        16.5,
+        0.18,
+        1.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        138,
+        118,
+        86
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:path-1",
+      "type": "prop",
+      "name": "path",
+      "position": [
+        8,
+        0.08,
+        0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.7,
+        0.18,
+        12.4
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        138,
+        118,
+        86
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:path-2",
+      "type": "prop",
+      "name": "path",
+      "position": [
+        0,
+        0.08,
+        6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        16.5,
+        0.18,
+        1.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        128,
+        110,
+        82
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:waypoint-0",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -8,
+        0.05,
+        -6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.35,
+        0.12,
+        0.35
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        64,
+        54
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:waypoint-1",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        8,
+        0.05,
+        -6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.35,
+        0.12,
+        0.35
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        64,
+        54
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:waypoint-2",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        8,
+        0.05,
+        6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.35,
+        0.12,
+        0.35
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        64,
+        54
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:waypoint-3",
+      "type": "prop",
+      "name": "waypoint",
+      "position": [
+        -8,
+        0.05,
+        6
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.35,
+        0.12,
+        0.35
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        70,
+        64,
+        54
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:slot-a",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        -4.0,
+        0.12,
+        -3.5
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.5,
+        0.22,
+        1.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        150,
+        112
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:slot-b",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        4.2,
+        0.12,
+        -3.3
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.5,
+        0.22,
+        1.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        150,
+        112
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:slot-c",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        5.2,
+        0.12,
+        3.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.5,
+        0.22,
+        1.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        150,
+        112
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:slot-d",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        -2.6,
+        0.12,
+        3.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.5,
+        0.22,
+        1.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        150,
+        112
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:slot-e",
+      "type": "prop",
+      "name": "slot",
+      "position": [
+        0.2,
+        0.12,
+        0.0
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        1.5,
+        0.22,
+        1.5
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        150,
+        112
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:gate",
+      "type": "prop",
+      "name": "gate",
+      "position": [
+        -8.0,
+        0.45,
+        7.6
+      ],
+      "yaw": 0.0,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        186,
+        140,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:tree-w",
+      "type": "prop",
+      "name": "tree",
+      "position": [
+        -12.5,
+        0.0,
+        -8.5
+      ],
+      "yaw": 0.0,
+      "model": "stylized_tree",
+      "gltf": "stylized_tree",
+      "scale": [
+        1.15,
+        1.15,
+        1.15
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        96,
+        140,
+        78
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:tree-e",
+      "type": "prop",
+      "name": "tree",
+      "position": [
+        12.5,
+        0.0,
+        -8.0
+      ],
+      "yaw": 0.4,
+      "model": "stylized_tree",
+      "gltf": "stylized_tree",
+      "scale": [
+        1.05,
+        1.05,
+        1.05
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        88,
+        132,
+        72
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:pine-w",
+      "type": "prop",
+      "name": "pine",
+      "position": [
+        -12.2,
+        0.0,
+        8.2
+      ],
+      "yaw": 0.0,
+      "model": "stylized_pine",
+      "gltf": "stylized_pine",
+      "scale": [
+        1.1,
+        1.1,
+        1.1
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        64,
+        110,
+        86
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:pine-e",
+      "type": "prop",
+      "name": "pine",
+      "position": [
+        12.4,
+        0.0,
+        8.6
+      ],
+      "yaw": 0.6,
+      "model": "stylized_pine",
+      "gltf": "stylized_pine",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        58,
+        104,
+        80
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:rock-n",
+      "type": "prop",
+      "name": "rock",
+      "position": [
+        0.0,
+        0.2,
+        -11.2
+      ],
+      "yaw": 0.0,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [
+        0.7,
+        0.45,
+        0.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        140,
+        136,
+        128
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:rock-s",
+      "type": "prop",
+      "name": "rock",
+      "position": [
+        1.5,
+        0.2,
+        10.6
+      ],
+      "yaw": 0.3,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [
+        0.55,
+        0.4,
+        0.6
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        132,
+        128,
+        120
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:well",
+      "type": "prop",
+      "name": "well",
+      "position": [
+        -11.0,
+        0.0,
+        -1.5
+      ],
+      "yaw": 0.0,
+      "model": "well",
+      "gltf": "well",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        180,
+        170,
+        150
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w1-0",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -8.0,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w1-1",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.65,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w1-2",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.3,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w2-0",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -8.0,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w2-1",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.65,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w2-2",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.3,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w3-0",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -8.0,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w3-1",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.65,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w3-2",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.3,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w3-3",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -6.95,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w4-0",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -8.0,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w4-1",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.65,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w4-2",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.3,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w4-3",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -6.95,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "wolf",
+      "gltf": "wolf",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        120,
+        124,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w5-0",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -8.0,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w5-1",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.65,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w5-2",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -7.3,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w5-3",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -6.95,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:creep-w5-4",
+      "type": "prop",
+      "name": "creep",
+      "position": [
+        -6.6,
+        0.0,
+        -6.0
+      ],
+      "yaw": 1.57,
+      "model": "raccoon",
+      "gltf": "raccoon",
+      "scale": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        196,
+        92,
+        64
+      ],
+      "metallic": 0.02,
+      "roughness": 0.84
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [
+        -12.0,
+        0.95,
+        2.0
+      ],
+      "yaw": 0.6,
+      "face": 0.6,
+      "on_ground": true,
+      "model": "knight",
+      "gltf": "knight"
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [
+        -4,
+        8,
+        -6
+      ],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.15,
+      "radius": 22,
+      "color": [
+        1.0,
+        0.94,
+        0.82
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        6,
+        7,
+        2
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.55,
+      "radius": 18,
+      "color": [
+        0.7,
+        0.84,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "spawn",
+      "position": [
+        -8,
+        5,
+        -6
+      ],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.5,
+      "radius": 12,
+      "color": [
+        1.0,
+        0.78,
+        0.55
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "base",
+      "position": [
+        -8,
+        5,
+        7
+      ],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.55,
+      "radius": 12,
+      "color": [
+        0.95,
+        0.55,
+        0.4
+      ],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "overview",
+      "position": [
+        0.0,
+        18.4,
+        -16.0
+      ],
+      "target": [
+        0.0,
+        0.4,
+        0.0
+      ],
+      "fov": 50.0
+    }
+  ],
+  "heightfield": null
+}
