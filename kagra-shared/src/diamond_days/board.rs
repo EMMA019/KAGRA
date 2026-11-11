@@ -16,6 +16,10 @@ pub enum Square {
     Spirit,
     /// Visit a middle school: find a player who joins next April.
     Scout,
+    /// Watch game film together: fielding and batting points, no tired legs.
+    Film,
+    /// Keep the ground tidy: a little rest, and word travels.
+    Grounds,
 }
 
 impl Square {
@@ -30,6 +34,8 @@ impl Square {
             (Square::Event, false) => "Event",
             (Square::Spirit, false) => "Spirit",
             (Square::Scout, false) => "Scout",
+            (Square::Film, false) => "Film",
+            (Square::Grounds, false) => "Grounds",
             (Square::Train(Drill::Batting), true) => "打撃",
             (Square::Train(Drill::Pitching), true) => "投球",
             (Square::Train(Drill::Fielding), true) => "守備",
@@ -39,6 +45,8 @@ impl Square {
             (Square::Event, true) => "出来事",
             (Square::Spirit, true) => "気合",
             (Square::Scout, true) => "スカウト",
+            (Square::Film, true) => "映像",
+            (Square::Grounds, true) => "整備",
         }
     }
 
@@ -53,6 +61,8 @@ impl Square {
             Square::Event => [245, 245, 245],
             Square::Spirit => [255, 150, 190],
             Square::Scout => [255, 190, 110],
+            Square::Film => [110, 120, 185],
+            Square::Grounds => [180, 150, 105],
         }
     }
 }
@@ -77,11 +87,11 @@ pub fn default_ring() -> Vec<Square> {
         Train(Fielding),
         Scout,
         Train(Strength),
-        Train(Batting),
+        Film,
         Spirit,
         Train(Running),
         Event,
-        Train(Pitching),
+        Grounds,
     ]
 }
 
@@ -275,6 +285,62 @@ pub fn default_happenings() -> Vec<Happening> {
                 "ノック千本。誰も手の感覚がない。",
             )
         },
+        Happening {
+            drill: Some(Drill::Pitching),
+            points: 8.0,
+            ..h(
+                "bullpen",
+                "A college pitcher from the next town throws in the bullpen for the club to watch. Nobody blinks.",
+                "近くの町の大学生投手がブルペンで投げて見せてくれた。みんな真剣に見ていた。",
+            )
+        },
+        Happening {
+            drill: Some(Drill::Strength),
+            points: 8.0,
+            stamina: -5,
+            ..h(
+                "weights",
+                "The judo club lends the team its weight room for the week. Everyone feels a size bigger.",
+                "一週間、トレーニング室を使わせてもらった。みんな体がひと回り大きくなった気がする。",
+            )
+        },
+        Happening {
+            stamina: -12,
+            weight: 0.7,
+            ..h(
+                "heat",
+                "The hottest day of the year. Even the cicadas give up by noon.",
+                "真夏日。セミの声も聞こえない。",
+            )
+        },
+        Happening {
+            stamina: 5,
+            mood: 1,
+            ..h(
+                "stray_dog",
+                "A stray dog wanders onto the ground and joins the warm-up run. It beats half the team.",
+                "どこかのイヌがグラウンドに入ってきて、準備運動のランニングに混ざった。半分以上の部員が負けた。",
+            )
+        },
+        Happening {
+            stamina: 5,
+            mood: 1,
+            ..h(
+                "cherry",
+                "The cherry tree behind the ground is in full bloom. Practice keeps stopping to look.",
+                "グラウンド裏の桜が満開。練習の手が、つい止まってしまう。",
+            )
+        },
+        Happening {
+            mood: 2,
+            reputation: 1.0,
+            weight: 0.6,
+            ..h(
+                "uniform",
+                "New uniforms arrive, paid for by the supporters' association. The team stands a little taller.",
+                "後援会の寄付で新しいユニフォームが届いた。みんな少し背筋が伸びた。",
+            )
+        },
         talk(
             "night_swing",
             Who::Any,
@@ -414,6 +480,120 @@ pub fn default_happenings() -> Vec<Happening> {
                         "先輩に面倒を見てもらう",
                         "The seniors take him out for noodles. The club feels closer.",
                         "先輩たちが{name}をラーメンに連れていった。部の空気が温かい。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "ace_pressure",
+            Who::Pitcher,
+            "{name} keeps looking at the number 1 on his back. \"Everyone thinks I have to win it on my own.\"",
+            "{name}が背番号1を何度も見ている。「僕ひとりで勝たなきゃいけない気がして……」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Pitching),
+                    points: 10.0,
+                    stamina: -10,
+                    ..answer(
+                        "Throw until the doubt is gone",
+                        "とことん投げ込め",
+                        "Fifty pitches, then fifty more. {name}'s last ball is the best of the day.",
+                        "50球、さらに50球。最後の一球が{name}の今日一番だった。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    ..answer(
+                        "Tell him nobody wins alone",
+                        "野球は一人で勝てない",
+                        "{name} laughs, a little embarrassed. \"Right. I knew that.\"",
+                        "{name}は照れくさそうに笑った。「……ですよね」",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "bench_chance",
+            Who::Any,
+            "{name} is always first to practice and last in the game. \"Coach... will my turn come?\"",
+            "{name}は誰より早く来て、試合にはなかなか出られない。「監督……僕にも出番、来ますか」",
+            vec![
+                Choice {
+                    drill: Some(Drill::Fielding),
+                    points: 8.0,
+                    mood: 1,
+                    ..answer(
+                        "Show me in the field, today",
+                        "今日の守備で見せてみろ",
+                        "Grounders until dark. {name} does not miss one.",
+                        "日が暮れるまでノック。{name}は一球もこぼさなかった。",
+                    )
+                },
+                Choice {
+                    mood: 2,
+                    team_mood: 1,
+                    ..answer(
+                        "Promise him the next practice game",
+                        "次の練習試合で使うと約束する",
+                        "{name}'s face lights up. The whole bench hears, and trains harder.",
+                        "{name}の顔がぱっと明るくなった。聞いていたベンチ全員が、練習にも力が入った。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "family_shop",
+            Who::Senior,
+            "Third-year {name} bows his head. \"My family's shop is short-handed. I may miss some practices.\"",
+            "3年の{name}が頭を下げた。「うちの店が人手不足で……練習、休む日があるかもしれません」",
+            vec![
+                Choice {
+                    stamina: 5,
+                    mood: 2,
+                    ..answer(
+                        "Family comes first, go",
+                        "うちのことが先だ、行ってこい",
+                        "{name} bows deeper. On the days he comes, he gives everything.",
+                        "{name}は深く頭を下げた。来られる日の練習は、誰より集中していた。",
+                    )
+                },
+                Choice {
+                    drill: Some(Drill::Strength),
+                    points: 8.0,
+                    mood: 1,
+                    ..answer(
+                        "The shop work is training too",
+                        "店の荷物運びも筋トレだ",
+                        "{name} laughs. Carrying crates all summer does build an arm.",
+                        "{name}が笑った。夏の間ずっと荷物を運べば、たしかに腕は太くなる。",
+                    )
+                },
+            ],
+        ),
+        talk(
+            "after_graduation",
+            Who::Senior,
+            "Third-year {name} asks quietly, \"Coach, can someone like me keep playing baseball after I graduate?\"",
+            "3年の{name}が静かに聞いた。「監督、僕みたいな選手でも、卒業してから野球を続けられますか」",
+            vec![
+                Choice {
+                    mood: 2,
+                    reputation: 0.5,
+                    ..answer(
+                        "Talk about the college clubs",
+                        "大学の野球部の話をする",
+                        "You tell him about the alumni who still play. {name} nods, eyes bright.",
+                        "今も大学で投げている先輩の話をした。{name}は目を輝かせてうなずいた。",
+                    )
+                },
+                Choice {
+                    mood: 1,
+                    team_mood: 1,
+                    ..answer(
+                        "Baseball does not end at graduation",
+                        "野球は卒業で終わりじゃない",
+                        "The other third-years are listening. The clubhouse is quiet, in a good way.",
+                        "ほかの3年生も聞いていた。部室が静かになった。いい意味で。",
                     )
                 },
             ],
@@ -821,6 +1001,7 @@ pub fn choice_grant(id: &str, k: usize) -> Option<Ability> {
         ("rookie_nerves", 1) => Some(Ability::Eye),
         ("camp_night", 0) => Some(Ability::Steal),
         ("camp_night", 1) => Some(Ability::Eye),
+        ("ace_pressure", 0) => Some(Ability::Heavy),
         _ => None,
     }
 }
@@ -1102,6 +1283,50 @@ mod tests {
         }
         assert!(pick_happening(&mut rng, &list).is_some());
         assert_eq!(default_ring().len(), 20);
+    }
+
+    #[test]
+    fn the_event_deck_is_twenty_four_and_every_event_is_complete() {
+        let list = default_happenings();
+        assert_eq!(list.len(), 24);
+        let mut ids: Vec<&str> = list.iter().map(|h| h.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 24, "event ids are unique");
+        for h in &list {
+            assert!(!h.text.is_empty() && !h.text_ja.is_empty(), "{}", h.id);
+            assert!(h.weight > 0.0, "{}", h.id);
+            for c in &h.choices {
+                assert!(!c.text.is_empty() && !c.text_ja.is_empty(), "{}", h.id);
+                assert!(!c.reply.is_empty() && !c.reply_ja.is_empty(), "{}", h.id);
+            }
+        }
+        let talks = list.iter().filter(|h| !h.choices.is_empty()).count();
+        assert_eq!(talks, 9, "nine talks among the singles");
+        // The bullpen visit feeds the pitching pool, for fielders too.
+        let mut rng = Rng::new(3);
+        let mut t = Team::founding(&mut rng);
+        let bullpen = list.iter().find(|h| h.id == "bullpen").unwrap();
+        apply(&mut rng, bullpen, &mut t);
+        assert!(t.players.iter().all(|p| p.xp[Drill::Pitching.index()] > 0));
+        // The new talk's first answer can teach a heavy ball.
+        assert_eq!(choice_grant("ace_pressure", 0), Some(Ability::Heavy));
+        assert_eq!(choice_grant("ace_pressure", 1), None);
+    }
+
+    #[test]
+    fn the_ring_has_two_of_each_drill_and_the_two_new_squares() {
+        let ring = default_ring();
+        assert_eq!(ring.len(), 20);
+        for d in Drill::ALL {
+            let n = ring.iter().filter(|s| **s == Square::Train(d)).count();
+            assert_eq!(n, 2, "two {d:?} squares");
+        }
+        assert_eq!(ring.iter().filter(|s| **s == Square::Film).count(), 1);
+        assert_eq!(ring.iter().filter(|s| **s == Square::Grounds).count(), 1);
+        for sq in [Square::Film, Square::Grounds] {
+            assert!(!sq.label(false).is_empty() && !sq.label(true).is_empty());
+        }
     }
 
     #[test]

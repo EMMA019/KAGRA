@@ -83,7 +83,7 @@ impl Default for DiamondDaysSpec {
             years: 3,
             ring: board::default_ring(),
             happenings: board::default_happenings(),
-            train_points: 7.0,
+            train_points: 8.0,
             rest: 40,
             weekly_rest: 8,
             line_secs: 0.7,
@@ -1500,11 +1500,11 @@ impl DiamondDays {
                 total += n;
             };
             if l.ab > 0 {
-                add(Drill::Batting, 2 + l.hits);
+                add(Drill::Batting, 3 + l.hits);
                 add(Drill::Running, 1);
             }
             if l.faced > 0 {
-                add(Drill::Pitching, 2 + l.k / 2);
+                add(Drill::Pitching, 3 + l.k / 2);
             }
             if won {
                 add(Drill::Fielding, 1);
@@ -2260,6 +2260,33 @@ impl DiamondDays {
                     ));
                     self.s.scouted.push(p);
                 }
+            }
+            Square::Film => {
+                // Film study: positioning and swings, at a desk instead of on tired legs.
+                let base = self.spec.train_points * (1.0 + self.s.grounds as f32 * 0.08);
+                let mut pts = 0u32;
+                for p in &mut self.s.team.players {
+                    pts += p.train(Drill::Fielding, base * 0.6) as u32;
+                    pts += p.train(Drill::Batting, base * 0.6) as u32;
+                }
+                crate::mixer::cue_sfx("train");
+                lines.push((
+                    format!(
+                        "Film study: positioning and swings on the screen. The team earned {pts} points."
+                    ),
+                    format!("映像で守備位置とスイングを確認。チームで{pts}ポイント獲得。"),
+                ));
+            }
+            Square::Grounds => {
+                for p in &mut self.s.team.players {
+                    p.rest(10);
+                }
+                self.s.reputation = (self.s.reputation + 1.0).clamp(0.0, 100.0);
+                lines.push((
+                    "The whole club tidies the ground. A field kept this well gets talked about."
+                        .into(),
+                    "全員でグラウンドを整備した。よく手入れされたグラウンドは評判になる。".into(),
+                ));
             }
             Square::Event => {}
         }

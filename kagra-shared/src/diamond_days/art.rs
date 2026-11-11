@@ -616,6 +616,41 @@ pub fn square_icon(p: &mut Painter, c: P, s: f32, sq: Square, ink: Rgba) {
                 ink,
             );
         }
+        Square::Film => {
+            // A screen with a play mark.
+            p.outline(
+                &vector::rounded_rect(x - s * 0.44, y - s * 0.34, s * 0.88, s * 0.68, s * 0.07),
+                s * 0.07,
+                ink,
+            );
+            p.fill(
+                &[
+                    [x - s * 0.13, y - s * 0.19],
+                    [x - s * 0.13, y + s * 0.19],
+                    [x + s * 0.24, y],
+                ],
+                Paint::Solid(ink),
+            );
+        }
+        Square::Grounds => {
+            // A rake: handle, crossbar, teeth.
+            p.line(
+                &[[x - s * 0.34, y + s * 0.4], [x + s * 0.18, y - s * 0.12]],
+                s * 0.09,
+                ink,
+            );
+            p.line(
+                &[[x + s * 0.02, y - s * 0.3], [x + s * 0.42, y + s * 0.1]],
+                s * 0.09,
+                ink,
+            );
+            for k in 0..4 {
+                let t = k as f32 / 3.0;
+                let bx = x + s * (0.06 + 0.32 * t);
+                let by = y + s * (-0.24 + 0.28 * t);
+                p.line(&[[bx, by], [bx - s * 0.1, by + s * 0.2]], s * 0.06, ink);
+            }
+        }
     }
 }
 

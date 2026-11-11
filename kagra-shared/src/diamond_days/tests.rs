@@ -280,6 +280,93 @@ fn scouting_brings_a_middle_schooler_next_april() {
     assert_eq!(g.s.year, 2);
 }
 
+/// Walk the coach onto square `sq` with the first card.
+fn land_on(g: &mut DiamondDays, sq: Square) {
+    let i = g.spec.ring.iter().position(|s| *s == sq).unwrap();
+    let n = g.spec.ring.len();
+    g.s.pos = (i + n - 1) % n;
+    g.s.hand[0].steps = 1;
+    press(g, hud::Btn::Card(0));
+    run(g, 1.0);
+    assert_eq!(g.spec.ring[g.s.pos], sq);
+}
+
+#[test]
+fn film_study_feeds_fielding_and_batting_without_tiring_anyone() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    let pool = |g: &DiamondDays, d: Drill| -> u32 {
+        g.s.team
+            .players
+            .iter()
+            .map(|p| p.xp[d.index()] as u32)
+            .sum()
+    };
+    let (f0, b0) = (pool(&g, Drill::Fielding), pool(&g, Drill::Batting));
+    land_on(&mut g, Square::Film);
+    assert!(pool(&g, Drill::Fielding) > f0, "film teaches positioning");
+    assert!(pool(&g, Drill::Batting) > b0, "film teaches swings");
+    assert!(
+        g.s.team.players.iter().all(|p| p.stamina == 100),
+        "a desk square does not tire anyone"
+    );
+}
+
+#[test]
+fn keeping_the_grounds_rests_a_little_and_spreads_the_name() {
+    let mut g = started();
+    tap(&mut g, 195.0, 400.0);
+    for p in &mut g.s.team.players {
+        p.stamina = 50;
+    }
+    g.s.reputation = 10.0;
+    land_on(&mut g, Square::Grounds);
+    // The square's own rest (10) plus the week's (8).
+    assert!(g.s.team.players.iter().all(|p| p.stamina == 68));
+    assert_eq!(g.s.reputation, 11.0);
+}
+
+#[test]
+fn first_years_start_a_little_stronger_and_practice_pays_a_little_more() {
+    // A training square pays 8 points (was 7).
+    assert_eq!(DiamondDaysSpec::default().train_points, 8.0);
+    // Walk-ins at an unknown school average about 33 a stat (was 30), plus the
+    // odd gem. The spread of the roll is unchanged, and reputation still adds
+    // its quarter point a star on top.
+    let mut rng = crate::game_core::swarm::Rng::new(9);
+    let (mut sum, mut n) = (0.0f32, 0usize);
+    for _ in 0..60 {
+        let mut t = team::Team::default();
+        t.recruit(&mut rng, 0.0, Vec::new());
+        for p in &t.players {
+            sum += (p.contact as f32
+                + p.power as f32
+                + p.speed as f32
+                + p.field as f32
+                + p.arm as f32)
+                / 5.0;
+            n += 1;
+        }
+    }
+    let mean = sum / n as f32;
+    assert!((32.0..37.0).contains(&mean), "recruits average {mean}");
+    let mut rng = crate::game_core::swarm::Rng::new(9);
+    let (mut sum, mut n) = (0.0f32, 0usize);
+    for _ in 0..60 {
+        let mut t = team::Team::default();
+        t.recruit(&mut rng, 100.0, Vec::new());
+        for p in &t.players {
+            sum += p.contact as f32;
+            n += 1;
+        }
+    }
+    let famed_mean = sum / n as f32;
+    assert!(
+        famed_mean > mean + 15.0,
+        "reputation still lifts recruits: {famed_mean} vs {mean}"
+    );
+}
+
 #[test]
 fn a_whole_year_turns_over_and_the_coach_may_retire_after_three() {
     let mut g = started();
