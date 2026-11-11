@@ -116,6 +116,7 @@ pub mod station_escape;
 
 #[cfg(feature = "wasm")]
 pub mod wasm;
+pub mod zombie_rush;
 
 pub use assets::{resolve_alias, AssetKind};
 pub use audio::AudioLevels;

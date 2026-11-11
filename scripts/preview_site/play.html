@@ -350,6 +350,7 @@
   <script src="./portal.js"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
   <script src="./meta.js"></script>
+  <script src="./ads.js"></script>
   <script type="module">
     import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=__KAGRA_BUILD__";
 
@@ -1677,6 +1678,8 @@
       return out;
     };
 
+    let adBreakSeen = 0;
+    let adRewardSeen = 0;
     const loop = () => {
       try { frame(); }
       catch (err) {
@@ -1705,6 +1708,21 @@
       if (audio) {
         try { audio.pump(session.audioCuesJson()); } catch {}
       }
+      // A kit asks for a portal break by bumping ad.break_id / ad.reward_id.
+      // ads.js is a no-op until a SDK replaces KagraAds.ads.
+      try {
+        const ad = JSON.parse(session.gameJson()).ad;
+        if (ad && ad.break_id > adBreakSeen && ad.break_slot) {
+          adBreakSeen = ad.break_id;
+          const hook = globalThis.KagraAds && globalThis.KagraAds.ads;
+          if (hook) Promise.resolve(hook.break(ad.break_slot)).catch(() => {});
+        }
+        if (ad && ad.reward_id > adRewardSeen && ad.reward_slot) {
+          adRewardSeen = ad.reward_id;
+          const hook = globalThis.KagraAds && globalThis.KagraAds.ads;
+          if (hook) Promise.resolve(hook.rewarded(ad.reward_slot)).catch(() => {});
+        }
+      } catch {}
       // render_skip: a 120 Hz frame where the sim did not step draws the same picture.
       const skipDraw = renderSkip && stepped === 0 && redraw <= 0;
       if (redraw > 0) redraw -= 1;

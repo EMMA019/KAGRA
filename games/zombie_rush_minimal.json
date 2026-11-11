@@ -1,0 +1,35 @@
+{
+  "title": "Horde Gates",
+  "title_ja": "ホードゲート",
+  "icon": "assets/icons/game_placeholder.png",
+  "version": "0.1.0",
+  "entry": "examples/zombie_rush_minimal.py",
+  "world": "kagra-shared/tests/fixtures/zombie_rush_world.json",
+  "bundle_assets": [
+    "assets/audio/oga-retro-synth-sfx",
+    "assets/audio/kenney-interface-sounds",
+    "assets/audio/kenney-impact-sounds",
+    "assets/audio/oga-flowerbed-fields",
+    "assets/models/zombie_rush"
+  ],
+  "page": {
+    "best": true,
+    "audio": true,
+    "lang": true,
+    "pause": true,
+    "fixed_step": true,
+    "save": true,
+    "title": "title.horde",
+    "blurb": "blurb.horde",
+    "default_quality": "mobile"
+  },
+  "platform": {
+    "ads": {
+      "commercial_on": ["game_over", "retry"],
+      "rewarded": [
+        {"slot": "continue", "at": "game_over", "effect": "none", "per_run": 1}
+      ],
+      "min_interval_secs": 45
+    }
+  }
+}
