@@ -74,6 +74,12 @@ pub enum Btn {
     Speed,
     /// Call the next plate appearance, whoever bats.
     Orders,
+    /// Open the April extra-scout gacha from the Plan screen.
+    Gacha,
+    /// Pull the gacha once.
+    GachaDraw,
+    /// Close the gacha and get on with the week.
+    GachaDone,
 }
 
 fn push_choices(b: &mut Vec<(Btn, [f32; 4])>, hh: f32, n: usize) {
@@ -148,6 +154,16 @@ impl DiamondDays {
                     b.push((Btn::Card(i), [10.0 + i as f32 * 77.5, y, 70.0, 98.0]));
                 }
                 b.push((Btn::Roster, [302.0, 72.0, 88.0, 44.0]));
+                // April, with pulls in hand: the way back into the extra scout.
+                if self.gacha_open() {
+                    b.push((Btn::Gacha, [10.0, 128.0, 132.0, 40.0]));
+                }
+            }
+            Mode::Gacha => {
+                if self.gacha_left() > 0 {
+                    b.push((Btn::GachaDraw, [24.0, hh - 198.0, 352.0, 54.0]));
+                }
+                b.push((Btn::GachaDone, [24.0, hh - 134.0, 352.0, 54.0]));
             }
             Mode::Ask { h, .. } => {
                 let n = self
@@ -415,6 +431,9 @@ impl DiamondDays {
                 self.draw_manager(&mut p);
                 if matches!(self.mode, Mode::Plan) {
                     self.draw_hand(&mut p, &l);
+                    if self.gacha_open() {
+                        self.draw_gacha_chip(&mut p, &l);
+                    }
                 }
             }
         }
@@ -429,6 +448,9 @@ impl DiamondDays {
         }
         if let Mode::Decide(d) = self.mode {
             self.draw_decide(&mut p, d, &l);
+        }
+        if let Mode::Gacha = self.mode {
+            self.draw_gacha(&mut p, &l);
         }
         if !self.pops.is_empty() {
             p.layer();
@@ -1405,6 +1427,150 @@ impl DiamondDays {
                 [110, 116, 140, 255],
                 true,
             );
+        }
+    }
+
+    /// The way back into April's extra scout, on the Plan screen while pulls last.
+    fn draw_gacha_chip(&self, p: &mut Painter, l: &Layout) {
+        for (b, r) in &l.buttons {
+            if *b == Btn::Gacha {
+                p.button(
+                    r[0],
+                    r[1],
+                    r[2],
+                    r[3],
+                    self.tr("EXTRA SCOUT", "追加スカウト"),
+                    13.0,
+                    [200, 110, 50, 255],
+                    true,
+                );
+            }
+        }
+    }
+
+    /// April's extra scout: Kotori has this spring's list of hopefuls, and the
+    /// coach calls one more name, or closes the list for the year.
+    fn draw_gacha(&self, p: &mut Painter, l: &Layout) {
+        let ja = self.lang_ja;
+        p.layer();
+        let [x0, y0, w, hgt] = p.st.screen;
+        p.fill(
+            &[[x0, y0], [x0 + w, y0], [x0 + w, y0 + hgt], [x0, y0 + hgt]],
+            Paint::Solid([12, 16, 34, 190]),
+        );
+        let hh = p.st.h;
+        let first_btn = l.buttons.iter().map(|(_, r)| r[1]).fold(hh, f32::min);
+        p.ribbon(
+            200.0,
+            24.0,
+            230.0,
+            46.0,
+            self.tr("Extra scout", "追加スカウト"),
+            18.0,
+            [200, 110, 50, 255],
+        );
+        let size = (first_btn - 250.0).clamp(150.0, 250.0);
+        let box_y = first_btn - 140.0;
+        let (face, outfit) = art::manager();
+        p.glow(120.0, box_y - size * 0.45, size * 0.8, [255, 236, 190, 90]);
+        p.portrait(
+            120.0 - size * 0.5,
+            box_y - size + 18.0,
+            size,
+            &face,
+            Expr::Happy,
+            &outfit,
+            1.0,
+        );
+        p.panel_bordered(
+            16.0,
+            box_y,
+            368.0,
+            120.0,
+            22.0,
+            [255, 253, 246, 252],
+            [246, 238, 222, 252],
+            [230, 210, 170, 255],
+            2.5,
+            14.0,
+        );
+        p.text(
+            self.tr("Kotori", "七瀬ことり"),
+            34.0,
+            box_y + 12.0,
+            12.0,
+            [214, 100, 120, 255],
+            TextAlign::Left,
+        );
+        let lines = [
+            self.tr(
+                "April only: one more hopeful could walk in!",
+                "4月だけの追加スカウトです！",
+            )
+            .to_string(),
+            if ja {
+                format!(
+                    "残り：無料{}回＋チケット{}枚",
+                    self.s.gacha_free, self.s.gacha_tickets
+                )
+            } else {
+                format!(
+                    "Pulls left: {} free + {} ticket(s)",
+                    self.s.gacha_free, self.s.gacha_tickets
+                )
+            },
+            if self.s.gacha_pity >= 5 {
+                self.tr(
+                    "The coaches like the look of the next one...",
+                    "次の子は、目利きが効いてますよ",
+                )
+                .to_string()
+            } else {
+                self.tr(
+                    "Now and then, an old name comes back...",
+                    "たまに、昔の名前が戻ってくることも…",
+                )
+                .to_string()
+            },
+        ];
+        for (k, line) in lines.iter().enumerate() {
+            p.text(
+                line,
+                34.0,
+                box_y + 40.0 + k as f32 * 26.0,
+                15.0,
+                INK,
+                TextAlign::Left,
+            );
+        }
+        for (b, r) in &l.buttons {
+            match b {
+                Btn::GachaDraw => {
+                    p.button(
+                        r[0],
+                        r[1],
+                        r[2],
+                        r[3],
+                        self.tr("Pull", "引く"),
+                        17.0,
+                        [200, 110, 50, 255],
+                        true,
+                    );
+                }
+                Btn::GachaDone => {
+                    p.button(
+                        r[0],
+                        r[1],
+                        r[2],
+                        r[3],
+                        self.tr("Done", "やめる"),
+                        17.0,
+                        [90, 110, 150, 255],
+                        true,
+                    );
+                }
+                _ => {}
+            }
         }
     }
 

@@ -299,6 +299,9 @@ pub struct Player {
     /// Hand-tuned portrait for the founding ace and captain.
     #[serde(default)]
     pub role: Role,
+    /// A reborn alumnus from the April gacha: he keeps the name he made famous.
+    #[serde(default)]
+    pub legend: bool,
     /// Numbers in games: this season (cleared every April) and his whole time here.
     #[serde(default)]
     pub season: Stats,
@@ -728,23 +731,15 @@ pub fn rookie(rng: &mut Rng, grade: u8, pos: Pos, level: f32) -> Player {
         abilities: roll_abilities(rng, pitcher),
         study: 0,
         role: Role::Regular,
+        legend: false,
         season: Stats::default(),
         career: Stats::default(),
     }
 }
 
-/// Most players have none; a few have one; a handful have two. Pitchers and fielders
-/// draw from different lists so a shortstop is not born with a heavy fastball.
-fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
-    let roll = rng.unit();
-    let n = if roll < 0.46 {
-        0
-    } else if roll < 0.86 {
-        1
-    } else {
-        2
-    };
-    let pool: [Ability; 6] = if pitcher {
+/// The traits a pitcher / a fielder can be born with.
+fn ability_pool(pitcher: bool) -> [Ability; 6] {
+    if pitcher {
         [
             Ability::Heavy,
             Ability::Pinch,
@@ -762,7 +757,30 @@ fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
             Ability::Mood,
             Ability::Durable,
         ]
+    }
+}
+
+/// One trait from the right list, not among `have`.
+fn pick_ability(rng: &mut Rng, pitcher: bool, have: &[Ability]) -> Option<Ability> {
+    let pool = ability_pool(pitcher);
+    let start = (rng.next_u32() as usize) % pool.len();
+    (0..pool.len())
+        .map(|k| pool[(start + k) % pool.len()])
+        .find(|a| !have.contains(a))
+}
+
+/// Most players have none; a few have one; a handful have two. Pitchers and fielders
+/// draw from different lists so a shortstop is not born with a heavy fastball.
+fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
+    let roll = rng.unit();
+    let n = if roll < 0.46 {
+        0
+    } else if roll < 0.86 {
+        1
+    } else {
+        2
     };
+    let pool = ability_pool(pitcher);
     let mut out = Vec::new();
     for _ in 0..n {
         let a = pool[(rng.next_u32() as usize) % pool.len()];
@@ -771,6 +789,119 @@ fn roll_abilities(rng: &mut Rng, pitcher: bool) -> Vec<Ability> {
         }
     }
     out
+}
+
+/// How good one pull of the April extra-scout gacha turns out to be.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Rarity {
+    /// An ordinary walk-in level first-year.
+    Normal,
+    /// A step above the walk-ins.
+    Fine,
+    /// A real prospect: a trait is guaranteed.
+    Promising,
+    /// A star in the making: two traits, one of them his signature.
+    Star,
+    /// A reborn alumnus: the pull of a career.
+    Legend,
+}
+
+impl Rarity {
+    pub fn label(self, ja: bool) -> &'static str {
+        match (self, ja) {
+            (Rarity::Normal, false) => "Normal",
+            (Rarity::Fine, false) => "Fine",
+            (Rarity::Promising, false) => "Promising",
+            (Rarity::Star, false) => "Star",
+            (Rarity::Legend, false) => "Reborn alumnus",
+            (Rarity::Normal, true) => "通常",
+            (Rarity::Fine, true) => "優良",
+            (Rarity::Promising, true) => "有望",
+            (Rarity::Star, true) => "逸材",
+            (Rarity::Legend, true) => "転生OB",
+        }
+    }
+
+    /// Promising or better: what the pity counter watches.
+    pub fn at_least_sr(self) -> bool {
+        self >= Rarity::Promising
+    }
+
+    /// The chance of exactly this tier at `reputation` (0 to 100), before the pity
+    /// rule. A famous school draws famous hopefuls: the good tiers grow with it.
+    pub fn chance(self, reputation: f32) -> f32 {
+        let rep = reputation.clamp(0.0, 100.0);
+        match self {
+            Rarity::Legend => 0.003 + rep * 0.00012,
+            Rarity::Star => 0.02 + rep * 0.0003,
+            Rarity::Promising => 0.08 + rep * 0.0002,
+            Rarity::Fine => 0.30,
+            Rarity::Normal => {
+                1.0 - (0.003 + rep * 0.00012) - (0.02 + rep * 0.0003) - (0.08 + rep * 0.0002) - 0.30
+            }
+        }
+    }
+}
+
+/// One pull's tier. With `pity` (ten pulls without a Promising or better), the pull
+/// is Promising or better, drawn among those tiers at their usual relative rates.
+/// There is no pity aimed at a Legend itself: it only ever comes at its own rate.
+pub fn roll_rarity(rng: &mut Rng, reputation: f32, pity: bool) -> Rarity {
+    if pity {
+        let tiers = [Rarity::Promising, Rarity::Star, Rarity::Legend];
+        let total: f32 = tiers.iter().map(|t| t.chance(reputation)).sum();
+        let mut r = rng.unit() * total;
+        for t in tiers {
+            r -= t.chance(reputation);
+            if r <= 0.0 {
+                return t;
+            }
+        }
+        return Rarity::Promising;
+    }
+    let mut r = rng.unit();
+    for t in [
+        Rarity::Legend,
+        Rarity::Star,
+        Rarity::Promising,
+        Rarity::Fine,
+    ] {
+        r -= t.chance(reputation);
+        if r <= 0.0 {
+            return t;
+        }
+    }
+    Rarity::Normal
+}
+
+/// Fictional legends of the schoolyard game (no real players), for a reborn alumnus
+/// at a school that has not sent a boy pro yet: (family, given).
+const LEGEND_NAMES: [(&str, &str); 12] = [
+    ("佐々木", "隆之介"),
+    ("長谷川", "大和"),
+    ("近藤", "誠"),
+    ("坂本", "勇気"),
+    ("遠藤", "健太"),
+    ("石川", "隼人"),
+    ("橋本", "直樹"),
+    ("阿部", "亮"),
+    ("前田", "啓介"),
+    ("後藤", "仁"),
+    ("福田", "一真"),
+    ("三浦", "陸"),
+];
+
+/// A legend's name, preferring a family the club does not already have.
+pub fn legend_name(rng: &mut Rng, taken: &[&str]) -> (String, String) {
+    let start = (rng.next_u32() as usize) % LEGEND_NAMES.len();
+    for k in 0..LEGEND_NAMES.len() {
+        let (f, g) = LEGEND_NAMES[(start + k) % LEGEND_NAMES.len()];
+        if !taken.contains(&f) {
+            return (f.to_string(), g.to_string());
+        }
+    }
+    let (f, g) = LEGEND_NAMES[start];
+    (f.to_string(), g.to_string())
 }
 
 /// Pro / college / work, from how good he is, the school's name, and his traits.
@@ -897,6 +1028,11 @@ impl Team {
     /// No two players share a family name (the play-by-play uses it).
     pub fn unique_names(&mut self) {
         for i in 0..self.players.len() {
+            // A reborn alumnus keeps the name he made famous; the boys who came
+            // later take another name instead.
+            if self.players[i].legend {
+                continue;
+            }
             let mut k = 0;
             while self.players[..i]
                 .iter()
@@ -1155,6 +1291,63 @@ impl Team {
         let gem = if rng.unit() < 0.25 { 10.0 } else { 0.0 };
         rookie(rng, 1, pos, 41.0 + reputation * 0.25 + gem)
     }
+
+    /// One pull of the April extra-scout gacha, at the tier already drawn: a
+    /// first-year at any of the nine spots. The walk-in level is the base; the
+    /// better tiers stand on it, and a Legend stands on his own (78 to 86,
+    /// whatever the school's name). A Promising boy is guaranteed a trait; a Star
+    /// and a Legend carry two, one of them a signature (a heavy ball for a
+    /// pitcher, a batting trait for a fielder). A Legend wears `legend_name` when
+    /// one is given (a pro alumnus of this school, or a name from the old days).
+    pub fn gacha(
+        rng: &mut Rng,
+        reputation: f32,
+        rarity: Rarity,
+        legend_name: Option<(String, String)>,
+    ) -> Player {
+        let pos = Pos::FIELD[(rng.next_u32() as usize) % 9];
+        let base = 33.0 + reputation * 0.25;
+        let level = match rarity {
+            Rarity::Normal => base,
+            Rarity::Fine => base + 8.0,
+            Rarity::Promising => base + 16.0,
+            Rarity::Star => base + 26.0,
+            Rarity::Legend => 78.0 + (rng.next_u32() % 9) as f32,
+        };
+        let mut p = rookie(rng, 1, pos, level);
+        match rarity {
+            Rarity::Promising => {
+                if p.abilities.is_empty() {
+                    if let Some(a) = pick_ability(rng, p.pitcher(), &p.abilities) {
+                        p.grant(a);
+                    }
+                }
+            }
+            Rarity::Star | Rarity::Legend => {
+                let sign = if p.pitcher() {
+                    Ability::Heavy
+                } else {
+                    let signs = [Ability::Chance, Ability::Clutch, Ability::Eye];
+                    signs[(rng.next_u32() as usize) % signs.len()]
+                };
+                p.grant_force(sign);
+                if p.abilities.len() < 2 {
+                    if let Some(a) = pick_ability(rng, p.pitcher(), &p.abilities) {
+                        p.grant(a);
+                    }
+                }
+            }
+            Rarity::Normal | Rarity::Fine => {}
+        }
+        if rarity == Rarity::Legend {
+            p.legend = true;
+            if let Some((family, given)) = legend_name {
+                p.family = family;
+                p.given = given;
+            }
+        }
+        p
+    }
 }
 
 /// Defensive spots for an automatic batting order: the pitcher on the mound, everyone
@@ -1333,5 +1526,125 @@ mod tests {
         weak.field = 20;
         weak.arm = 20;
         assert_eq!(destination(&weak, 0.0), After::Job);
+    }
+
+    #[test]
+    fn gacha_chances_add_up_and_the_good_end_grows_with_reputation() {
+        let tiers = [
+            Rarity::Normal,
+            Rarity::Fine,
+            Rarity::Promising,
+            Rarity::Star,
+            Rarity::Legend,
+        ];
+        let mut sr_up_before = -1.0f32;
+        for rep in [0.0, 25.0, 50.0, 75.0, 100.0] {
+            let total: f32 = tiers.iter().map(|t| t.chance(rep)).sum();
+            assert!((total - 1.0).abs() < 1e-6, "rep {rep}: {total}");
+            let sr_up: f32 = tiers
+                .iter()
+                .filter(|t| t.at_least_sr())
+                .map(|t| t.chance(rep))
+                .sum();
+            assert!(sr_up >= sr_up_before, "rep {rep}: {sr_up} < {sr_up_before}");
+            sr_up_before = sr_up;
+        }
+        // The design's own numbers at the ends of the scale.
+        assert!((Rarity::Legend.chance(0.0) - 0.003).abs() < 1e-6);
+        assert!((Rarity::Legend.chance(100.0) - 0.015).abs() < 1e-6);
+        assert!((Rarity::Star.chance(100.0) - 0.05).abs() < 1e-6);
+        assert!((Rarity::Fine.chance(60.0) - 0.30).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_pity_pull_is_always_promising_or_better() {
+        let mut rng = Rng::new(11);
+        for rep in [0.0, 50.0, 100.0] {
+            for _ in 0..300 {
+                assert!(roll_rarity(&mut rng, rep, true).at_least_sr());
+            }
+        }
+    }
+
+    #[test]
+    fn gacha_players_stand_where_their_tier_says() {
+        let mut rng = Rng::new(23);
+        // The mean of the five batting stats tracks the generation level.
+        let level_of = |p: &Player| {
+            (p.contact as f32 + p.power as f32 + p.speed as f32 + p.field as f32 + p.arm as f32)
+                / 5.0
+        };
+        let cases = [
+            (Rarity::Normal, 0.0, 33.0),
+            (Rarity::Fine, 0.0, 41.0),
+            (Rarity::Promising, 50.0, 61.5),
+            (Rarity::Star, 100.0, 84.0),
+            (Rarity::Legend, 0.0, 82.0),
+        ];
+        for (rarity, rep, level) in cases {
+            let mut sum = 0.0;
+            let n = 60;
+            for _ in 0..n {
+                let p = Team::gacha(&mut rng, rep, rarity, None);
+                assert_eq!(p.grade, 1);
+                sum += level_of(&p);
+            }
+            let mean = sum / n as f32;
+            assert!(
+                (mean - level).abs() < 4.0,
+                "{rarity:?} at rep {rep}: mean {mean}, level {level}"
+            );
+        }
+        // A Legend stands at the top whatever the school's name: even the mean of
+        // his worst-luck draws clears a famous school's walk-in level (58).
+        let mut rng = Rng::new(29);
+        for _ in 0..60 {
+            let p = Team::gacha(&mut rng, 0.0, Rarity::Legend, None);
+            assert!(level_of(&p) > 58.0, "a legend at {}", level_of(&p));
+            assert!(p.legend);
+            assert_eq!(p.abilities.len(), 2);
+            if p.pitcher() {
+                assert!(p.has(Ability::Heavy), "a legend pitcher throws heavy");
+                // 118 + (level - 40) / 2 - 5 at the lowest level (78) is 132.
+                assert!((132..=150).contains(&p.velo), "velo {}", p.velo);
+            }
+        }
+        // A Star also carries two traits; a Promising boy at least one.
+        let mut rng = Rng::new(31);
+        for _ in 0..60 {
+            let p = Team::gacha(&mut rng, 20.0, Rarity::Star, None);
+            assert_eq!(p.abilities.len(), 2);
+            assert!(!p.legend);
+            let p = Team::gacha(&mut rng, 20.0, Rarity::Promising, None);
+            assert!(!p.abilities.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_legend_keeps_his_name_and_the_club_renames_around_him() {
+        let mut rng = Rng::new(37);
+        let p = Team::gacha(
+            &mut rng,
+            0.0,
+            Rarity::Legend,
+            Some(("佐々木".to_string(), "隆之介".to_string())),
+        );
+        assert!(p.legend);
+        assert_eq!(p.full_name(), "佐々木 隆之介");
+        // A boy already at the club with the same family name takes another one;
+        // the legend does not move.
+        let mut other = rookie(&mut rng, 1, Pos::CF, 33.0);
+        other.family = "佐々木".to_string();
+        let mut t = Team {
+            players: vec![p, other],
+            card: LineCard::default(),
+            number_one: String::new(),
+        };
+        t.unique_names();
+        assert_eq!(t.players[0].family, "佐々木");
+        assert_ne!(t.players[1].family, "佐々木");
+        // The stand-in names never pick a family the club already has.
+        let (family, _) = legend_name(&mut rng, &["佐々木", "長谷川", "近藤"]);
+        assert!(!["佐々木", "長谷川", "近藤"].contains(&family.as_str()));
     }
 }
