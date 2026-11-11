@@ -1,0 +1,7 @@
+{
+  "title": "Moonlit Swarm",
+  "version": "0.1.0",
+  "slug": "survivor_arena",
+  "entry": "examples/survivor_arena_minimal.py",
+  "world": "kagra-shared/tests/fixtures/survivor_arena_world.json"
+}

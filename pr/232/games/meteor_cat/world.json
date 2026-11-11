@@ -1,0 +1,766 @@
+{
+ "version": 1,
+ "genre": "neon_cat",
+ "game": {
+  "kind": "runner",
+  "id": "meteor_cat",
+  "title": "METEOR CAT",
+  "seed": 11,
+  "player": {
+   "glb": "assets/models/kenney/cube-pets/animal-cat.glb",
+   "scale": 0.5,
+   "foot": 0.3,
+   "tint": [
+    226,
+    206,
+    255
+   ],
+   "rim": {
+    "left": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "right": [
+     0.3,
+     0.9,
+     1.0
+    ],
+    "intensity": 3.6,
+    "radius": 0.55,
+    "side": 0.5,
+    "height": 0.5
+   },
+   "eyes": {
+    "enabled": true,
+    "color": [
+     0.35,
+     1.0,
+     0.95
+    ],
+    "glow": 2.4,
+    "size": 0.13,
+    "spread": 0.24,
+    "height": 0.92,
+    "forward": 0.64,
+    "ears": true,
+    "ear_x": 0.4,
+    "ear_y": 1.5,
+    "ear_z": 0.05,
+    "collar": false,
+    "collar_color": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "collar_y": 0.95,
+    "tail_tip": true,
+    "tail_color": [
+     1.0,
+     0.25,
+     0.75
+    ],
+    "tail_x": 0.0,
+    "tail_y": 1.62,
+    "tail_z": -0.6
+   }
+  },
+  "obstacles": [
+   {
+    "name": "METEOR",
+    "glb": "assets/models/kenney/space-kit/meteor.glb",
+    "scale": [
+     1.1,
+     1.1,
+     1.1
+    ],
+    "mesh_min": [
+     -0.433013,
+     0.0,
+     -0.375
+    ],
+    "mesh_max": [
+     0.433013,
+     0.735,
+     0.375
+    ],
+    "weight": 1,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
+   },
+   {
+    "name": "CRYSTALS",
+    "glb": "assets/models/kenney/space-kit/rock_crystals.glb",
+    "scale": [
+     1.3,
+     1.3,
+     1.3
+    ],
+    "mesh_min": [
+     -0.471588,
+     0.0,
+     -0.429854
+    ],
+    "mesh_max": [
+     0.379352,
+     0.3375,
+     0.371629
+    ],
+    "weight": 2,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
+   },
+   {
+    "name": "ROCK",
+    "glb": "assets/models/kenney/space-kit/rock_largeA.glb",
+    "scale": [
+     1.1,
+     1.1,
+     1.1
+    ],
+    "mesh_min": [
+     -0.452754,
+     0.0,
+     -0.431819
+    ],
+    "mesh_max": [
+     0.466528,
+     0.5,
+     0.402036
+    ],
+    "weight": 1,
+    "behavior": "jump_over",
+    "parts": [],
+    "hit_y": null,
+    "color": null
+   }
+  ],
+  "hit_inset": 0.06,
+  "hit_top": 0.82,
+  "camera": {
+   "chase_back": 5.9,
+   "chase_lift": 2.35,
+   "chase_look": 13.0,
+   "chase_look_y": 1.12,
+   "fov": 50.0,
+   "fov_fast": 58.0,
+   "roll": 0.07,
+   "classic_back": 7.4,
+   "classic_lift": 1.72,
+   "classic_fov": 50.0
+  },
+  "style": {
+   "sky": [
+    10,
+    3,
+    4,
+    255
+   ],
+   "edge_a": [
+    40,
+    255,
+    255,
+    255
+   ],
+   "edge_b": [
+    255,
+    42,
+    180,
+    255
+   ],
+   "fill_a": [
+    0.65,
+    0.3,
+    0.05
+   ],
+   "fill_b": [
+    0.35,
+    0.1,
+    0.6
+   ],
+   "fill_emissive": 0.8,
+   "obstacle_color": [
+    36,
+    26,
+    54
+   ],
+   "codes": {
+    "jump_over": [
+     255,
+     150,
+     40
+    ],
+    "roll_under": [
+     255,
+     48,
+     186
+    ],
+    "solid": [
+     255,
+     60,
+     70
+    ],
+    "cat_gap": [
+     176,
+     110,
+     255
+    ],
+    "rideable": [
+     60,
+     150,
+     255
+    ],
+    "pass_through": [
+     150,
+     255,
+     225
+    ]
+   }
+  },
+  "hud_top": 96.0,
+  "hud": {
+   "scale": 1.0,
+   "panel": {
+    "fill": [
+     14,
+     10,
+     32,
+     205
+    ],
+    "border": [
+     90,
+     210,
+     230,
+     255
+    ],
+    "coin": [
+     255,
+     205,
+     70,
+     255
+    ],
+    "score": [
+     190,
+     248,
+     255,
+     255
+    ],
+    "slice": 3.0
+   },
+   "result": {
+    "beat_secs": 0.7,
+    "board": {
+     "enabled": true,
+     "top_n": 5,
+     "columns": [
+      "time",
+      "gates",
+      "coins",
+      "score"
+     ],
+     "sort": "score"
+    },
+    "deaths": {
+     "CRATE": "\u6728\u7bb1\u306b\u3076\u3064\u304b\u3063\u305f",
+     "BARREL": "\u6a3d\u306b\u3076\u3064\u304b\u3063\u305f",
+     "BARRIER": "\u30d0\u30ea\u30b1\u30fc\u30c9\u306b\u3076\u3064\u304b\u3063\u305f",
+     "GENERATOR": "\u767a\u96fb\u6a5f\u306b\u3076\u3064\u304b\u3063\u305f",
+     "OVERPASS": "\u3072\u3055\u3057\u306b\u982d\u3092\u3076\u3064\u3051\u305f\uff08\u4e0b\u30d5\u30ea\u30c3\u30af\u3067\u3053\u308d\u304c\u308b\uff09",
+     "TRAIN": "\u96fb\u8eca\u306b\u3076\u3064\u304b\u3063\u305f",
+     "WALL": "\u58c1\u306b\u3076\u3064\u304b\u3063\u305f\uff08\u3059\u304d\u9593\u306f\u4e0b\u30d5\u30ea\u30c3\u30af\u3067\u304f\u3050\u308b\uff09",
+     "METEOR": "\u9695\u77f3\u306b\u3076\u3064\u304b\u3063\u305f",
+     "CRYSTALS": "\u30af\u30ea\u30b9\u30bf\u30eb\u306b\u3076\u3064\u304b\u3063\u305f",
+     "ROCK": "\u5ca9\u306b\u3076\u3064\u304b\u3063\u305f"
+    },
+    "death_fallback": "\u3076\u3064\u304b\u3063\u305f"
+   }
+  },
+  "lives": {
+   "count": 3,
+   "invuln_secs": 1.6,
+   "blink_hz": 10.0
+  },
+  "items": [
+   {
+    "effect": "magnet",
+    "glb": "",
+    "weight": 3,
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
+   },
+   {
+    "effect": "double",
+    "glb": "",
+    "weight": 3,
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
+   },
+   {
+    "effect": "superjump",
+    "glb": "",
+    "weight": 2,
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
+   },
+   {
+    "effect": "boost",
+    "glb": "",
+    "weight": 2,
+    "duration": 0.0,
+    "color": [
+     0,
+     230,
+     255
+    ],
+    "icon": null
+   },
+   {
+    "effect": "meow",
+    "glb": "",
+    "weight": 1,
+    "duration": 0.0,
+    "color": [
+     0,
+     0,
+     0
+    ],
+    "icon": null
+   }
+  ],
+  "item_rules": {
+   "rest_every": 3,
+   "reward_every": 2,
+   "hover": 0.7,
+   "radius": 1.1,
+   "magnet_radius": 4.0,
+   "magnet_lead": 4.0,
+   "pull_speed": 6.0,
+   "pull_accel": 70.0,
+   "warn_secs": 1.5,
+   "boost_speed": 1.5,
+   "jump_scale": 1.5
+  },
+  "mischief": [
+   {
+    "kind": "vase",
+    "weight": 2
+   },
+   {
+    "kind": "bottle",
+    "weight": 2
+   },
+   {
+    "kind": "can",
+    "weight": 2
+   },
+   {
+    "kind": "yarn",
+    "weight": 1
+   }
+  ],
+  "mischief_rules": {
+   "rest_every": 2,
+   "reward_every": 3,
+   "other_every": 5,
+   "side": 1.3,
+   "radius": 0.75,
+   "score": 25,
+   "streak_secs": 2.5,
+   "streak_bonus": 10,
+   "streak_cap": 6
+  },
+  "perch_route": [
+   {
+    "kind": "ac_unit",
+    "height": 0.0
+   },
+   {
+    "kind": "pipe",
+    "height": 0.0
+   },
+   {
+    "kind": "sign",
+    "height": 0.0
+   }
+  ],
+  "perch_rules": {
+   "enabled": false,
+   "rest_every": 4,
+   "reward_every": 4,
+   "other_every": 10,
+   "side": 1.35,
+   "half_width": 0.7,
+   "step_len": 3.6,
+   "step_up": 0.65,
+   "land_score": 30,
+   "run_score": 40,
+   "route_bonus": 120,
+   "coins_per_step": 3,
+   "ramp_len": 1.4
+  },
+  "deck_rules": {
+   "enabled": false,
+   "rest_every": 3,
+   "reward_every": 2,
+   "other_every": 8,
+   "lanes": [
+    -1,
+    0,
+    1
+   ],
+   "length": 7.0,
+   "height": 2.0,
+   "half_width": 0.6,
+   "stair_entry": false,
+   "stair_len": 3.0,
+   "land_score": 60,
+   "run_score": 60,
+   "coins": 6
+  },
+  "chaser": {
+   "enabled": false,
+   "secs": 10.0,
+   "near_gap": 1.2,
+   "far_gap": 1.7,
+   "perch_drain": 2.5,
+   "scare_score": 50,
+   "color": [
+    255,
+    80,
+    40
+   ]
+  },
+  "placements": [],
+  "runner": {
+   "speed": {
+    "start": 12.0,
+    "ramp": 0.22,
+    "cap": 24.0,
+    "max_step": 0.08
+   },
+   "jump": {
+    "gravity": -22.0,
+    "velocity": 7.1,
+    "grace_secs": 1.6
+   },
+   "lanes": {
+    "count": 3,
+    "width": 1.2,
+    "limit": 2.15,
+    "steer": 5.6
+   },
+   "obstacle_track": {
+    "z0": 26.0,
+    "gap": 18.0,
+    "amp": 1.2,
+    "freq": 0.85
+   },
+   "rings": {
+    "glb": "assets/models/kenney/racing-kit/overheadRound.glb",
+    "track": {
+     "z0": 14.0,
+     "gap": 17.0,
+     "amp": 0.95,
+     "freq": 1.2
+    },
+    "score": 100
+   },
+   "gates": {
+    "glb": "assets/models/neon_cat/gate_arch.glb",
+    "z0": 10.0,
+    "gap": 24.0,
+    "scale_x": 2.15
+   },
+   "draw": {
+    "lead_secs": 2.5,
+    "min_obstacles_ahead": 5,
+    "fog_start": 38.0,
+    "fog_end": 110.0
+   },
+   "sections": [
+    {
+     "kind": "intro",
+     "length": 140,
+     "level": 1,
+     "density": null,
+     "allow": [
+      "jump_over"
+     ]
+    },
+    {
+     "kind": "learn",
+     "length": 200,
+     "level": 2,
+     "density": null,
+     "allow": [
+      "jump_over",
+      "roll_under"
+     ]
+    },
+    {
+     "kind": "challenge",
+     "length": 260,
+     "level": 3,
+     "density": null,
+     "allow": []
+    },
+    {
+     "kind": "rest",
+     "length": 150,
+     "level": 0,
+     "density": null,
+     "allow": []
+    },
+    {
+     "kind": "challenge",
+     "length": 300,
+     "level": 3,
+     "density": null,
+     "allow": []
+    },
+    {
+     "kind": "reward",
+     "length": 120,
+     "level": 0,
+     "density": null,
+     "allow": []
+    }
+   ],
+   "body": {
+    "stand_height": 0.62,
+    "roll_height": 0.3,
+    "roll_secs": 0.55,
+    "step_tol": 0.18,
+    "recover_secs": 0.2,
+    "crouch": [
+     1.05,
+     0.68,
+     1.2
+    ]
+   },
+   "coins": {
+    "enabled": true,
+    "glb": "assets/models/coin.glb",
+    "score": 10,
+    "per_line": 5,
+    "free_line": 8,
+    "spacing": 0.85,
+    "arc_height": 0.85
+   },
+   "score": {
+    "per_meter": 2.2,
+    "per_gate": 50
+   }
+  },
+  "input": {
+   "scheme": "drag",
+   "drag_lane_frac": 0.18,
+   "drag_smooth_secs": 0.05,
+   "drag_snap": true,
+   "flick_dist": 0.07,
+   "flick_angle_deg": 30.0,
+   "swipe_dist": 0.09,
+   "swipe_cooldown_secs": 0.3,
+   "buffer_secs": 0.15,
+   "reverse_guard_secs": 0.2
+  },
+  "feel": {},
+  "atmosphere": {
+   "enabled": false,
+   "rain": {
+    "enabled": true,
+    "count_low": 24,
+    "count_mobile": 36,
+    "count_high": 96,
+    "reach": 26.0,
+    "behind": 5.0,
+    "fall_speed": 11.0,
+    "length": 0.9,
+    "slant": 0.12,
+    "width": 1.1,
+    "color": [
+     170,
+     205,
+     255,
+     125
+    ],
+    "splash": true
+   },
+   "signs": {
+    "enabled": true,
+    "cell": 4.0,
+    "density_low": 0.2,
+    "density_mobile": 0.4,
+    "density_high": 0.55,
+    "palette": [
+     [
+      70,
+      235,
+      255
+     ],
+     [
+      60,
+      255,
+      170
+     ],
+     [
+      130,
+      110,
+      255
+     ],
+     [
+      255,
+      90,
+      200
+     ]
+    ],
+    "rows": [
+     3.5,
+     4.9
+    ],
+    "size": 1.7,
+    "line_width": 2.4,
+    "glow": 1.6,
+    "flicker": 0.3
+   },
+   "wall": {
+    "enabled": true,
+    "texture_low": "",
+    "texture_mobile": "assets/textures/neon_cat/concrete_wall_s.png",
+    "texture_high": "assets/textures/neon_cat/concrete_wall.png",
+    "tint": [
+     255,
+     255,
+     255
+    ],
+    "segment": 12.0,
+    "reach": 48.0
+   }
+  },
+  "audio": {
+   "enabled": true,
+   "master": 0.8,
+   "bgm_volume": 0.7,
+   "sfx_volume": 1.0,
+   "bgm": {
+    "file": "assets/audio/neon_cat/bgm.wav",
+    "volume": 0.55,
+    "fade_secs": 1.2
+   },
+   "sfx": {
+    "jump": {
+     "file": "assets/audio/neon_cat/jump.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "roll": {
+     "file": "assets/audio/neon_cat/roll.wav",
+     "volume": 0.5,
+     "rate": 1.0
+    },
+    "coin": {
+     "file": "assets/audio/neon_cat/coin.wav",
+     "volume": 0.6,
+     "rate": 1.0
+    },
+    "card": {
+     "file": "assets/audio/neon_cat/card.wav",
+     "volume": 0.6,
+     "rate": 1.0
+    },
+    "item": {
+     "file": "assets/audio/neon_cat/item.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "meow": {
+     "file": "assets/audio/neon_cat/meow.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "perch": {
+     "file": "assets/audio/neon_cat/perch.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "knock": {
+     "file": "assets/audio/neon_cat/knock.wav",
+     "volume": 0.8,
+     "rate": 1.0
+    },
+    "robot_on": {
+     "file": "assets/audio/neon_cat/robot_on.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "robot_off": {
+     "file": "assets/audio/neon_cat/robot_off.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "hit": {
+     "file": "assets/audio/neon_cat/hit.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "gameover": {
+     "file": "assets/audio/neon_cat/gameover.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    },
+    "mission": {
+     "file": "assets/audio/neon_cat/mission.wav",
+     "volume": 0.9,
+     "rate": 1.0
+    }
+   }
+  },
+  "missions": {
+   "enabled": false,
+   "list": [
+    {
+     "kind": "coins",
+     "target": 40,
+     "label": ""
+    },
+    {
+     "kind": "gates",
+     "target": 5,
+     "label": ""
+    },
+    {
+     "kind": "perch",
+     "target": 1,
+     "label": ""
+    },
+    {
+     "kind": "passes",
+     "target": 30,
+     "label": ""
+    }
+   ],
+   "draw": 3,
+   "bonus": 0,
+   "hud": true
+  }
+ }
+}
