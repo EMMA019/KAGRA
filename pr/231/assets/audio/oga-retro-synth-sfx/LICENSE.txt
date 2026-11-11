@@ -1,0 +1,7 @@
+License evidence (captured 2026-10-25 Asia/Tokyo from https://opengameart.org/content/50-cc0-retro-synth-sfx)
+Page text (snapshot of the OpenGameArt page header + description; full HTML in _source_page.html):
+
+Author: rubberduck Monday, September 10, 2018 - 05:05 Art Type: Sound Effect Tags: retro synth power up coin death die explosion shoot shot beep laser License(s): CC0 Collections: AK Game Audio Bunji Cottontale CardMancer CC0 Audio - Uploader: rubberduck CFJam2023 Game Jam Fall 2022 - credits Game Jam Fall 2022 - scouting HackforPlay-Sound Impyrean options MySFX NES Style Sandwich Platformer Assets Used SFX - ok for commercial use Sound FX SoundFX Library [CC0] Space Game 6 SPT SFX Tavern Project Thing game assets? [Airos] [CC0] SFX Favorites: 53 Preview: I made 50 retro / synth effects with LMMS using mostly the ZynAddSubFX synthesizer. It includes power up, coin, death/die, explosion, shoot, beep, laser and other misc sounds. Also in the package included are source files, which can be opened with lmms. So you can change parameters of the effect to make it sound different. All synth effects are made from scratch, they are NOT based on presets that comes with lmms. File(s): 50-CC0-retro-synth-SFX.zip 1.9 Mb [ 5562 download(s)] 
+
+License as listed by OpenGameArt: CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+Note: OpenGameArt is user-submitted; the page license is the uploader's declaration.
