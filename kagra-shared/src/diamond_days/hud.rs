@@ -1318,8 +1318,10 @@ impl DiamondDays {
         let lines = self.notice_lines(n).len();
         // Faces in rows of four under the lines (who graduates, who joins).
         let faces_h = n.faces.len().min(12).div_ceil(4) as f32 * 92.0;
+        // A pull's card makes room for the tier's band under the title.
+        let band = if n.rarity.is_some() { 34.0 } else { 0.0 };
         // Lines from 46 below the top; the manager and the prompt take the last 104.
-        let tall = (46.0 + lines as f32 * 25.0 + faces_h + 112.0)
+        let tall = (46.0 + band + lines as f32 * 25.0 + faces_h + 112.0)
             .max(220.0)
             .min(stage_h - 80.0);
         Some(((stage_h - tall) * 0.5, tall))
@@ -1362,14 +1364,36 @@ impl DiamondDays {
             2.0,
             TextAlign::Center,
         );
-        let max_lines = ((tall - 46.0 - 104.0 - faces_h) / 25.0).max(1.0) as usize;
-        let fy = y + 46.0 + lines.len().min(max_lines) as f32 * 25.0 + 6.0;
+        // A pull's card wears its tier: a coloured band under the title, gold
+        // and glowing for the name that came back.
+        let band = if n.rarity.is_some() { 34.0 } else { 0.0 };
+        if let Some(r) = n.rarity {
+            if r == team::Rarity::Legend {
+                p.glow(200.0, y + 40.0, 95.0, [255, 205, 80, 110]);
+            }
+            let label = r.label(ja);
+            let w = crate::font::measure_text(label, 14.0) + 14.0 * 1.6;
+            label_pill(
+                p,
+                200.0 - w * 0.5,
+                y + 28.0,
+                24.0,
+                label,
+                14.0,
+                rarity_color(r),
+            );
+        }
+        let max_lines = ((tall - 46.0 - band - 104.0 - faces_h) / 25.0).max(1.0) as usize;
+        let fy = y + 46.0 + band + lines.len().min(max_lines) as f32 * 25.0 + 6.0;
         let fresh = n.title == "New faces";
         for (k, (fam, given)) in n.faces.iter().take(12).enumerate() {
             let (col, row) = (k % 4, k / 4);
             let in_row = (n.faces.len().min(12) - row * 4).min(4);
             let x = 200.0 - in_row as f32 * 41.0 + col as f32 * 82.0 + 9.0;
             let yy = fy + row as f32 * 92.0;
+            if n.rarity == Some(team::Rarity::Legend) {
+                p.glow(x + 32.0, yy + 32.0, 54.0, [255, 205, 80, 100]);
+            }
             let face = match n.roles.get(k).copied() {
                 Some(team::Role::Ace) => art::ace_face(),
                 Some(team::Role::Captain) => art::captain_face(),
@@ -1390,16 +1414,23 @@ impl DiamondDays {
             }
         }
         for (k, ln) in lines.iter().take(max_lines).enumerate() {
-            // The first line (what happened) a little bigger.
+            // The first line (what happened) a little bigger, and in the
+            // tier's own colour on a pull's card.
             let (size, col) = if k == 0 {
-                (18.0, INK)
+                (
+                    18.0,
+                    match n.rarity {
+                        Some(r) => shade(rarity_color(r), -0.35),
+                        None => INK,
+                    },
+                )
             } else {
                 (16.0, [52, 58, 76, 255])
             };
             p.text(
                 ln,
                 44.0,
-                y + 44.0 + k as f32 * 25.0,
+                y + 44.0 + band + k as f32 * 25.0,
                 size,
                 col,
                 TextAlign::Left,
@@ -1522,47 +1553,74 @@ impl DiamondDays {
             [214, 100, 120, 255],
             TextAlign::Left,
         );
-        let lines = [
+        p.text(
             self.tr(
                 "April only: one more hopeful could walk in!",
                 "4月だけの追加スカウトです！",
-            )
-            .to_string(),
-            if ja {
-                format!(
-                    "残り：無料{}回＋チケット{}枚",
-                    self.s.gacha_free, self.s.gacha_tickets
-                )
+            ),
+            34.0,
+            box_y + 40.0,
+            15.0,
+            INK,
+            TextAlign::Left,
+        );
+        // The pulls left, as two purses side by side: this April's free ones
+        // (blue), then the tickets that keep (amber); an empty purse greys out.
+        let dim = [148, 150, 158, 255];
+        let free = if ja {
+            format!("無料 {}回", self.s.gacha_free)
+        } else {
+            format!("Free: {}", self.s.gacha_free)
+        };
+        let w = label_pill(
+            p,
+            34.0,
+            box_y + 62.0,
+            24.0,
+            &free,
+            13.0,
+            if self.s.gacha_free > 0 {
+                [66, 120, 195, 255]
             } else {
-                format!(
-                    "Pulls left: {} free + {} ticket(s)",
-                    self.s.gacha_free, self.s.gacha_tickets
-                )
+                dim
             },
+        );
+        let tickets = if ja {
+            format!("チケット {}枚", self.s.gacha_tickets)
+        } else {
+            format!("Tickets: {}", self.s.gacha_tickets)
+        };
+        label_pill(
+            p,
+            34.0 + w + 8.0,
+            box_y + 62.0,
+            24.0,
+            &tickets,
+            13.0,
+            if self.s.gacha_tickets > 0 {
+                [216, 140, 40, 255]
+            } else {
+                dim
+            },
+        );
+        p.text(
             if self.s.gacha_pity >= 5 {
                 self.tr(
                     "The coaches like the look of the next one...",
                     "次の子は、目利きが効いてますよ",
                 )
-                .to_string()
             } else {
                 self.tr(
                     "Now and then, an old name comes back...",
                     "たまに、昔の名前が戻ってくることも…",
                 )
-                .to_string()
             },
-        ];
-        for (k, line) in lines.iter().enumerate() {
-            p.text(
-                line,
-                34.0,
-                box_y + 40.0 + k as f32 * 26.0,
-                15.0,
-                INK,
-                TextAlign::Left,
-            );
-        }
+            34.0,
+            box_y + 92.0,
+            15.0,
+            INK,
+            TextAlign::Left,
+        );
         for (b, r) in &l.buttons {
             match b {
                 Btn::GachaDraw => {
@@ -2025,6 +2083,18 @@ impl DiamondDays {
             format!("Yr {}  {}", pl.grade, pl.pos.short(false))
         };
         p.text(&sub, x + 62.0, y + 31.0, 12.0, INK_SOFT, TextAlign::Left);
+        if pl.legend {
+            let lx = x + 62.0 + crate::font::measure_text(&sub, 12.0) + 8.0;
+            label_pill(
+                p,
+                lx,
+                y + 28.0,
+                18.0,
+                self.tr("Reborn OB", "転生OB"),
+                11.0,
+                rarity_color(team::Rarity::Legend),
+            );
+        }
         let (a, b) = if pl.pitcher() {
             (pl.pitch_rating(), pl.bat_rating())
         } else {
@@ -2429,6 +2499,19 @@ impl DiamondDays {
             format!("Year {}  {}  {hands}", pl.grade, pl.pos.short(false))
         };
         p.text(&sub, 160.0, 60.0, 15.0, INK, TextAlign::Left);
+        if pl.legend {
+            // A name the school remembers, back in a first-year's body.
+            let x = 160.0 + crate::font::measure_text(&sub, 15.0) + 10.0;
+            label_pill(
+                p,
+                x,
+                57.0,
+                22.0,
+                self.tr("Reborn OB", "転生OB"),
+                12.0,
+                rarity_color(team::Rarity::Legend),
+            );
+        }
         // This season's numbers in games.
         let s = pl.season;
         let line = if s.games == 0 {
@@ -2724,6 +2807,34 @@ pub(in crate::diamond_days) fn square_label(sq: Square, ja: bool) -> &'static st
         (Square::Game, false) => "GAME",
         _ => sq.label(ja),
     }
+}
+
+/// The extra-scout tiers' colours, in the grade chips' language: slate at
+/// the bottom, gold at the top.
+fn rarity_color(r: team::Rarity) -> Rgba {
+    match r {
+        team::Rarity::Normal => [130, 140, 165, 255],
+        team::Rarity::Fine => [90, 150, 220, 255],
+        team::Rarity::Promising => [100, 180, 95, 255],
+        team::Rarity::Star => [176, 96, 216, 255],
+        team::Rarity::Legend => [214, 158, 32, 255],
+    }
+}
+
+/// A small rounded label at (x, y): a coloured plate, its words centred in
+/// white. Returns the plate's width, for the next label in a row.
+fn label_pill(p: &mut Painter, x: f32, y: f32, h: f32, label: &str, size: f32, bg: Rgba) -> f32 {
+    let w = crate::font::measure_text(label, size) + size * 1.6;
+    p.panel(x, y, w, h, h * 0.5, shade(bg, 0.15), shade(bg, -0.12), 4.0);
+    p.text(
+        label,
+        x + w * 0.5,
+        y + (h - size) * 0.5 - size * 0.06,
+        size,
+        WHITE,
+        TextAlign::Center,
+    );
+    w
 }
 
 /// A trait's chip colour: good orange, gold gold, a bad habit slate blue.
