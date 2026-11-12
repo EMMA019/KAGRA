@@ -1114,7 +1114,7 @@ impl DiamondDays {
 
     /// The opponent's nine for a fixture against school `idx`.
     fn rival_side(&mut self, f: Fixture, idx: usize) -> Side {
-        let target = board::rival_level(f, self.s.year);
+        let target = board::rival_level(f, self.s.year, self.s.reputation);
         let (en, ja, level) = match self.s.rivals.get(idx) {
             Some(s) => (
                 s.name.clone(),
@@ -1290,7 +1290,7 @@ impl DiamondDays {
         let mut used: Vec<usize> = Vec::new();
         let mut path = Vec::new();
         for r in 1..=rounds {
-            let target = board::rival_level(f.at(r), self.s.year);
+            let target = board::rival_level(f.at(r), self.s.year, self.s.reputation);
             let jitter = self.rng.unit() * 6.0 - 3.0;
             let pick = (0..n).filter(|i| !used.contains(i)).min_by(|a, b| {
                 let d = |i: usize| (self.s.rivals[i].strength - target - jitter).abs();
@@ -2969,7 +2969,7 @@ impl DiamondDays {
         let i = if let Some(prev) = rematch {
             prev.rival as usize
         } else {
-            let target = board::rival_level(f, self.s.year);
+            let target = board::rival_level(f, self.s.year, self.s.reputation);
             let used: Vec<u8> = self
                 .s
                 .slate

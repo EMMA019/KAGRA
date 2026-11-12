@@ -1296,6 +1296,12 @@ fn players_keep_their_numbers_and_the_year_names_its_best() {
         p.speed = 99;
         p.field = 99;
         p.arm = 99;
+        // A star on the mound too: the pro bar now asks for the player himself,
+        // not for the school's name, so his pitching line has to be a star's.
+        p.velo = 155;
+        p.control = 90;
+        p.breaking = 85;
+        p.stamina_p = 90;
     }
     g.s.reputation = 100.0;
     g.notes.clear();
