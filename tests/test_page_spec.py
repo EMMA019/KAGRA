@@ -94,6 +94,20 @@ def test_page_resume_offers_continue_and_a_new_game():
 
 
 
+def test_page_pads_choose_the_touch_pads():
+    assert normalize_page({"pads": "stick"}) == {"pads": "stick"}
+    assert normalize_page({"pads": "none"}) == {"pads": "none"}
+    for bad in ({"pads": "full"}, {"pads": True}, {"pads": ""}, {"pads": "stick jump"}):
+        with pytest.raises(PageError):
+            normalize_page(bad)
+    html = PLAY.read_text(encoding="utf-8")
+    assert "page.pads" in html and "pads.dataset.mode" in html, "the page reads the choice"
+    assert 'page.pads !== "none"' in html, "no pads at all when the game reads touches itself"
+    i18n = (ROOT / "scripts" / "preview_site" / "i18n.js").read_text(encoding="utf-8")
+    assert i18n.count('"keys.stick"') == 2, "the stick-only key hint in English and Japanese"
+    assert i18n.count('"blurb.survivor"') == 2, "the survivor blurb in English and Japanese"
+
+
 def test_page_title_names_the_game_in_the_page_language():
     assert normalize_page({"title": "title.diamond"}) == {"title": "title.diamond"}
     with pytest.raises(PageError, match="page.title"):

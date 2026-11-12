@@ -2034,6 +2034,25 @@ pub fn clip_names(skin: &SkinnedMesh) -> Vec<String> {
     skin.clips.iter().map(|c| c.name.clone()).collect()
 }
 
+/// The clip a walker with this `clip_name` / `anim` pair would actually
+/// sample, as `(name, duration_seconds)`. Resolution mirrors
+/// [`selected_clip`] exactly (`clip_name` first, then a non-idle/walk
+/// `anim` among the extra clips, else the default clip), so a caller that
+/// advances the walker's phase wraps at the same length the sampler
+/// loops at. `None` when the skin carries no clip at all.
+pub fn walker_clip_info(
+    skin: &SkinnedMesh,
+    clip_name: Option<&str>,
+    anim: &str,
+) -> Option<(String, f32)> {
+    let pose = WalkerPose {
+        clip_name: clip_name.map(str::to_string),
+        anim: anim.to_string(),
+        ..WalkerPose::default()
+    };
+    selected_clip(skin, &pose).map(|c| (c.name.clone(), c.duration))
+}
+
 /// Named clip, or the default clip when `name` is `None` / unknown.
 fn resolve_clip<'a>(skin: &'a SkinnedMesh, name: Option<&str>) -> Option<&'a AnimClip> {
     name.and_then(|n| find_clip(skin, n)).or(skin.clip.as_ref())
@@ -4430,6 +4449,64 @@ mod tests {
         assert!(
             (dy - 1.0).abs() < 0.05,
             "default walk clip at t=0.5 should translate +1 on y, dy={dy}"
+        );
+    }
+
+    #[test]
+    fn skinned_clip_name_selects_named_clip() {
+        // A skinned file keeps every clip in `clips` (unlike `extra_clips`,
+        // which is rigid-only). World JSON walkers switch clips by name via
+        // WalkerPose.clip_name, so the named lookup must work on skins too.
+        let mut skin = skinned_from_embedded_gltf(&walk_skinned_gltf()).expect("skin");
+        assert!(!skin.skin_joints.is_empty(), "fixture must be skinned");
+        assert_eq!(skin.clips.len(), 1);
+        assert_eq!(skin.clips[0].name, "Walk");
+        let mut attack = skin.clips[0].clone();
+        attack.name = "attack".into();
+        assert_eq!(attack.channels.len(), 1);
+        // Freeze the chest at a fixed 60-degree X rotation, far from Walk.
+        for i in (0..attack.channels[0].values.len()).step_by(4) {
+            attack.channels[0].values[i] = 0.5;
+            attack.channels[0].values[i + 1] = 0.0;
+            attack.channels[0].values[i + 2] = 0.0;
+            attack.channels[0].values[i + 3] = 0.866_025_4;
+        }
+        skin.clips.push(attack);
+
+        let named = WalkerPose {
+            clip: Some(0.5),
+            anim_blend: 1.0,
+            clip_name: Some("Attack".into()), // lookup is case-insensitive
+            ..WalkerPose::default()
+        };
+        let picked = selected_clip(&skin, &named).expect("named clip");
+        assert_eq!(picked.name, "attack");
+
+        let walked = sample_skinned_pose(
+            &skin,
+            &WalkerPose {
+                clip: Some(0.5),
+                anim_blend: 1.0,
+                ..WalkerPose::default()
+            },
+        );
+        let attacked = sample_skinned_pose(&skin, &named);
+        let mut d = 0.0f32;
+        for i in 0..walked.vertices.len() {
+            let a = Vec3::from_array(walked.vertices[i].pos);
+            let b = Vec3::from_array(attacked.vertices[i].pos);
+            d = d.max((b - a).length());
+        }
+        assert!(d > 0.01, "named clip must change the pose, d={d}");
+
+        // Unknown names fall back to the default (Walk) clip.
+        let unknown = WalkerPose {
+            clip_name: Some("nope".into()),
+            ..WalkerPose::default()
+        };
+        assert_eq!(
+            selected_clip(&skin, &unknown).map(|c| c.name.as_str()),
+            Some("Walk")
         );
     }
 

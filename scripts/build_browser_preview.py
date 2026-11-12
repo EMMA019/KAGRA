@@ -25,6 +25,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from kagra.distribute import (  # noqa: E402
+    _ASSET_KEYS,
+    _ASSET_SUFFIXES,
     ManifestError,
     _expand,
     _scan_world,
@@ -51,7 +53,17 @@ def pages_base(owner: str, repo: str) -> str:
     return f"https://{host}.github.io/{name}"
 
 
-def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool) -> dict:
+def build_preview(
+    repo: Path,
+    out: Path,
+    pkg: Path | None,
+    *,
+    require_pkg: bool,
+    pack_slugs: list[str] | tuple[str, ...] = (),
+    pack_roots: list[Path] | tuple[Path, ...] = (),
+    pack_release: bool = False,
+    pack_compress: bool = True,
+) -> dict:
     repo = repo.resolve()
     out = out.resolve()
     if out.exists():
@@ -61,6 +73,15 @@ def build_preview(repo: Path, out: Path, pkg: Path | None, *, require_pkg: bool)
     for path in sorted((repo / "games").glob("*.json")):
         manifest = load_manifest(path, repo)
         games.append(_stage_one(repo, out, manifest))
+    for slug in pack_slugs:
+        _apply_pack(
+            repo,
+            out,
+            slug,
+            [Path(r) for r in pack_roots],
+            release=pack_release,
+            compress=pack_compress,
+        )
     games.sort(key=lambda g: (not g["browser"], g["slug"] != LANDING_SLUG, g["title"]))
     catalog = {"games": games}
     (out / "catalog.json").write_text(
@@ -128,6 +149,153 @@ def stamp_build(out: Path) -> str:
         )
     (out / "build.json").write_text(json.dumps({"build": build}) + "\n", encoding="utf-8")
     return build
+
+
+def _load_pack_builder():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "make_asset_pack", Path(__file__).with_name("make_asset_pack.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _world_asset_refs(node: object, found: set[str]) -> None:
+    """Asset paths a world dump references (same keys the staging scan uses)."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in _ASSET_KEYS and isinstance(value, str):
+                found.add(value)
+            else:
+                _world_asset_refs(value, found)
+    elif isinstance(node, list):
+        for item in node:
+            _world_asset_refs(item, found)
+
+
+def _apply_pack(
+    repo: Path,
+    out: Path,
+    slug: str,
+    extra_roots: list[Path],
+    *,
+    release: bool,
+    compress: bool,
+) -> None:
+    """Fold one staged game's files into a single asset pack (see make_asset_pack).
+
+    The bundle keeps its ``files`` list as the page's fallback unless
+    ``release`` drops it — a release build must not leave per-file URLs for
+    the packed assets, so loose staged files no other game references are
+    removed too. Bundle files the repo could not stage (models that live in
+    an asset-supply root, never in the repo) and assets the world references
+    but staging missed are resolved against ``extra_roots``.
+    """
+    pack_builder = _load_pack_builder()
+    bundle_path = out / "games" / slug / "bundle.json"
+    if not bundle_path.is_file():
+        raise SystemExit(f"asset pack: no staged bundle for game {slug!r}")
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    roots = [out, *extra_roots, repo]
+    entries = pack_builder.resolve_bundle_entries(bundle, roots)
+    have = {name for name, _ in entries}
+    # Assets the world references but the bundle does not list: staging only
+    # lists files the repo has, and a packed game's models may exist solely
+    # in a supply root. Anything resolvable joins the pack under its world
+    # path (the mount key the engine asks for).
+    world_name = bundle.get("world") or "world.json"
+    world_bytes = dict(entries).get(world_name)
+    refs: set[str] = set()
+    added: list[tuple[str, bytes]] = []
+    if world_bytes is not None:
+        try:
+            _world_asset_refs(json.loads(world_bytes.decode("utf-8")), refs)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            refs = set()
+        for ref in sorted(refs):
+            if ref in have or ".." in Path(ref).parts:
+                continue
+            if "/" not in ref and not ref.lower().endswith(_ASSET_SUFFIXES):
+                continue
+            for root in roots:
+                cand = root / ref
+                if cand.is_file():
+                    data = cand.read_bytes()
+                    entries.append((ref, data))
+                    added.append((ref, data))
+                    have.add(ref)
+                    break
+    # One model under two names: staging name-resolves a world reference to
+    # the repo's canonical path, and the supply root also carries the model
+    # under the world path itself. Identical bytes under both names are dead
+    # weight — keep the name the world asks for (a direct mount hit, no alias
+    # lookup). Same-named files whose bytes differ keep both entries.
+    by_hash: dict[str, list[str]] = {}
+    for name, data in entries:
+        by_hash.setdefault(hashlib.sha256(data).hexdigest(), []).append(name)
+    drop: set[str] = set()
+    for names in by_hash.values():
+        referenced = [n for n in names if n in refs]
+        if len(names) > 1 and len(referenced) == 1:
+            drop.update(n for n in names if n != referenced[0])
+    if drop:
+        entries = [(n, d) for n, d in entries if n not in drop]
+    info = pack_builder.pack_info(entries, compress=compress)
+    pack_rel = f"games/{slug}/assets.pack.zip"
+    (out / pack_rel).write_bytes(info.pop("blob"))
+    bundle["pack"] = {
+        "url": pack_rel,
+        "v": info["v"],
+        "format": "zip",
+        "entries": info["entries"],
+    }
+    if not release:
+        # A dev bundle keeps a complete files fallback: what the pack took
+        # from a supply root is staged loose too, listed under its pack
+        # (world) path, so the fallback boots the same game the pack does.
+        listed = {
+            (item.get("path") or "")
+            for item in bundle.get("files") or []
+            if isinstance(item, dict)
+        }
+        for name, data in added:
+            if name in listed:
+                continue
+            target = out / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            bundle.setdefault("files", []).append(
+                {"path": name, "url": name, "v": file_tag(data)}
+            )
+            listed.add(name)
+    if release:
+        own_urls = {
+            (item.get("url") or item.get("path") or "")
+            for item in bundle.get("files") or []
+            if isinstance(item, dict)
+        }
+        shared: set[str] = set()
+        for other in (out / "games").glob("*/bundle.json"):
+            if other == bundle_path:
+                continue
+            for item in json.loads(other.read_text(encoding="utf-8")).get("files") or []:
+                if isinstance(item, dict):
+                    shared.add(item.get("url") or item.get("path") or "")
+        for rel in sorted(own_urls - shared):
+            target = out / rel
+            if rel and target.is_file():
+                target.unlink()
+        bundle.pop("files", None)
+    bundle_path.write_text(
+        json.dumps(bundle, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    mode = "release (no files fallback)" if release else "with files fallback"
+    print(
+        f"asset pack {slug}: {info['entries']} entries, "
+        f"{info['bytes'] / 1e6:.2f} MB pack / {info['content_bytes'] / 1e6:.2f} MB content, {mode}"
+    )
 
 
 def _stage_one(repo: Path, out: Path, manifest) -> dict:
@@ -342,6 +510,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default="dist/preview")
     parser.add_argument("--pkg", default="kagra-shared/www/pkg")
     parser.add_argument("--require-pkg", action="store_true")
+    parser.add_argument(
+        "--pack",
+        action="append",
+        default=[],
+        metavar="SLUG",
+        help="also fold this game's files into an asset pack (repeatable)",
+    )
+    parser.add_argument(
+        "--pack-root",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="asset-supply root for pack files the repo does not stage (repeatable)",
+    )
+    parser.add_argument(
+        "--pack-release",
+        action="store_true",
+        help="packed bundles drop their files list and unshared loose files",
+    )
+    parser.add_argument(
+        "--pack-store", action="store_true", help="write packs uncompressed (default: deflate)"
+    )
     args = parser.parse_args(argv)
     out = Path(args.out)
     if not out.is_absolute():
@@ -349,8 +539,18 @@ def main(argv: list[str] | None = None) -> int:
     pkg = Path(args.pkg)
     if not pkg.is_absolute():
         pkg = ROOT / pkg
+    pack_roots = [Path(r) if Path(r).is_absolute() else ROOT / r for r in args.pack_root]
     try:
-        catalog = build_preview(ROOT, out, pkg, require_pkg=args.require_pkg)
+        catalog = build_preview(
+            ROOT,
+            out,
+            pkg,
+            require_pkg=args.require_pkg,
+            pack_slugs=args.pack,
+            pack_roots=pack_roots,
+            pack_release=args.pack_release,
+            pack_compress=not args.pack_store,
+        )
     except ManifestError as exc:
         print(f"manifest: {exc}", file=sys.stderr)
         return 2

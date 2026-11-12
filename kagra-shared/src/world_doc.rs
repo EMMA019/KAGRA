@@ -203,6 +203,13 @@ pub struct WorldDoc {
     /// None = full meshes. Vegetation keeps its own `lod_radius`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prop_lod: Option<f32>,
+    /// Survivor-loop tuning for the VRM horde prototype scenes. Present
+    /// only on those worlds; `world_survivor` runs the loop (spawning,
+    /// auto-fire, contact damage, game over) while the generic drivers
+    /// (`seek`, the NPC phase pass) keep moving the bodies. A shipping
+    /// game would carry this in its kit instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub survivor: Option<SurvivorSpec>,
     /// Generic countdowns. WorldPlay::tick_timers advances `remaining`; on 0 it
     /// emits `on_done` as an event and flips `active` false. Cooking wait,
     /// fishing cast→bite, cooldowns all map onto this. Genre code stays out.
@@ -578,6 +585,143 @@ fn prop_local_matrix(prop: &WorldProp) -> Mat4 {
     )
 }
 
+/// Tuning for the survivor loop (`world_survivor`) on horde-prototype
+/// worlds. Every field defaults, so a world JSON names only what it
+/// overrides. Distances are meters, times seconds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SurvivorSpec {
+    /// Player hit points at run start.
+    #[serde(default = "spec_player_hp")]
+    pub player_hp: f32,
+    /// Auto-fire reach: the nearest enemy inside it is shot at.
+    #[serde(default = "spec_fire_range")]
+    pub fire_range: f32,
+    /// Seconds between shots.
+    #[serde(default = "spec_fire_interval")]
+    pub fire_interval: f32,
+    /// Player clip played while a target is in reach.
+    #[serde(default = "spec_fire_clip")]
+    pub fire_clip: String,
+    /// Hit points one shot removes from an enemy.
+    #[serde(default = "spec_shot_damage")]
+    pub shot_damage: f32,
+    /// Enemy hit points at spawn.
+    #[serde(default = "spec_enemy_hp")]
+    pub enemy_hp: f32,
+    /// Player HP one attacking enemy removes per second.
+    #[serde(default = "spec_contact_dps")]
+    pub contact_dps: f32,
+    /// Enemies alive at once when the run starts.
+    #[serde(default = "spec_cap_start")]
+    pub cap_start: u32,
+    /// Hard ceiling for the alive cap.
+    #[serde(default = "spec_cap_max")]
+    pub cap_max: u32,
+    /// Seconds survived per +1 alive cap. 0 = no ramp.
+    #[serde(default = "spec_cap_ramp_s")]
+    pub cap_ramp_s: f32,
+    /// Seconds between spawns at run start.
+    #[serde(default = "spec_spawn_interval")]
+    pub spawn_interval: f32,
+    /// Spawn interval floor the ramp approaches.
+    #[serde(default = "spec_spawn_interval_min")]
+    pub spawn_interval_min: f32,
+    /// Seconds over which the spawn interval eases to its floor. 0 = fixed.
+    #[serde(default = "spec_spawn_ramp_s")]
+    pub spawn_ramp_s: f32,
+    /// Spawn ring radius around the player (clamped into the arena).
+    #[serde(default = "spec_spawn_radius")]
+    pub spawn_radius: f32,
+    /// Chance a kill also drops a swappable gun.
+    #[serde(default = "spec_weapon_drop_chance")]
+    pub weapon_drop_chance: f32,
+    /// Follow-camera distance for this world (meters behind the
+    /// player). Defaults to the engine's stock chase framing; the
+    /// survivor scene pulls it out and lifts it so the horde reads.
+    #[serde(default = "spec_cam_distance")]
+    pub cam_distance: f32,
+    /// Follow-camera height for this world (meters above the
+    /// player's feet).
+    #[serde(default = "spec_cam_height")]
+    pub cam_height: f32,
+}
+
+impl Default for SurvivorSpec {
+    fn default() -> Self {
+        Self {
+            player_hp: spec_player_hp(),
+            fire_range: spec_fire_range(),
+            fire_interval: spec_fire_interval(),
+            fire_clip: spec_fire_clip(),
+            shot_damage: spec_shot_damage(),
+            enemy_hp: spec_enemy_hp(),
+            contact_dps: spec_contact_dps(),
+            cap_start: spec_cap_start(),
+            cap_max: spec_cap_max(),
+            cap_ramp_s: spec_cap_ramp_s(),
+            spawn_interval: spec_spawn_interval(),
+            spawn_interval_min: spec_spawn_interval_min(),
+            spawn_ramp_s: spec_spawn_ramp_s(),
+            spawn_radius: spec_spawn_radius(),
+            weapon_drop_chance: spec_weapon_drop_chance(),
+            cam_distance: spec_cam_distance(),
+            cam_height: spec_cam_height(),
+        }
+    }
+}
+
+fn spec_player_hp() -> f32 {
+    100.0
+}
+fn spec_fire_range() -> f32 {
+    16.0
+}
+fn spec_fire_interval() -> f32 {
+    0.28
+}
+fn spec_fire_clip() -> String {
+    "rifle_fire".into()
+}
+fn spec_shot_damage() -> f32 {
+    34.0
+}
+fn spec_enemy_hp() -> f32 {
+    100.0
+}
+fn spec_contact_dps() -> f32 {
+    4.0
+}
+fn spec_cap_start() -> u32 {
+    10
+}
+fn spec_cap_max() -> u32 {
+    17
+}
+fn spec_cap_ramp_s() -> f32 {
+    18.0
+}
+fn spec_spawn_interval() -> f32 {
+    1.1
+}
+fn spec_spawn_interval_min() -> f32 {
+    0.5
+}
+fn spec_spawn_ramp_s() -> f32 {
+    150.0
+}
+fn spec_spawn_radius() -> f32 {
+    23.0
+}
+fn spec_weapon_drop_chance() -> f32 {
+    0.09
+}
+fn spec_cam_distance() -> f32 {
+    12.2
+}
+fn spec_cam_height() -> f32 {
+    4.4
+}
+
 /// Walker record (`walker:player`).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldWalker {
@@ -640,6 +784,37 @@ pub struct WorldWalker {
     /// glTF clip to play by name ("Run", "Jump"). None = Walk / first clip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip_name: Option<String>,
+    /// Locomotion clip played while this walker is actually moving
+    /// (the player under input, a `seek` walker while it closes in).
+    /// For the player, `clip_name` then names the standing clip.
+    /// None keeps the engine-derived walk behaviour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_clip: Option<String>,
+    /// Approach-the-player speed in m/s for an NPC walker (0 = stands
+    /// where authored). The walker closes to `seek_stop` meters and
+    /// plays `seek_attack` there. Horde-prototype driver: a shipping
+    /// kit steers its own walkers; this fixes crowd requirements on
+    /// the plain WorldPlay path.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub seek: f32,
+    /// Stop distance for `seek` in meters. 0 = the step's default.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub seek_stop: f32,
+    /// Clip a `seek` walker plays once it reaches the player.
+    /// None = "attack".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seek_attack: Option<String>,
+    /// Survivor-loop pool member (horde prototype): the walker starts
+    /// parked off-stage and `world_survivor` activates it at the spawn
+    /// ring, recycles it on death, and re-parks it. Only meaningful on
+    /// worlds carrying a `survivor` spec.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub survivor_enemy: bool,
+    /// Cruise speed the survivor loop hands to `seek` on activation
+    /// (the authored `seek` stays 0 while parked so the seek pass
+    /// leaves the body off-stage). 0 = the loop's default.
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub survivor_speed: f32,
     /// Crossfade source clip name. See `anim_mixer::AnimMixer`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fade_from: Option<String>,
