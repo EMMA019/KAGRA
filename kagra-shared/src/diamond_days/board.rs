@@ -1229,9 +1229,10 @@ pub fn month(w: u8) -> u8 {
     }
 }
 
-/// How good a rival is in a fixture (the team's strength scale).
-pub fn rival_level(f: Fixture, year: u8) -> f32 {
-    let base = 36.0 + year as f32 * 2.0;
+/// How good a rival is in a fixture (the team's strength scale). A famous school
+/// draws stronger opposition: the circuit keeps up with the name it has made.
+pub fn rival_level(f: Fixture, year: u8, reputation: f32) -> f32 {
+    let base = 36.0 + year as f32 * 2.0 + reputation * 0.20;
     match f {
         Fixture::Practice => base + 2.0,
         Fixture::SpringPref(r) => base + r as f32 * 4.0,
@@ -1558,7 +1559,9 @@ mod tests {
         assert_eq!(n, 4);
         assert!((1..=WEEKS).all(|w| fixture(w) != Some(Fixture::Practice)));
         assert!(WINTER.clone().all(|w| fixture(w).is_none()));
-        assert!(rival_level(Fixture::National(1), 1) > rival_level(Fixture::Summer(5), 1));
+        assert!(
+            rival_level(Fixture::National(1), 1, 0.0) > rival_level(Fixture::Summer(5), 1, 0.0)
+        );
         let (en, ja, _) = away_school(3, 1);
         assert!(!en.is_empty() && !ja.is_empty());
         // Rounds and their names.

@@ -1589,7 +1589,7 @@ impl DiamondDays {
         // Strength and the record between us.
         let ours = grade(self.s.team.strength().round() as u8);
         // A school from elsewhere is as strong as the round it plays in.
-        let away = board::rival_level(f, self.s.year).round() as u8;
+        let away = board::rival_level(f, self.s.year, self.s.reputation).round() as u8;
         let theirs = grade(rival.map(|s| s.strength.round() as u8).unwrap_or(away));
         for (cx, g) in [(104.0, ours), (296.0, theirs)] {
             p.text(

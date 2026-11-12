@@ -1498,8 +1498,8 @@ pub fn destination(p: &Player, reputation: f32) -> After {
     } else {
         p.bat_rating()
     };
-    let score = rating + reputation * 0.12 + p.abilities.len() as f32 * 3.5;
-    if score >= 64.0 {
+    let score = rating + reputation * 0.06 + p.abilities.len() as f32 * 3.5;
+    if score >= 80.0 {
         After::Pro
     } else if score >= 46.0 {
         After::College
