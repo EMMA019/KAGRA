@@ -255,22 +255,35 @@
       });
       // load() runs now, not on a later tick: the script tag goes in the page at once.
       const work = new Promise((resolve) => resolve(provider.load(env))).then(() => provider.init(env));
+      const becomeReady = () => {
+        status = "ready";
+        if (loading) safe(() => provider.loadingStart(), "loadingStart");
+        // A run may already be on: the page said "playing" before the SDK was
+        // usable, and syncGameplay dropped it then. Say it now.
+        syncGameplay();
+      };
       initPromise = Promise.race([work, timeout])
-        .then(() => {
-          status = "ready";
-          if (loading) safe(() => provider.loadingStart(), "loadingStart");
-        })
+        .then(becomeReady)
         .catch((err) => {
           // Ad blocker, offline, wrong host: the game runs without the portal.
           status = "unavailable";
           log(`portal ${provider.name}: unavailable`, err);
+          // The timeout only settles what init() reports; it does not cancel
+          // the SDK. A slow init that lands later is adopted and resynced,
+          // not thrown away. A real failure leaves the host unavailable.
+          work.then(() => { if (status === "unavailable") becomeReady(); }, () => {});
         })
         .then(() => { timers.clear(timer); });
       return initPromise;
     };
 
     const syncGameplay = () => {
-      if (adActive || !usable()) return;
+      if (adActive) return;
+      if (!usable()) {
+        // Dropped, not queued: becomeReady() resyncs when the SDK lands.
+        if (wantPlaying !== playing) log(`portal ${provider.name}: gameplay sync dropped (status=${status})`);
+        return;
+      }
       if (wantPlaying && !playing) { playing = true; safe(() => provider.gameplayStart(), "gameplayStart"); }
       else if (!wantPlaying && playing) { playing = false; safe(() => provider.gameplayStop(), "gameplayStop"); }
     };
