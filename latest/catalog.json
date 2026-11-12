@@ -320,6 +320,28 @@
       "icon": "games/td/icon.png"
     },
     {
+      "slug": "vrm_verify_survivor",
+      "title": "VRM Survivor Loop (dev only)",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "",
+      "entry": "examples/vrm_verify_survivor_minimal.py",
+      "world": "kagra-shared/tests/fixtures/vrm_verify_survivor_world.json",
+      "href": "play.html?game=vrm_verify_survivor",
+      "icon": "games/vrm_verify_survivor/icon.png"
+    },
+    {
+      "slug": "vrm_verify",
+      "title": "VRM Verify (dev only)",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "",
+      "entry": "examples/vrm_verify_minimal.py",
+      "world": "kagra-shared/tests/fixtures/vrm_verify_world.json",
+      "href": "play.html?game=vrm_verify",
+      "icon": "games/vrm_verify/icon.png"
+    },
+    {
       "slug": "backyard_brawl",
       "title": "Backyard Brawl",
       "version": "0.1.0",

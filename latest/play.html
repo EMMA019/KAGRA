@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
-  <meta name="kagra-build-id" content="ea51de102eb0" />
+  <meta name="kagra-build-id" content="f66844db5761" />
   <title>KAGRA</title>
   <style>
     :root { color-scheme: dark; }
@@ -126,6 +126,10 @@
     .pad.on { background: rgba(240, 195, 106, 0.38); }
     #stick { border-radius: 28%; }
     #jump, #act { border-radius: 999px; }
+    /* page.pads: "stick" keeps only the move stick (the action / jump pads
+       belong to other games); "none" drops the pads entirely. */
+    #pads[data-mode="stick"] #act, #pads[data-mode="stick"] #jump { display: none; }
+    #pads[data-mode="none"] { display: none; }
     html[data-orient="portrait"] #stick {
       left: max(12px, env(safe-area-inset-left));
       bottom: max(16px, env(safe-area-inset-bottom));
@@ -345,13 +349,13 @@
     </div>
     <div id="update" hidden><span data-i18n="update.hint">新しいバージョンがあります</span> <button id="updateGo" type="button" data-i18n="update.reload">更新</button></div>
   </div>
-  <script src="./i18n.js?v=ea51de102eb0"></script>
-  <script src="./quality.js?v=ea51de102eb0"></script>
-  <script src="./portal.js?v=ea51de102eb0"></script>
+  <script src="./i18n.js?v=f66844db5761"></script>
+  <script src="./quality.js?v=f66844db5761"></script>
+  <script src="./portal.js?v=f66844db5761"></script>
   <!-- META hook 1/4: wallet, unlocks, daily run (docs/meta_core.md) -->
-  <script src="./meta.js?v=ea51de102eb0"></script>
+  <script src="./meta.js?v=f66844db5761"></script>
   <script type="module">
-    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=ea51de102eb0";
+    import init, { WasmSession, sharedVersion } from "./pkg/kagra_shared.js?v=f66844db5761";
 
     const boot = document.getElementById("boot");
     const overlay = document.getElementById("overlay");
@@ -395,6 +399,23 @@
       const blurbEl = document.getElementById("blurb");
       if (blurbEl) blurbEl.textContent = t(page.blurb || "blurb.swipe");
     };
+    // page.pads: the manifest picks the touch pads. "stick" is a move-only
+    // game (auto-fire survivors and the like): the action / jump pads and the
+    // hint lines that mention them go away. "none" reads touches in the
+    // engine instead; showPhase never raises the pads for it.
+    const applyPadsMode = () => {
+      if (!page.pads) return;
+      pads.dataset.mode = page.pads;
+      // "stick" swaps the title text to the move-only wording. So
+      // does "none" when the page carries its own blurb: the game
+      // reads touches in the engine (its own stick), and the default
+      // jump / action wording would be a lie there too.
+      if (page.pads !== "stick" && !(page.pads === "none" && page.blurb)) return;
+      const blurbEl = document.getElementById("blurb");
+      if (blurbEl) blurbEl.textContent = t(page.blurb || "blurb.stick");
+      const keysEl = document.getElementById("keys");
+      if (keysEl) keysEl.textContent = t("keys.stick");
+    };
 
     const bootLogo = document.getElementById("bootLogo");
     const bootBar = document.getElementById("bootBar");
@@ -403,6 +424,31 @@
       const p = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
       if (bootFill) bootFill.style.width = `${p}%`;
       if (bootBar) bootBar.setAttribute("aria-valuenow", String(p));
+    };
+    // Read a fetch body to bytes, painting the boot gauge as the
+    // bytes land. An asset pack is one fetch for the whole game, and
+    // a gauge that sits at zero until the pack arrives reads as a
+    // hang on a phone (the survivor pack is ~10 MB). The download
+    // owns the [from, to] stretch of the bar; whoever mounts the
+    // result owns the rest. Without a Content-Length or a readable
+    // stream this is a plain arrayBuffer() and nothing is painted.
+    const readBodyPainted = async (res, from, to) => {
+      const total = Number(res.headers.get("Content-Length")) || 0;
+      if (!res.body || !total) return res.arrayBuffer();
+      const reader = res.body.getReader();
+      const chunks = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        got += value.length;
+        paintBoot(from + (to - from) * Math.min(1, got / total), 1);
+      }
+      const buf = new Uint8Array(got);
+      let off = 0;
+      for (const c of chunks) { buf.set(c, off); off += c.length; }
+      return buf.buffer;
     };
     const fail = (text) => {
       boot.className = "err";
@@ -732,6 +778,49 @@
       if (typeof item === "string") return fileUrl(site, item);
       return buildOn && item.v ? `${fileUrl(site, item.url)}?v=${encodeURIComponent(item.v)}` : fileUrl(site, item.url);
     };
+    // <kagra-pack>
+    // A game's asset pack (bundle.pack): one ZIP holding every file the game
+    // mounts, so a release build serves no per-file asset URLs. Minimal
+    // reader — central directory + store / deflate-raw via DecompressionStream,
+    // no bundled library. Returns [[mountPath, Uint8Array], ...].
+    const unzipPack = async (buf) => {
+      const view = new DataView(buf);
+      const u8 = new Uint8Array(buf);
+      let eocd = -1;
+      for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65558); i--) {
+        if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+      }
+      if (eocd < 0) throw new Error("asset pack: no ZIP end record");
+      const count = view.getUint16(eocd + 10, true);
+      let off = view.getUint32(eocd + 16, true);
+      const dec = new TextDecoder();
+      const entries = [];
+      for (let n = 0; n < count; n++) {
+        if (view.getUint32(off, true) !== 0x02014b50) throw new Error("asset pack: bad ZIP directory");
+        const method = view.getUint16(off + 10, true);
+        const csize = view.getUint32(off + 20, true);
+        const nameLen = view.getUint16(off + 28, true);
+        const extraLen = view.getUint16(off + 30, true);
+        const commentLen = view.getUint16(off + 32, true);
+        const localOff = view.getUint32(off + 42, true);
+        const name = dec.decode(u8.subarray(off + 46, off + 46 + nameLen));
+        off += 46 + nameLen + extraLen + commentLen;
+        if (name.endsWith("/")) continue;
+        if (view.getUint32(localOff, true) !== 0x04034b50) throw new Error("asset pack: bad ZIP entry");
+        const dataOff = localOff + 30 + view.getUint16(localOff + 26, true) + view.getUint16(localOff + 28, true);
+        const raw = u8.subarray(dataOff, dataOff + csize);
+        if (method === 0) {
+          entries.push([name, raw.slice()]);
+        } else if (method === 8) {
+          const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+          entries.push([name, new Uint8Array(await new Response(stream).arrayBuffer())]);
+        } else {
+          throw new Error(`asset pack: unsupported ZIP method ${method}`);
+        }
+      }
+      return entries;
+    };
+    // </kagra-pack>
     const reloadFor = (id) => {
       const u = new URL(location.href);
       u.searchParams.set("_b", id || String(Date.now()));
@@ -773,6 +862,9 @@
     // Default off until measured (docs/phone_measure.md); ?render_skip=1|0 or world.json.
     let renderSkip = params.get("render_skip") === "1";
     let bundle;
+    // Audio bytes of a pack-staged game, kept page-side: WebAudio decodes in
+    // JS, so the audio fetcher cannot read clips back from the wasm mounts.
+    const packAudioBytes = new Map();
     let audioSpec = null;
     let portalHost = null; // portal.js: ads and gameplay events for a web-game portal
     let portalPage = null;
@@ -833,35 +925,69 @@
       }
       const files = Array.isArray(bundle.files) ? bundle.files : [];
       session.clearMount();
-      let done = 0;
-      const queue = files.slice();
-      const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
-        while (queue.length) {
-          const item = queue.shift();
-          const path = typeof item === "string" ? item : item.path;
-          const url = typeof item === "string" ? item : item.url;
-          // A model is a nicety, not a requirement: games draw primitives without it.
-          const optional = /\.glb$/i.test(path);
-          let bytes = null;
-          try {
-            const res = await fetch(assetUrl(site, item));
-            if (!res.ok) throw new Error(`${url} ${res.status}`);
-            bytes = new Uint8Array(await res.arrayBuffer());
-          } catch (err) {
-            if (!optional) throw err;
-            console.warn("kagra: optional model not loaded", path, err);
+      // Asset pack (bundle.pack): one fetch stages the whole game instead of
+      // a URL per file — the release shape for models that ship incorporated
+      // into the game, never as loose files. A pack failure falls back to the
+      // per-file staging whenever the bundle still lists files; a release
+      // bundle lists none, so there a pack failure is a start failure.
+      let packWorldText = null;
+      let staged = false;
+      if (bundle.pack && bundle.pack.format === "zip" && bundle.pack.url) {
+        try {
+          const res = await fetch(assetUrl(site, bundle.pack));
+          if (!res.ok) throw new Error(`${bundle.pack.url} ${res.status}`);
+          // The download paints the gauge's first stretch as the
+          // bytes land (see readBodyPainted); mounting the entries
+          // paints the rest.
+          const entries = await unzipPack(await readBodyPainted(res, 0, 0.85));
+          let pDone = 0;
+          for (const [name, bytes] of entries) {
+            session.mountFile(name, bytes);
+            if (name === (bundle.world || "world.json")) packWorldText = new TextDecoder().decode(bytes);
+            if (/\.(wav|mp3|ogg)$/i.test(name)) packAudioBytes.set(name, bytes);
+            pDone += 1;
+            paintBoot(0.85 + 0.15 * (pDone / entries.length), 1);
           }
-          if (bytes) session.mountFile(path, bytes);
-          done += 1;
-          paintBoot(done, files.length);
+          staged = true;
+        } catch (err) {
+          if (!files.length) throw err;
+          console.warn("kagra: asset pack failed, staging files instead", err);
         }
-      });
-      await Promise.all(workers);
-      const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
-      const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
-      const worldRes = await fetch(worldFile && typeof worldFile !== "string" ? assetUrl(site, worldFile) : fileUrl(site, worldUrl));
-      if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
-      let worldText = await worldRes.text();
+      }
+      if (!staged) {
+        let done = 0;
+        const queue = files.slice();
+        const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+          while (queue.length) {
+            const item = queue.shift();
+            const path = typeof item === "string" ? item : item.path;
+            const url = typeof item === "string" ? item : item.url;
+            // A model is a nicety, not a requirement: games draw primitives without it.
+            const optional = /\.glb$/i.test(path);
+            let bytes = null;
+            try {
+              const res = await fetch(assetUrl(site, item));
+              if (!res.ok) throw new Error(`${url} ${res.status}`);
+              bytes = new Uint8Array(await res.arrayBuffer());
+            } catch (err) {
+              if (!optional) throw err;
+              console.warn("kagra: optional model not loaded", path, err);
+            }
+            if (bytes) session.mountFile(path, bytes);
+            done += 1;
+            paintBoot(done, files.length);
+          }
+        });
+        await Promise.all(workers);
+      }
+      let worldText = packWorldText;
+      if (worldText == null) {
+        const worldFile = files.find((item) => (item.path || item) === (bundle.world || "world.json"));
+        const worldUrl = worldFile ? (worldFile.url || worldFile) : `games/${slug}/world.json`;
+        const worldRes = await fetch(worldFile && typeof worldFile !== "string" ? assetUrl(site, worldFile) : fileUrl(site, worldUrl));
+        if (!worldRes.ok) throw new Error(`${worldUrl} ${worldRes.status}`);
+        worldText = await worldRes.text();
+      }
       let asked = (params.get("quality") || "").toLowerCase();
       let payload = (() => {
         try {
@@ -926,6 +1052,7 @@
         session.setLatencyMs(syncMs);
       }
       applySwipeMode();
+      applyPadsMode();
       if (session.setExternalMenu) session.setExternalMenu(true);
       session.showTitle();
       if (dev && params.get("debug") === "1" && session.setDebug) session.setDebug(true);
@@ -1054,6 +1181,8 @@
           warn: (...a) => console.warn(...a),
           fetchBytes: async (file) => {
             const site = new URL("./", document.baseURI).href;
+            const packed = packAudioBytes.get(file);
+            if (packed) return packed.buffer.slice(packed.byteOffset, packed.byteOffset + packed.byteLength);
             const item = (bundle.files || []).find((f) => (typeof f === "string" ? f : f.path) === file);
             if (!item) throw new Error(`${file} is not in the bundle`);
             const res = await fetch(assetUrl(site, item));
@@ -1259,7 +1388,7 @@
       if (!playing) cancelCanvasPointers();
       portalPage.phase(phase);
       overlay.classList.toggle("visible", !playing);
-      pads.classList.toggle("visible", playing && !swipeMode);
+      pads.classList.toggle("visible", playing && !swipeMode && page.pads !== "none");
       hud.classList.toggle("visible", playing);
       document.documentElement.dataset.menu = playing ? "0" : "1";
       document.documentElement.dataset.phase = phase;
@@ -1508,9 +1637,16 @@
       }
     });
     document.addEventListener("visibilitychange", () => {
+      // A hidden page may never see the lift (app switch,
+      // notification shade, a call): let every finger the engine
+      // holds go now, or it walks on by itself when the player
+      // returns. (Window blur is deliberately not hooked: a focus
+      // change on desktop must not cut a drag.)
+      if (document.hidden) cancelCanvasPointers();
       if (page.pause && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
       if (document.hidden) storeSave(slug);
     });
+    window.addEventListener("pagehide", () => cancelCanvasPointers());
     // The pause card steps the sync in the canvas: keep the device copy in step.
     window.addEventListener("pointerup", () => {
       if (!page.music_sync || phase !== "playing") return;
