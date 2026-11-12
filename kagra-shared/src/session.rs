@@ -413,6 +413,15 @@ impl SharedSession {
                 }
             }
         }
+        if self.kind == SceneKind::World {
+            // Every phase, like the kits get: survivor worlds steer
+            // with a floating stick and tap level-up cards in-engine.
+            // Routed before the flow handling below so the tap that
+            // starts a run is not also the tap that lands the stick.
+            if let Some(play) = self.world.as_mut() {
+                play.survivor_touch(ev, self.width, self.height);
+            }
+        }
         if self.kind == SceneKind::World && matches!(ev.phase, PointerPhase::Begin) {
             if let Some(play) = self.world.as_mut() {
                 let handled = play.apply_flow_pointer(ev.x, ev.y, self.width, self.height);

@@ -106,6 +106,7 @@ pub mod vehicle;
 pub mod world;
 pub mod world_doc;
 pub mod world_play;
+pub mod world_survivor;
 
 #[cfg(feature = "render")]
 pub mod render;
