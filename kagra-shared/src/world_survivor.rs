@@ -3678,10 +3678,8 @@ mod tests {
         // block is what the page and the native plan both read.
         // Every cue the loop can emit must map to a file that
         // exists in the repo's shared pool.
-        let world: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/vrm_verify_survivor_world.json"
-        ))
-        .unwrap();
+        let world: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/dusk_horde_world.json")).unwrap();
         let spec = crate::audio_plan::spec_of(&world).expect("the scene names its sounds");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
         for f in crate::audio_plan::sfx_files(Some(&spec)) {
