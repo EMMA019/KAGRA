@@ -8,7 +8,7 @@
     {
       "path": "world.json",
       "url": "games/vrm_verify_survivor/world.json",
-      "v": "9828a69852"
+      "v": "8965a676ae"
     },
     {
       "path": "kagra_game.json",
@@ -277,8 +277,9 @@
     }
   ],
   "page": {
+    "audio": true,
     "blurb": "blurb.survivor",
     "pads": "none"
   },
-  "build": "f66844db5761"
+  "build": "82d5853d40c2"
 }
