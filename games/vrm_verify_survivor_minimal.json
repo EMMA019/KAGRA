@@ -1,1 +1,0 @@
-{"entry":"examples/vrm_verify_survivor_minimal.py","icon":"assets/icons/game_placeholder.png","page":{"audio":true,"blurb":"blurb.survivor","pads":"none"},"title":"VRM Survivor Loop (dev only)","version":"0.1.0","world":"kagra-shared/tests/fixtures/vrm_verify_survivor_world.json"}
