@@ -95,6 +95,9 @@ const MAGNET_R: f32 = 3.0;
 const MAGNET_SPEED: f32 = 6.5;
 /// Seconds the tracer line / muzzle sprite stay up after a shot.
 const FX_S: f32 = 0.06;
+/// Seconds the weapon-swap banner stays up after a pickup; it
+/// fades over the back half of its life.
+const WEAPON_BANNER_S: f32 = 1.4;
 /// Doc id of the tracer entry in `doc.lines`.
 const TRACER_ID: &str = "fx:tracer";
 /// Doc id of the muzzle-flash entry in `doc.points`.
@@ -439,6 +442,11 @@ pub struct SurvivorLoop {
     /// The gun currently held. Kills can drop another; walking
     /// over the drop swaps this out (the old gun drops behind).
     pub weapon: Weapon,
+    /// Seconds left on the weapon-swap banner. Set on a pickup;
+    /// the HUD draws the new gun's name big while this runs down
+    /// and fades it out, so the permanent name label can stay
+    /// small and quiet instead of flashing on every swap.
+    weapon_banner_t: f32,
     /// Bosses that have walked in this run. The next one is due at
     /// `next_boss_t` and takes `boss_hp_growth`^(this count) on top
     /// of the base boss multiple.
@@ -513,6 +521,7 @@ impl Default for SurvivorLoop {
             level_pending: false,
             choices: [Choice::RapidFire, Choice::DamageUp, Choice::Vitality],
             weapon: Weapon::Rifle,
+            weapon_banner_t: 0.0,
             bosses_spawned: 0,
             next_boss_t: f32::MAX,
             weapon_cycle: 0,
@@ -1221,6 +1230,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     }
     state.elapsed += dt;
     state.fire_cd -= dt;
+    state.weapon_banner_t = (state.weapon_banner_t - dt).max(0.0);
     for c in &mut state.cue_t {
         *c = (*c - dt).max(0.0);
     }
@@ -1703,7 +1713,20 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     let mut swapped: Option<Weapon> = None;
     state.drops.retain_mut(|d| {
         let dist = dist_xz(pp, d.pos);
-        if dist <= collect_r {
+        // Guns are collected at the base reach only, and only once
+        // per step. The Magnet Coil bonus widens the gem / heal
+        // reach, never the gun reach: the swapped-out gun falls
+        // 1.7 m behind, calibrated against COLLECT_R, so a widened
+        // reach would leave it in pickup range and turn the swap
+        // into a loop (the design comment on `Weapon` — a choice,
+        // not a loop). And a second gun already in reach this step
+        // stays on the ground: swapping again here would strand
+        // the gun it replaced, which is never re-dropped.
+        let in_reach = match d.kind {
+            DropKind::Weapon(_) => dist <= COLLECT_R && swapped.is_none(),
+            _ => dist <= collect_r,
+        };
+        if in_reach {
             match d.kind {
                 DropKind::Gem => {
                     state.gems += 1;
@@ -1730,6 +1753,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     });
     if let Some(old) = swapped {
         state.cue("pick", CUE_EVENT, 0.15);
+        state.weapon_banner_t = WEAPON_BANNER_S;
         // The old gun falls behind the player — outside collect
         // reach, so the swap cannot instantly undo itself; walking
         // back to it swaps again.
@@ -1968,16 +1992,49 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 )
                 .with_face(TextFace::Display),
             );
+            // The held gun's name rides small and dim under the LV /
+            // XP line. It changes on every walked-over drop, so at
+            // full size and brightness it flashed on each swap; the
+            // swap itself is announced by the banner below.
+            let label = state.weapon.drop_color();
             texts.push(
                 TextQuad::new(
                     state.weapon.name(),
                     pad,
                     top + bar_h + 33.0 * s,
-                    16.0 * s,
-                    state.weapon.drop_color(),
+                    13.0 * s,
+                    [
+                        (label[0] as u16 * 2 / 3) as u8,
+                        (label[1] as u16 * 2 / 3) as u8,
+                        (label[2] as u16 * 2 / 3) as u8,
+                        185,
+                    ],
                 )
                 .with_face(TextFace::Display),
             );
+            if state.weapon_banner_t > 0.0 {
+                // The swap banner: the new gun's name, bigger, under
+                // the label, at full strength for the first half of
+                // its life and fading out over the back half.
+                let frac = (state.weapon_banner_t / WEAPON_BANNER_S).clamp(0.0, 1.0);
+                let alpha = if frac > 0.5 {
+                    255
+                } else {
+                    (frac * 2.0 * 255.0) as u8
+                };
+                let mut banner = state.weapon.drop_color();
+                banner[3] = alpha;
+                texts.push(
+                    TextQuad::new(
+                        state.weapon.name(),
+                        pad,
+                        top + bar_h + 54.0 * s,
+                        22.0 * s,
+                        banner,
+                    )
+                    .with_face(TextFace::Display),
+                );
+            }
             if state.level_pending {
                 // The level-up cards. The rects are the tap targets
                 // (`level_card_rects` is shared with the hit-test).
@@ -3353,6 +3410,175 @@ mod tests {
         assert!(
             play.survivor_loop.stick_vector().is_none(),
             "pickups leave an untouched stick untouched"
+        );
+    }
+
+    #[test]
+    fn magnet_coil_does_not_widen_the_gun_reach() {
+        // One Magnet Coil widens the collect reach to 1.7 m — the
+        // exact distance a swapped-out gun falls behind. Guns must
+        // stay on the base reach, or the old gun is straight back
+        // in pickup range and the swap loops; gems still ride the
+        // widened reach.
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 1, "cap_max": 1, "spawn_radius": 9.0,
+                "shot_damage": 0.0, "contact_dps": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..30 {
+            play.tick(dt);
+        }
+        // One Magnet Coil pick, applied directly.
+        play.survivor_loop.magnet_r = 1.2;
+        // A gun at 1.5 m: inside the widened gem reach (1.7 m),
+        // outside COLLECT_R (1.1 m). It must not be collected.
+        play.survivor_loop.drops.push(Drop {
+            kind: DropKind::Weapon(Weapon::Laser),
+            pos: [1.5, 0.35, 0.0],
+        });
+        // A gem at the same distance rides the widened reach (it
+        // magnet-drifts in and banks).
+        play.survivor_loop.drops.push(Drop {
+            kind: DropKind::Gem,
+            pos: [-1.5, 0.35, 0.0],
+        });
+        for _ in 0..30 {
+            play.tick(dt);
+        }
+        assert_eq!(
+            play.survivor_loop.weapon,
+            Weapon::Rifle,
+            "the gun at 1.5 m is out of the base reach"
+        );
+        assert!(
+            play.survivor_loop
+                .drops
+                .iter()
+                .any(|d| d.kind == DropKind::Weapon(Weapon::Laser)),
+            "the gun stays on the ground"
+        );
+        assert!(play.survivor_loop.gems >= 1, "the gem still banks");
+        // Stepping onto the gun swaps as always.
+        if let Some(p) = play.doc.player.as_mut() {
+            p.position = [1.5, 0.0, 0.0];
+        }
+        for w in &mut play.doc.walkers {
+            if !w.survivor_enemy {
+                w.position = [1.5, 0.0, 0.0];
+            }
+        }
+        for _ in 0..10 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.weapon, Weapon::Laser);
+    }
+
+    #[test]
+    fn one_swap_per_step_keeps_every_gun() {
+        // Two guns under the player's feet in the same step: only
+        // the first swap may land per step. Before the fix the
+        // second swap overwrote the pending one and the gun it
+        // replaced was never re-dropped — it vanished.
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 1, "cap_max": 1, "spawn_radius": 9.0,
+                "shot_damage": 0.0, "contact_dps": 0.0,
+                "weapon_drop_chance": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..30 {
+            play.tick(dt);
+        }
+        play.survivor_loop.drops.push(Drop {
+            kind: DropKind::Weapon(Weapon::Laser),
+            pos: [0.0, 0.35, 0.0],
+        });
+        play.survivor_loop.drops.push(Drop {
+            kind: DropKind::Weapon(Weapon::Rocket),
+            pos: [0.1, 0.35, 0.0],
+        });
+        for _ in 0..30 {
+            play.tick(dt);
+        }
+        // All three guns still exist: one in hand, two on the ground.
+        let mut guns: Vec<Weapon> = play
+            .survivor_loop
+            .drops
+            .iter()
+            .filter_map(|d| match d.kind {
+                DropKind::Weapon(w) => Some(w),
+                _ => None,
+            })
+            .collect();
+        guns.push(play.survivor_loop.weapon);
+        assert_eq!(guns.len(), 3, "no gun may vanish: {guns:?}");
+        for w in [Weapon::Rifle, Weapon::Laser, Weapon::Rocket] {
+            assert!(guns.contains(&w), "{w:?} is gone: {guns:?}");
+        }
+    }
+
+    #[test]
+    fn a_swap_raises_the_banner_and_it_fades() {
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 1, "cap_max": 1, "spawn_radius": 9.0,
+                "shot_damage": 0.0, "contact_dps": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..30 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.weapon_banner_t, 0.0);
+        play.survivor_loop.drops.push(Drop {
+            kind: DropKind::Weapon(Weapon::Laser),
+            pos: [0.0, 0.35, 0.0],
+        });
+        for _ in 0..5 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.weapon, Weapon::Laser);
+        assert!(
+            play.survivor_loop.weapon_banner_t > 0.0,
+            "the swap raises the banner"
+        );
+        // While the banner is up the HUD carries the name twice:
+        // the small permanent label and the big banner line.
+        let hud = play.build_hud(960, 720);
+        let named: Vec<_> = hud.texts.iter().filter(|t| t.text == "LASER GUN").collect();
+        assert_eq!(named.len(), 2, "label + banner: {named:?}");
+        assert!(
+            named.iter().map(|t| t.size).fold(0.0f32, f32::max) > 20.0,
+            "the banner line is the big one"
+        );
+        // Park the field far away so nothing can re-swap, and let
+        // the banner run out: two seconds of steps is past its life.
+        for w in &mut play.doc.walkers {
+            if w.survivor_enemy {
+                w.position = [15.0, 0.0, 15.0];
+            }
+        }
+        for _ in 0..120 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.weapon_banner_t, 0.0);
+        let hud = play.build_hud(960, 720);
+        assert_eq!(
+            hud.texts.iter().filter(|t| t.text == "LASER GUN").count(),
+            1,
+            "only the small label remains"
         );
     }
 
