@@ -644,6 +644,48 @@ pub struct SurvivorSpec {
     /// player's feet).
     #[serde(default = "spec_cam_height")]
     pub cam_height: f32,
+    /// Seconds into the run when the first boss walks in.
+    /// 0 = no bosses at all.
+    #[serde(default = "spec_boss_first_s")]
+    pub boss_first_s: f32,
+    /// Seconds between boss arrivals after the first. 0 = the
+    /// first boss is the only one.
+    #[serde(default = "spec_boss_interval_s")]
+    pub boss_interval_s: f32,
+    /// Boss hit points as a multiple of a regular enemy's
+    /// (already time-scaled) hit points.
+    #[serde(default = "spec_boss_hp_mult")]
+    pub boss_hp_mult: f32,
+    /// Each later boss is this much tougher than the previous one
+    /// (compounding: boss n takes `boss_hp_mult` × this^(n−1)).
+    #[serde(default = "spec_boss_hp_growth")]
+    pub boss_hp_growth: f32,
+    /// Boss body scale. The same multiple stretches its contact
+    /// reach, so what touches the player is what bites.
+    #[serde(default = "spec_boss_scale")]
+    pub boss_scale: f32,
+    /// Boss contact damage as a multiple of `contact_dps`.
+    #[serde(default = "spec_boss_contact_mult")]
+    pub boss_contact_mult: f32,
+    /// Seconds before the difficulty curves start to bite: the
+    /// opening of a run keeps the authored numbers exactly.
+    #[serde(default = "spec_scale_grace_s")]
+    pub scale_grace_s: f32,
+    /// Enemy HP growth per second past the grace (a fraction:
+    /// 0.01 = +1% of base per second), until `hp_scale_max`.
+    #[serde(default = "spec_hp_scale_rate")]
+    pub hp_scale_rate: f32,
+    /// Enemy HP growth ceiling, as a total multiple of base HP.
+    #[serde(default = "spec_hp_scale_max")]
+    pub hp_scale_max: f32,
+    /// Enemy speed growth per second past the grace (a fraction),
+    /// until `speed_scale_max`.
+    #[serde(default = "spec_speed_scale_rate")]
+    pub speed_scale_rate: f32,
+    /// Enemy speed growth ceiling, as a total multiple of the
+    /// authored cruise speed.
+    #[serde(default = "spec_speed_scale_max")]
+    pub speed_scale_max: f32,
 }
 
 impl Default for SurvivorSpec {
@@ -666,6 +708,17 @@ impl Default for SurvivorSpec {
             weapon_drop_chance: spec_weapon_drop_chance(),
             cam_distance: spec_cam_distance(),
             cam_height: spec_cam_height(),
+            boss_first_s: spec_boss_first_s(),
+            boss_interval_s: spec_boss_interval_s(),
+            boss_hp_mult: spec_boss_hp_mult(),
+            boss_hp_growth: spec_boss_hp_growth(),
+            boss_scale: spec_boss_scale(),
+            boss_contact_mult: spec_boss_contact_mult(),
+            scale_grace_s: spec_scale_grace_s(),
+            hp_scale_rate: spec_hp_scale_rate(),
+            hp_scale_max: spec_hp_scale_max(),
+            speed_scale_rate: spec_speed_scale_rate(),
+            speed_scale_max: spec_speed_scale_max(),
         }
     }
 }
@@ -720,6 +773,39 @@ fn spec_cam_distance() -> f32 {
 }
 fn spec_cam_height() -> f32 {
     4.4
+}
+fn spec_boss_first_s() -> f32 {
+    90.0
+}
+fn spec_boss_interval_s() -> f32 {
+    90.0
+}
+fn spec_boss_hp_mult() -> f32 {
+    12.0
+}
+fn spec_boss_hp_growth() -> f32 {
+    1.6
+}
+fn spec_boss_scale() -> f32 {
+    1.9
+}
+fn spec_boss_contact_mult() -> f32 {
+    2.5
+}
+fn spec_scale_grace_s() -> f32 {
+    30.0
+}
+fn spec_hp_scale_rate() -> f32 {
+    0.010
+}
+fn spec_hp_scale_max() -> f32 {
+    5.0
+}
+fn spec_speed_scale_rate() -> f32 {
+    0.0016
+}
+fn spec_speed_scale_max() -> f32 {
+    1.45
 }
 
 /// Walker record (`walker:player`).
