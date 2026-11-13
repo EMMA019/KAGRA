@@ -1,7 +1,0 @@
-{
-  "title": "VRM Survivor Loop (dev only)",
-  "version": "0.1.0",
-  "slug": "vrm_verify_survivor",
-  "entry": "examples/vrm_verify_survivor_minimal.py",
-  "world": "kagra-shared/tests/fixtures/vrm_verify_survivor_world.json"
-}

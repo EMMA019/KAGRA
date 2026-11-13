@@ -78,6 +78,17 @@
       "icon": "games/diamond_days/icon.png"
     },
     {
+      "slug": "dusk_horde",
+      "title": "Dusk Horde",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "",
+      "entry": "examples/dusk_horde_minimal.py",
+      "world": "kagra-shared/tests/fixtures/dusk_horde_world.json",
+      "href": "play.html?game=dusk_horde",
+      "icon": "games/dusk_horde/icon.png"
+    },
+    {
       "slug": "engine_lab",
       "title": "Engine Lab",
       "version": "0.1.0",
@@ -318,17 +329,6 @@
       "world": "kagra-shared/tests/fixtures/td_world.json",
       "href": "play.html?game=td",
       "icon": "games/td/icon.png"
-    },
-    {
-      "slug": "vrm_verify_survivor",
-      "title": "VRM Survivor Loop (dev only)",
-      "version": "0.1.0",
-      "browser": true,
-      "genre": "",
-      "entry": "examples/vrm_verify_survivor_minimal.py",
-      "world": "kagra-shared/tests/fixtures/vrm_verify_survivor_world.json",
-      "href": "play.html?game=vrm_verify_survivor",
-      "icon": "games/vrm_verify_survivor/icon.png"
     },
     {
       "slug": "vrm_verify",
