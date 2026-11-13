@@ -969,9 +969,9 @@ impl StationEscape {
             if bh.killed {
                 self.core.juice.hit(0.6, 0.15);
                 crate::mixer::cue_sfx("boom");
-                for k in 0..PUFFS {
+                for (k, puff) in self.puffs.iter_mut().enumerate().take(PUFFS) {
                     let a = k as f32 * 0.8;
-                    self.puffs[k] = [w.x + a.cos() * 0.9, w.y - 0.5 + a.sin() * 0.6, 0.35];
+                    *puff = [w.x + a.cos() * 0.9, w.y - 0.5 + a.sin() * 0.6, 0.35];
                 }
             }
         }

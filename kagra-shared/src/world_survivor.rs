@@ -26,8 +26,11 @@
 //!   about a second, and recycles into the spawn pool.
 //! - Parked pool members wait under the floor (`PARK_Y`); the opaque
 //!   ground plane hides them.
-//! - Difficulty pressure is just the alive-cap ramp plus a spawn
-//!   interval that eases toward its floor. No waves, no elites.
+//! - Difficulty pressure is the alive-cap ramp plus a spawn
+//!   interval that eases toward its floor, time-scaled enemy HP
+//!   and speed once past an opening grace, and a boss on a fixed
+//!   schedule: a scaled-up pool member (the hulk cut when the
+//!   scene authors one) whose every return is tougher.
 
 use crate::game::GamePhase;
 use crate::game_core::stick;
@@ -122,6 +125,45 @@ const GUN_ID: &str = "fx:gun";
 const RING_ID: &str = "fx:ring";
 /// Rocket splash radius (meters) around the impact point.
 const SPLASH_R: f32 = 2.3;
+/// Doc id of the boss marker entry in `doc.points` (a red ring at
+/// its feet plus a bobbing point over its head — the scaled body
+/// alone can read as a near regular at a glance in the dusk).
+const BOSS_ID: &str = "fx:boss";
+/// Doc id of the tap-lock marker entry in `doc.points` (an amber
+/// ring at the locked foe's feet plus a point over its head — the
+/// player ring / boss ring trick, in the lock's own colour).
+const LOCK_ID: &str = "fx:lock";
+/// Screen-space pick radius of a target tap, in HUD pixels before
+/// the HUD scale — Moonlit's `input.tap_px` default, so a tap
+/// means the same fat-finger tolerance in both games.
+const TAP_PX: f32 = 44.0;
+/// Chest height a tap projects a foe at (Moonlit projects its
+/// chibi foes at 0.45; these bodies are human-sized).
+const TAP_CHEST_Y: f32 = 1.1;
+/// Burst refill: while the stage stands emptier than this share
+/// of the alive cap, fresh bodies arrive at [`REFILL_MULT`] of the
+/// usual interval, so a cleared field refills as a wave instead of
+/// a trickle (the lull a still-frame review caught).
+const REFILL_UNDER: f32 = 0.4;
+/// Spawn-interval multiple while the burst refill runs.
+const REFILL_MULT: f32 = 0.35;
+/// Sound-cue throttle slots (Moonlit's `cue_t` pattern: a name, a
+/// slot, a minimum gap, so a burst of hits is a smear of sound,
+/// not a buzz). The names are Moonlit's cue vocabulary, and the
+/// scene's `game.audio` block maps them to the shared pool.
+const CUE_SHOOT: usize = 0;
+const CUE_HIT: usize = 1;
+const CUE_KILL: usize = 2;
+const CUE_HURT: usize = 3;
+const CUE_GEM: usize = 4;
+const CUE_EVENT: usize = 5;
+/// XP gems a boss bursts into on top of the standard one, left in
+/// a ring around the corpse.
+const BOSS_GEMS: u32 = 6;
+/// The boss lumbers: its cruise is this much under a regular's, so
+/// its threat is bulk and bite, not pace (the time curve still
+/// applies on top).
+const BOSS_SPEED_MULT: f32 = 0.9;
 /// Splash damage as a multiple of the shot's damage (the direct
 /// target takes its own hit on top).
 const SPLASH_MULT: f32 = 1.5;
@@ -192,7 +234,7 @@ impl Weapon {
             Weapon::Rifle => [220, 230, 240, 255],
             Weapon::MachineGun => [255, 180, 60, 255],
             Weapon::Laser => [110, 240, 255, 255],
-            Weapon::Rocket => [255, 90, 60, 255],
+            Weapon::Rocket => [255, 128, 0, 255],
         }
     }
     /// Scale of the shared blaster prop while this gun is held (one
@@ -245,6 +287,13 @@ struct EnemyState {
     hurt_t: f32,
     dying_t: f32,
     base_name: String,
+    /// True while this pool member walks as the boss: scaled body,
+    /// boss hit points, heavier bite, a guaranteed payout.
+    boss: bool,
+    /// Cruise speed fixed at activation (authored speed × jitter,
+    /// × [`BOSS_SPEED_MULT`] for the boss). The per-step time curve
+    /// multiplies this, so `speed0` itself never drifts.
+    speed0: f32,
 }
 
 /// What a killed enemy leaves on the ground.
@@ -340,14 +389,16 @@ fn stick_center(w: f32, h: f32) -> (f32, f32) {
 
 /// The three level-up card rects (x, y, w, h in HUD pixels). One
 /// layout shared by the HUD painter and the tap hit-test, so what
-/// the player sees is exactly what they can tap.
+/// the player sees is exactly what they can tap. Sized on the
+/// arena kits' HUD scale (`stick_hud_scale`, Moonlit's own), so
+/// the cards read at phone size like the kit's do.
 fn level_card_rects(w: f32, h: f32) -> [[f32; 4]; 3] {
-    let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
-    let cw = (w * 0.84).min(460.0 * scale);
-    let ch = 62.0 * scale;
-    let gap = 12.0 * scale;
+    let s = stick_hud_scale(w, h);
+    let cw = (w - 36.0 * s).min(340.0 * s);
+    let ch = 80.0 * s;
+    let gap = 14.0 * s;
     let x = (w - cw) / 2.0;
-    let y0 = h * 0.34;
+    let y0 = h * 0.32;
     [
         [x, y0, cw, ch],
         [x, y0 + ch + gap, cw, ch],
@@ -388,6 +439,14 @@ pub struct SurvivorLoop {
     /// The gun currently held. Kills can drop another; walking
     /// over the drop swaps this out (the old gun drops behind).
     pub weapon: Weapon,
+    /// Bosses that have walked in this run. The next one is due at
+    /// `next_boss_t` and takes `boss_hp_growth`^(this count) on top
+    /// of the base boss multiple.
+    pub bosses_spawned: u32,
+    /// Elapsed time at which the next boss is due. Seeded from the
+    /// spec's `boss_first_s`; not advanced while the pool has no
+    /// parked member to give, so a full stage delays, never skips.
+    next_boss_t: f32,
     /// Rotation cursor for weapon drops (see `WEAPON_CYCLE`).
     weapon_cycle: usize,
     /// Fire-interval multiplier from Rapid Fire picks.
@@ -413,6 +472,20 @@ pub struct SurvivorLoop {
     /// Currently locked target (walker id), kept while it stays
     /// alive and near range so the aim does not flicker.
     aim_id: Option<String>,
+    /// The foe the player tapped to lock (walker id), Moonlit's
+    /// hybrid aim ported: while it lives it wins the gun over the
+    /// auto-aim whenever it is in reach; a tap on it again, a tap
+    /// on bare ground, or its death releases it.
+    tap_lock: Option<String>,
+    /// A tap that still needs its pick resolved: `touch` has no
+    /// doc or camera, so it parks the pixel here and `world_play`
+    /// (which owns both) resolves it the same event.
+    pending_tap: Option<(f32, f32)>,
+    /// Per-slot sound-cue throttle timers (seconds left).
+    cue_t: [f32; 6],
+    /// True once this run has started its music. The loop is
+    /// rebuilt per run, so the flag re-arms itself on a restart.
+    bgm_on: bool,
     /// Smoothed player facing actually written to the walker. Eases
     /// toward the aim / movement facing at [`TURN_RATE`].
     face_yaw: f32,
@@ -440,6 +513,8 @@ impl Default for SurvivorLoop {
             level_pending: false,
             choices: [Choice::RapidFire, Choice::DamageUp, Choice::Vitality],
             weapon: Weapon::Rifle,
+            bosses_spawned: 0,
+            next_boss_t: f32::MAX,
             weapon_cycle: 0,
             fire_mult: 1.0,
             dmg_bonus: 0.0,
@@ -454,6 +529,10 @@ impl Default for SurvivorLoop {
             fire_phase: 0.0,
             fire_dur: None,
             aim_id: None,
+            tap_lock: None,
+            pending_tap: None,
+            cue_t: [0.0; 6],
+            bgm_on: false,
             face_yaw: 0.0,
             face_seeded: false,
             fx_t: 0.0,
@@ -475,6 +554,11 @@ impl SurvivorLoop {
         };
         state.hp = spec.player_hp;
         state.hp_max = spec.player_hp;
+        state.next_boss_t = if spec.boss_first_s > 0.0 {
+            spec.boss_first_s
+        } else {
+            f32::MAX
+        };
         state.rng ^= (doc.walkers.len() as u32).wrapping_mul(0x85EB_CA6B);
         if state.rng == 0 {
             state.rng = 0x9E37_79B9;
@@ -489,6 +573,8 @@ impl SurvivorLoop {
                         hurt_t: 0.0,
                         dying_t: 0.0,
                         base_name: w.name.clone(),
+                        boss: false,
+                        speed0: 0.0,
                     },
                 );
             }
@@ -547,6 +633,16 @@ impl SurvivorLoop {
                     self.stick_finger = Some((ev.x, ev.y));
                     self.stick_origin =
                         stick::land(ev.x, ev.y, r, 4.0 * stick_hud_scale(w, h), w, h);
+                } else if self.stick_id != Some(ev.id) {
+                    // Any other thumb — a second finger while the
+                    // stick is held, or a first finger outside the
+                    // stick zone — is a tap, never a stick (Moonlit's
+                    // stick-mode branch, verbatim semantics): it
+                    // picks the target. The pick itself needs the
+                    // doc and the camera, which the loop does not
+                    // own, so the pixel is parked for `world_play`
+                    // to resolve on this same event.
+                    self.pending_tap = Some((ev.x, ev.y));
                 }
             }
             PointerPhase::Move => {
@@ -584,6 +680,81 @@ impl SurvivorLoop {
     fn drop_stick(&mut self) {
         self.stick_id = None;
         self.stick_finger = None;
+    }
+
+    /// Queue a sound cue through the mixer's throttle, Moonlit's
+    /// `cue` pattern: one name per slot per gap, so the per-frame
+    /// callers (a laser raking a crowd, contact damage every step)
+    /// smear into a rhythm instead of a buzz. The names are the
+    /// arena kit's vocabulary; the scene's `game.audio` block maps
+    /// them onto the shared sound pool in the shell.
+    fn cue(&mut self, name: &str, slot: usize, gap: f32) {
+        if self.cue_t[slot] <= 0.0 {
+            self.cue_t[slot] = gap;
+            crate::mixer::cue_sfx(name);
+        }
+    }
+
+    /// Take a tap parked by [`SurvivorLoop::touch`], if any.
+    /// `world_play` resolves it with the doc and the camera on the
+    /// same pointer event.
+    pub fn take_pending_tap(&mut self) -> Option<(f32, f32)> {
+        self.pending_tap.take()
+    }
+
+    /// The walker id a tap has locked, while the lock holds.
+    pub fn tap_locked(&self) -> Option<&str> {
+        self.tap_lock.as_deref()
+    }
+
+    /// Resolve a target tap at a canvas pixel, Moonlit's
+    /// `tap_select` with the world loop's own bookkeeping: the
+    /// living foe nearest the tap (projected at chest height,
+    /// inside [`TAP_PX`] of screen) is locked — tapping the locked
+    /// foe again releases it — and a tap that hits no foe clears
+    /// the lock (the kits also swing their manual aim that way;
+    /// this loop has no manual aim, so the clear is all of it).
+    /// A pick or a clear both chirp `pick`, as the kit does.
+    pub fn tap_select(
+        &mut self,
+        doc: &WorldDoc,
+        view: crate::game_core::view::View,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) {
+        let reach = TAP_PX * stick_hud_scale(w, h);
+        let mut best: Option<(&str, f32)> = None;
+        for wk in &doc.walkers {
+            if !self
+                .enemies
+                .get(&wk.id)
+                .is_some_and(|e| e.mode == Mode::Alive)
+            {
+                continue;
+            }
+            let chest = [wk.position[0], wk.position[1] + TAP_CHEST_Y, wk.position[2]];
+            let Some((sx, sy)) = view.project(chest, w, h) else {
+                continue;
+            };
+            let d = (sx - x).hypot(sy - y);
+            if d < reach && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((wk.id.as_str(), d));
+            }
+        }
+        match best {
+            Some((id, _)) if self.tap_lock.as_deref() == Some(id) => {
+                self.tap_lock = None;
+            }
+            Some((id, _)) => {
+                self.tap_lock = Some(id.to_string());
+            }
+            None => {
+                self.tap_lock = None;
+            }
+        }
+        self.cue("pick", CUE_EVENT, 0.1);
     }
 
     /// Apply one level-up reward and close the cards. The effects
@@ -626,12 +797,27 @@ impl SurvivorLoop {
         (spec.shot_damage + self.dmg_bonus) * self.weapon.damage_mult()
     }
 
+    /// The next gun in the drop rotation, skipping the one in
+    /// hand, so a drop is always a real choice.
+    fn roll_weapon(&mut self) -> Weapon {
+        let mut kind = WEAPON_CYCLE[self.weapon_cycle % WEAPON_CYCLE.len()];
+        self.weapon_cycle += 1;
+        if kind == self.weapon {
+            kind = WEAPON_CYCLE[self.weapon_cycle % WEAPON_CYCLE.len()];
+            self.weapon_cycle += 1;
+        }
+        kind
+    }
+
     /// Damage one living enemy. On a kill: stamp the death and
     /// roll the payout where the body fell — always an XP gem,
-    /// sometimes a heal pack, sometimes another gun.
+    /// sometimes a heal pack, sometimes another gun. A boss pays
+    /// out in full instead: a gun for certain, plus a burst of
+    /// gems ringed around the corpse.
     fn apply_hit(&mut self, doc: &mut WorldDoc, i: usize, dmg: f32, spec: &SurvivorSpec) {
         let id = doc.walkers[i].id.clone();
         let mut killed = false;
+        let mut was_boss = false;
         if let Some(e) = self.enemies.get_mut(&id) {
             if e.mode != Mode::Alive {
                 return;
@@ -639,14 +825,18 @@ impl SurvivorLoop {
             e.hp -= dmg;
             if e.hp <= 0.0 {
                 killed = true;
+                was_boss = e.boss;
             } else {
                 e.hurt_t = HURT_S;
             }
         }
         if !killed {
+            // A landed hit ticks; a kill thuds lower (and rarer).
+            self.cue("hit", CUE_HIT, 0.07);
             doc.walkers[i].name = "hurt".into();
             return;
         }
+        self.cue("kill", CUE_KILL, 0.1);
         self.kills += 1;
         if let Some(e) = self.enemies.get_mut(&id) {
             e.mode = Mode::Dying;
@@ -668,13 +858,23 @@ impl SurvivorLoop {
                 pos: at,
             });
         }
-        if rng_unit(&mut self.rng) < spec.weapon_drop_chance {
-            let mut kind = WEAPON_CYCLE[self.weapon_cycle % WEAPON_CYCLE.len()];
-            self.weapon_cycle += 1;
-            if kind == self.weapon {
-                kind = WEAPON_CYCLE[self.weapon_cycle % WEAPON_CYCLE.len()];
-                self.weapon_cycle += 1;
+        if was_boss {
+            for n in 0..BOSS_GEMS {
+                let a = n as f32 / BOSS_GEMS as f32 * std::f32::consts::TAU
+                    + rng_unit(&mut self.rng) * 0.6;
+                let r = 0.7 + 0.5 * rng_unit(&mut self.rng);
+                self.drops.push(Drop {
+                    kind: DropKind::Gem,
+                    pos: [wp[0] + a.cos() * r, wp[1] + 0.35, wp[2] + a.sin() * r],
+                });
             }
+            let kind = self.roll_weapon();
+            self.drops.push(Drop {
+                kind: DropKind::Weapon(kind),
+                pos: at,
+            });
+        } else if rng_unit(&mut self.rng) < spec.weapon_drop_chance {
+            let kind = self.roll_weapon();
             self.drops.push(Drop {
                 kind: DropKind::Weapon(kind),
                 pos: at,
@@ -688,9 +888,11 @@ impl SurvivorLoop {
 
 /// Park every pool member off-stage (called once on world build, so
 /// the seed doc — and therefore every restart — starts parked too).
-/// Authored names are kept: parking is positional only. The rifle
-/// prop, when authored, is seated in the player's hands so even the
-/// title frame shows it.
+/// Authored names are kept: parking is positional only. The boss's
+/// bulk is loop state, never doc state, so parking also strips the
+/// scale back off — a restart can never inherit a giant zombie.
+/// The rifle prop, when authored, is seated in the player's hands
+/// so even the title frame shows it.
 pub fn park_pool(doc: &mut WorldDoc) {
     if doc.survivor.is_none() {
         return;
@@ -699,6 +901,7 @@ pub fn park_pool(doc: &mut WorldDoc) {
         if w.survivor_enemy {
             w.position[1] = PARK_Y;
             w.seek = 0.0;
+            w.scale = None;
         }
     }
     if let Some(pp) = player_pos(doc) {
@@ -857,6 +1060,48 @@ fn spawn_interval(spec: &SurvivorSpec, elapsed: f32) -> f32 {
     (spec.spawn_interval + (spec.spawn_interval_min - spec.spawn_interval) * frac).max(0.05)
 }
 
+/// The interval the *next* spawn waits: [`spawn_interval`], cut
+/// to [`REFILL_MULT`] of itself while the stage stands emptier
+/// than [`REFILL_UNDER`] of the cap. A wiped field refills as a
+/// wave over a couple of seconds instead of trickling back one
+/// body per full interval (the empty-screen lull after a clear).
+pub fn spawn_pacing(spec: &SurvivorSpec, elapsed: f32, alive: u32, cap: u32) -> f32 {
+    let base = spawn_interval(spec, elapsed);
+    if cap > 0 && (alive as f32) < cap as f32 * REFILL_UNDER {
+        (base * REFILL_MULT).max(0.05)
+    } else {
+        base
+    }
+}
+
+/// Enemy HP multiple at `elapsed`: the authored HP holds through
+/// the grace, then grows linearly until its ceiling. Applied at
+/// activation — a body already on stage keeps the HP it walked in
+/// with, so the curve reads as tougher arrivals, not a mid-fight
+/// refill.
+pub fn enemy_hp_scale(spec: &SurvivorSpec, elapsed: f32) -> f32 {
+    let over = (elapsed - spec.scale_grace_s).max(0.0);
+    (1.0 + over * spec.hp_scale_rate).min(spec.hp_scale_max.max(1.0))
+}
+
+/// Enemy speed multiple at `elapsed`: same shape as the HP curve,
+/// gentler on both rate and ceiling. Applied every step to
+/// whatever is walking, so the whole field quickens together
+/// instead of only the new arrivals.
+pub fn enemy_speed_scale(spec: &SurvivorSpec, elapsed: f32) -> f32 {
+    let over = (elapsed - spec.scale_grace_s).max(0.0);
+    (1.0 + over * spec.speed_scale_rate).min(spec.speed_scale_max.max(1.0))
+}
+
+/// Hit points of the nth boss (0-based): the boss multiple of a
+/// time-scaled regular, compounded by the growth per return.
+fn boss_hp(spec: &SurvivorSpec, elapsed: f32, n: u32) -> f32 {
+    spec.enemy_hp
+        * enemy_hp_scale(spec, elapsed)
+        * spec.boss_hp_mult
+        * spec.boss_hp_growth.powi(n as i32)
+}
+
 /// Fire-clip duration for the player's model, resolved once. `None`
 /// when the model has no resolvable skinned clip (phase then just
 /// holds, which the sampler tolerates).
@@ -877,22 +1122,40 @@ fn resolve_fire_dur(doc: &WorldDoc, spec: &SurvivorSpec) -> Option<f32> {
         .map(|(_, dur)| dur)
 }
 
-/// Activate one parked pool member at the spawn ring. False when the
-/// pool is exhausted.
+/// Activate one parked pool member at the spawn ring. False when
+/// the pool is exhausted. The boss takes the hulk cut when the
+/// scene authors one (its authored name says so) and falls back
+/// to the first parked member otherwise.
 fn activate(
     doc: &mut WorldDoc,
     state: &mut SurvivorLoop,
     spec: &SurvivorSpec,
     pp: [f32; 3],
+    boss: bool,
 ) -> bool {
     let half = doc.half.max(4.0);
     // First parked member, in authored order (deterministic).
-    let Some(idx) = doc.walkers.iter().position(|w| {
+    let parked = |state: &SurvivorLoop, w: &WorldWalker| {
         state
             .enemies
             .get(&w.id)
             .is_some_and(|e| e.mode == Mode::Parked)
-    }) else {
+    };
+    let idx = if boss {
+        doc.walkers
+            .iter()
+            .position(|w| {
+                parked(state, w)
+                    && state
+                        .enemies
+                        .get(&w.id)
+                        .is_some_and(|e| e.base_name.contains("hulk"))
+            })
+            .or_else(|| doc.walkers.iter().position(|w| parked(state, w)))
+    } else {
+        doc.walkers.iter().position(|w| parked(state, w))
+    };
+    let Some(idx) = idx else {
         return false;
     };
     let angle = rng_unit(&mut state.rng) * std::f32::consts::TAU;
@@ -908,7 +1171,15 @@ fn activate(
     } else {
         DEFAULT_SPEED
     };
-    w.seek = base_speed * (0.9 + 0.2 * rng_unit(&mut state.rng));
+    let speed0 = base_speed
+        * (0.9 + 0.2 * rng_unit(&mut state.rng))
+        * if boss { BOSS_SPEED_MULT } else { 1.0 };
+    w.seek = speed0 * enemy_speed_scale(spec, state.elapsed);
+    w.scale = if boss {
+        Some([spec.boss_scale, spec.boss_scale, spec.boss_scale])
+    } else {
+        None
+    };
     w.clip = rng_unit(&mut state.rng);
     w.anim_blend = 1.0;
     if let Some(mc) = w.move_clip.clone() {
@@ -919,11 +1190,20 @@ fn activate(
     let id = w.id.clone();
     if let Some(e) = state.enemies.get_mut(&id) {
         e.mode = Mode::Alive;
-        e.hp = spec.enemy_hp;
+        e.hp = if boss {
+            boss_hp(spec, state.elapsed, state.bosses_spawned)
+        } else {
+            spec.enemy_hp * enemy_hp_scale(spec, state.elapsed)
+        };
+        e.boss = boss;
+        e.speed0 = speed0;
         e.hurt_t = 0.0;
         e.dying_t = 0.0;
         let base = e.base_name.clone();
         doc.walkers[idx].name = base;
+    }
+    if boss {
+        state.bosses_spawned += 1;
     }
     true
 }
@@ -941,6 +1221,17 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     }
     state.elapsed += dt;
     state.fire_cd -= dt;
+    for c in &mut state.cue_t {
+        *c = (*c - dt).max(0.0);
+    }
+    if !state.bgm_on {
+        // First live step of the run: the music starts with the
+        // fighting, not the title (the loop is rebuilt per run, so
+        // a restart re-arms this). The scene's `game.audio` block
+        // names the loop file, as in the arena kit.
+        state.bgm_on = true;
+        crate::mixer::play_bgm("bgm", 0.5);
+    }
     let Some(pp) = player_pos(doc) else {
         return false;
     };
@@ -963,30 +1254,68 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     }
     let pool = state.enemies.len();
 
+    // --- The boss keeps its own schedule, off the cap: when it
+    // comes due, a parked member walks in scaled up. A full pool
+    // delays the entrance (the due time simply stays due), it
+    // never cancels it. ---
+    if state.elapsed >= state.next_boss_t && activate(doc, state, spec, pp, true) {
+        state.cue("elite", CUE_EVENT, 0.5);
+        state.next_boss_t = if spec.boss_interval_s > 0.0 {
+            state.elapsed + spec.boss_interval_s
+        } else {
+            f32::MAX
+        };
+    }
+
     // --- Spawning: top the stage up to the (ramping) alive cap. ---
     let mut alive = state
         .enemies
         .values()
         .filter(|e| e.mode == Mode::Alive)
         .count() as u32;
+    let cap = alive_cap(spec, pool, state.elapsed);
     state.spawn_t -= dt;
-    while alive < alive_cap(spec, pool, state.elapsed) && state.spawn_t <= 0.0 {
-        if !activate(doc, state, spec, pp) {
+    while alive < cap && state.spawn_t <= 0.0 {
+        if !activate(doc, state, spec, pp, false) {
             break;
         }
         alive += 1;
-        state.spawn_t += spawn_interval(spec, state.elapsed);
+        state.spawn_t += spawn_pacing(spec, state.elapsed, alive, cap);
     }
     if state.spawn_t < 0.0 {
         state.spawn_t = 0.0;
     }
     state.alive_now = alive;
 
-    // --- Target lock: keep the current target while it lives and
-    // stays near reach — but a much closer living enemy steals the
-    // aim, because rounds spent finishing a distant body while a
-    // near one bites are rounds wasted. Only living enemies are
-    // ever aimed at, in the lock or out of it (no corpse fire). ---
+    // --- The speed curve walks the whole field: every living
+    // enemy's cruise is its activation speed under the current
+    // multiple, so time quickens the ones already closing in, not
+    // just the next arrivals. ---
+    let speed_scale = enemy_speed_scale(spec, state.elapsed);
+    for w in &mut doc.walkers {
+        let speed0 = state
+            .enemies
+            .get(&w.id)
+            .filter(|e| e.mode == Mode::Alive)
+            .map(|e| e.speed0);
+        if let Some(speed0) = speed0 {
+            w.seek = speed0 * speed_scale;
+        }
+    }
+
+    // --- Target selection. The tap lock outranks the auto-aim
+    // (Moonlit's hybrid rule): while the tapped foe lives, it is
+    // the target whenever it is inside the stick band, and no
+    // closer rival steals from it — the player chose this one.
+    // The lock itself survives a foe stepping out of the band
+    // (the gun then falls back to the nearest, as the kit's
+    // `pick_aim` does) and is released only by its death, a
+    // re-tap on it, or a tap on bare ground. Without a tap lock,
+    // the standing rule runs: keep the current target while it
+    // lives and stays near reach — but a much closer living enemy
+    // steals the aim, because rounds spent finishing a distant
+    // body while a near one bites are rounds wasted. Only living
+    // enemies are ever aimed at (no corpse fire). ---
     let mut nearest: Option<(usize, f32)> = None;
     for (i, w) in doc.walkers.iter().enumerate() {
         if !state
@@ -1002,21 +1331,45 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         }
     }
     let mut target: Option<(usize, f32)> = None;
-    if let Some(aid) = state.aim_id.as_deref() {
-        if let Some((i, w)) = doc.walkers.iter().enumerate().find(|(_, w)| w.id == aid) {
-            let d = dist_xz(pp, w.position);
-            if state
-                .enemies
-                .get(&w.id)
-                .is_some_and(|e| e.mode == Mode::Alive)
-                && d <= spec.fire_range * TARGET_STICK
-            {
-                target = Some((i, d));
-                if let Some((ni, nd)) = nearest {
-                    let steal =
-                        ni != i && (nd < d * THREAT_FRAC || (nd <= THREAT_R && d > THREAT_R));
-                    if steal {
-                        target = Some((ni, nd));
+    if let Some(lock_id) = state.tap_lock.clone() {
+        let locked = doc
+            .walkers
+            .iter()
+            .enumerate()
+            .find(|(_, w)| w.id == lock_id)
+            .filter(|(_, w)| {
+                state
+                    .enemies
+                    .get(&w.id)
+                    .is_some_and(|e| e.mode == Mode::Alive)
+            });
+        match locked {
+            Some((i, w)) => {
+                let d = dist_xz(pp, w.position);
+                if d <= spec.fire_range * TARGET_STICK {
+                    target = Some((i, d));
+                }
+            }
+            None => state.tap_lock = None,
+        }
+    }
+    if target.is_none() {
+        if let Some(aid) = state.aim_id.as_deref() {
+            if let Some((i, w)) = doc.walkers.iter().enumerate().find(|(_, w)| w.id == aid) {
+                let d = dist_xz(pp, w.position);
+                if state
+                    .enemies
+                    .get(&w.id)
+                    .is_some_and(|e| e.mode == Mode::Alive)
+                    && d <= spec.fire_range * TARGET_STICK
+                {
+                    target = Some((i, d));
+                    if let Some((ni, nd)) = nearest {
+                        let steal =
+                            ni != i && (nd < d * THREAT_FRAC || (nd <= THREAT_R && d > THREAT_R));
+                        if steal {
+                            target = Some((ni, nd));
+                        }
                     }
                 }
             }
@@ -1073,6 +1426,75 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         color: [110, 255, 190, 255],
         size: 0.2,
     });
+    // The boss wears the same trick in red: a wide ring at its
+    // feet plus a point bobbing over its head, so the big body
+    // reads out of the grey crowd before it is on top of the
+    // player.
+    doc.points.retain(|p| p.id != BOSS_ID);
+    if let Some(bp) = doc
+        .walkers
+        .iter()
+        .find(|w| {
+            state
+                .enemies
+                .get(&w.id)
+                .is_some_and(|e| e.boss && e.mode == Mode::Alive)
+        })
+        .map(|w| w.position)
+    {
+        let r = 0.62 * spec.boss_scale;
+        let mut ring: Vec<[f32; 3]> = (0..18)
+            .map(|i| {
+                let a = i as f32 / 18.0 * std::f32::consts::TAU;
+                [bp[0] + a.cos() * r, bp[1] + 0.06, bp[2] + a.sin() * r]
+            })
+            .collect();
+        ring.push([
+            bp[0],
+            bp[1] + 2.3 * spec.boss_scale + (state.elapsed * 2.0).sin() * 0.1,
+            bp[2],
+        ]);
+        doc.points.push(PointCloud {
+            id: BOSS_ID.into(),
+            positions: ring,
+            color: [255, 84, 60, 255],
+            size: 0.3,
+        });
+    }
+    // The tap-locked foe wears the same trick in amber, so the
+    // player's chosen target reads out of the crowd the same way
+    // the boss does (and the player, in mint, in theirs).
+    doc.points.retain(|p| p.id != LOCK_ID);
+    if let Some(lp) = state.tap_lock.as_deref().and_then(|id| {
+        doc.walkers
+            .iter()
+            .find(|w| {
+                w.id == id
+                    && state
+                        .enemies
+                        .get(&w.id)
+                        .is_some_and(|e| e.mode == Mode::Alive)
+            })
+            .map(|w| w.position)
+    }) {
+        let mut ring: Vec<[f32; 3]> = (0..12)
+            .map(|i| {
+                let a = i as f32 / 12.0 * std::f32::consts::TAU;
+                [lp[0] + a.cos() * 0.55, lp[1] + 0.06, lp[2] + a.sin() * 0.55]
+            })
+            .collect();
+        ring.push([
+            lp[0],
+            lp[1] + 2.2 + (state.elapsed * 2.0).sin() * 0.08,
+            lp[2],
+        ]);
+        doc.points.push(PointCloud {
+            id: LOCK_ID.into(),
+            positions: ring,
+            color: [255, 255, 255, 255],
+            size: 0.26,
+        });
+    }
 
     // --- Auto-fire at the locked target, but only inside
     // `fire_range`: a lock held in the stick band aims the body
@@ -1103,7 +1525,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
             state.fire_cd = state.fire_interval(spec);
             state.fire_phase = 0.0;
             state.shots += 1;
-            crate::mixer::cue_sfx("fire");
+            state.cue("shoot", CUE_SHOOT, 0.08);
             let weapon = state.weapon;
             let dmg = state.shot_damage(spec);
             let from = muzzle(pp, face_yaw);
@@ -1190,6 +1612,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                     color: [255, 150, 70, 255],
                     size: 1.5,
                 });
+                state.cue("boom", CUE_EVENT, 0.2);
             }
             state.fx_t = weapon.fx_seconds();
             for (i, hd) in hits {
@@ -1210,7 +1633,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     let mut damage = 0.0f32;
     let ids: Vec<String> = doc.walkers.iter().map(|w| w.id.clone()).collect();
     for id in ids {
-        let Some(mode) = state.enemies.get(&id).map(|e| e.mode) else {
+        let Some((mode, is_boss)) = state.enemies.get(&id).map(|e| (e.mode, e.boss)) else {
             continue;
         };
         let Some(w) = doc.walkers.iter_mut().find(|w| w.id == id) else {
@@ -1223,8 +1646,18 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                 } else {
                     DEFAULT_STOP
                 };
-                if dist_xz(pp, w.position) <= stop + 0.35 {
-                    damage += spec.contact_dps * dt;
+                // The boss's bulk reaches further than a regular's
+                // stop ring: what touches the player is what bites.
+                let reach = stop
+                    + 0.35
+                    + if is_boss {
+                        (spec.boss_scale - 1.0).max(0.0) * 0.8
+                    } else {
+                        0.0
+                    };
+                if dist_xz(pp, w.position) <= reach {
+                    let mult = if is_boss { spec.boss_contact_mult } else { 1.0 };
+                    damage += spec.contact_dps * mult * dt;
                 }
                 if let Some(e) = state.enemies.get_mut(&id) {
                     if e.hurt_t > 0.0 {
@@ -1246,8 +1679,12 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                 if done {
                     w.position[1] = PARK_Y;
                     w.seek = 0.0;
+                    // The boss's bulk is loop state: parking strips
+                    // it, so the member recycles as a regular.
+                    w.scale = None;
                     if let Some(e) = state.enemies.get_mut(&id) {
                         e.mode = Mode::Parked;
+                        e.boss = false;
                         w.name = e.base_name.clone();
                     }
                 }
@@ -1262,6 +1699,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     let collect_r = COLLECT_R + state.magnet_r * 0.5;
     let magnet_r = MAGNET_R + state.magnet_r;
     let mut banked = false;
+    let mut healed = false;
     let mut swapped: Option<Weapon> = None;
     state.drops.retain_mut(|d| {
         let dist = dist_xz(pp, d.pos);
@@ -1273,6 +1711,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                 }
                 DropKind::Heal => {
                     state.hp = (state.hp + HEAL_AMOUNT).min(state.hp_max);
+                    healed = true;
                 }
                 DropKind::Weapon(w) => {
                     swapped = Some(std::mem::replace(&mut state.weapon, w));
@@ -1290,6 +1729,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         true
     });
     if let Some(old) = swapped {
+        state.cue("pick", CUE_EVENT, 0.15);
         // The old gun falls behind the player — outside collect
         // reach, so the swap cannot instantly undo itself; walking
         // back to it swaps again.
@@ -1302,11 +1742,20 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
             state.drops.remove(0);
         }
     }
+    // Pickups chirp as they land (after the drop loop, so the
+    // throttle sees at most one of each per step).
+    if banked {
+        state.cue("gem", CUE_GEM, 0.06);
+    }
+    if healed {
+        state.cue("pickup", CUE_EVENT, 0.15);
+    }
     if banked && !state.level_pending && state.gems >= xp_need(state.level) {
         state.gems -= xp_need(state.level);
         state.level += 1;
         state.roll_choices();
         state.level_pending = true;
+        state.cue("levelup", CUE_EVENT, 0.3);
         // The cards are modal: the steering thumb is let go now, so
         // neither a thumb left resting nor a release the page never
         // delivered survives into the resumed run.
@@ -1315,12 +1764,24 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     sync_drops(doc, state);
 
     state.hp -= damage * state.armor_mult;
+    if damage > 0.0 {
+        // Teeth on skin, throttled: contact is continuous, the
+        // sound lands in beats.
+        state.cue("hurt", CUE_HURT, 0.45);
+    }
     if state.hp <= 0.0 {
         state.hp = 0.0;
         state.over = true;
+        state.tap_lock = None;
+        crate::mixer::stop_bgm(0.6);
+        state.cue("gameover", CUE_EVENT, 0.5);
         clear_fx(doc);
         doc.points.retain(|p| {
-            p.id != GEM_ID && p.id != HEAL_ID && !ALL_WEAPONS.iter().any(|w| w.cloud_id() == p.id)
+            p.id != GEM_ID
+                && p.id != HEAL_ID
+                && p.id != BOSS_ID
+                && p.id != LOCK_ID
+                && !ALL_WEAPONS.iter().any(|w| w.cloud_id() == p.id)
         });
         return true;
     }
@@ -1344,7 +1805,7 @@ fn sync_drops(doc: &mut WorldDoc, state: &SurvivorLoop) {
         doc.points.push(PointCloud {
             id: GEM_ID.into(),
             positions: gems,
-            color: [120, 235, 190, 255],
+            color: [255, 232, 54, 255],
             size: 0.4,
         });
     }
@@ -1363,7 +1824,7 @@ fn sync_drops(doc: &mut WorldDoc, state: &SurvivorLoop) {
         });
     }
     // One cloud per weapon kind, so each ground gun carries its
-    // own tint (amber MG, cyan laser, red-orange rocket, pale
+    // own tint (amber MG, cyan laser, orange rocket, pale
     // rifle) and reads before the player commits to the swap.
     for w in ALL_WEAPONS {
         let pts: Vec<[f32; 3]> = state
@@ -1390,40 +1851,61 @@ fn fmt_time(s: f32) -> String {
 
 /// Survivor HUD: HP bar + time / kills while playing, a game-over
 /// panel on Complete. ASCII only, so no font-subset concerns.
+/// Layout and sizes ride the arena kits' HUD scale
+/// (`stick_hud_scale` — Moonlit's `hud_scale`), so the cluster
+/// reads at the kit's phone size instead of the smaller world
+/// scale this HUD started on.
 pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32) -> DrawList {
     let w = width.max(1) as f32;
     let h = height.max(1) as f32;
-    let scale = (w.min(h) / 720.0).clamp(0.5, 2.0);
-    let pad = 16.0 * scale;
+    let s = stick_hud_scale(w, h);
+    let pad = 14.0 * s;
     // The shell draws its own band across the very top of the page
     // (title / phase line), so the top HUD cluster starts below it
-    // instead of sliding underneath.
-    let top = pad + 40.0 * scale;
+    // instead of sliding underneath: a fixed safe-area offset on
+    // top of the pad, both in HUD-scale units.
+    let top = pad + 36.0 * s;
     let mut quads = Vec::new();
     let mut texts = Vec::new();
     match phase {
         GamePhase::Playing => {
-            let bar_w = 230.0 * scale;
-            let bar_h = 15.0 * scale;
+            let bar_w = (w * 0.46).min(235.0 * s);
+            let bar_h = 20.0 * s;
             let frac = if state.hp_max > 0.0 {
                 (state.hp / state.hp_max).clamp(0.0, 1.0)
             } else {
                 0.0
             };
-            quads.push(Quad::new(pad, top, bar_w, bar_h, [24, 20, 20, 210]));
+            // The kit's framed bar: a dark rim, the well, the fill,
+            // a sheen on the fill's top half, the number inside.
+            quads.push(Quad::new(
+                pad - 2.5 * s,
+                top - 2.5 * s,
+                bar_w + 5.0 * s,
+                bar_h + 5.0 * s,
+                [10, 10, 18, 215],
+            ));
+            quads.push(Quad::new(pad, top, bar_w, bar_h, [24, 20, 20, 220]));
             let fill = if frac > 0.35 {
                 [96, 200, 110, 255]
             } else {
                 [226, 64, 64, 255]
             };
             quads.push(Quad::new(pad, top, bar_w * frac, bar_h, fill));
+            quads.push(Quad::new(
+                pad,
+                top,
+                bar_w * frac,
+                bar_h * 0.4,
+                [255, 255, 255, 60],
+            ));
             texts.push(
                 TextQuad::new(
                     &format!("HP {}", state.hp.ceil() as i32),
-                    pad + bar_w + 10.0 * scale,
-                    top - 3.0 * scale,
-                    20.0 * scale,
-                    [255, 255, 255, 255],
+                    pad + 7.0 * s,
+                    top + 2.5 * s,
+                    14.5 * s,
+                    [16, 18, 16, 255],
                 )
                 .with_face(TextFace::Display),
             );
@@ -1431,8 +1913,8 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 TextQuad::new(
                     &format!("TIME {}", fmt_time(state.elapsed)),
                     w - pad,
-                    top - 3.0 * scale,
-                    20.0 * scale,
+                    top - 2.0 * s,
+                    19.0 * s,
                     [255, 255, 255, 255],
                 )
                 .aligned(TextAlign::Right)
@@ -1442,19 +1924,36 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 TextQuad::new(
                     &format!("KILLS {}", state.kills),
                     w - pad,
-                    top + 21.0 * scale,
-                    20.0 * scale,
+                    top + 24.0 * s,
+                    19.0 * s,
                     [240, 196, 72, 255],
                 )
                 .aligned(TextAlign::Right)
                 .with_face(TextFace::Display),
             );
+            if state
+                .enemies
+                .values()
+                .any(|e| e.boss && e.mode == Mode::Alive)
+            {
+                texts.push(
+                    TextQuad::new(
+                        "BOSS",
+                        w - pad,
+                        top + 50.0 * s,
+                        19.0 * s,
+                        [255, 84, 60, 255],
+                    )
+                    .aligned(TextAlign::Right)
+                    .with_face(TextFace::Display),
+                );
+            }
             texts.push(
                 TextQuad::new(
                     &format!("LV {}", state.level),
                     pad,
-                    top + bar_h + 7.0 * scale,
-                    18.0 * scale,
+                    top + bar_h + 9.0 * s,
+                    16.0 * s,
                     [150, 220, 255, 255],
                 )
                 .with_face(TextFace::Display),
@@ -1462,10 +1961,10 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
             texts.push(
                 TextQuad::new(
                     &format!("XP {}/{}", state.gems, xp_need(state.level)),
-                    pad + 58.0 * scale,
-                    top + bar_h + 7.0 * scale,
-                    18.0 * scale,
-                    [120, 235, 190, 255],
+                    pad + 64.0 * s,
+                    top + bar_h + 9.0 * s,
+                    16.0 * s,
+                    [255, 232, 54, 255],
                 )
                 .with_face(TextFace::Display),
             );
@@ -1473,8 +1972,8 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 TextQuad::new(
                     state.weapon.name(),
                     pad,
-                    top + bar_h + 29.0 * scale,
-                    18.0 * scale,
+                    top + bar_h + 33.0 * s,
+                    16.0 * s,
                     state.weapon.drop_color(),
                 )
                 .with_face(TextFace::Display),
@@ -1487,8 +1986,8 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     TextQuad::new(
                         "LEVEL UP!",
                         w * 0.5,
-                        h * 0.34 - 52.0 * scale,
-                        34.0 * scale,
+                        h * 0.32 - 66.0 * s,
+                        32.0 * s,
                         [240, 196, 72, 255],
                     )
                     .aligned(TextAlign::Center)
@@ -1496,20 +1995,14 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 );
                 for (i, r) in level_card_rects(w, h).iter().enumerate() {
                     quads.push(Quad::new(r[0], r[1], r[2], r[3], [18, 22, 30, 240]));
-                    quads.push(Quad::new(
-                        r[0],
-                        r[1],
-                        r[2],
-                        4.0 * scale,
-                        [240, 196, 72, 255],
-                    ));
+                    quads.push(Quad::new(r[0], r[1], r[2], 5.0 * s, [240, 196, 72, 255]));
                     let c = state.choices[i];
                     texts.push(
                         TextQuad::new(
                             c.name(),
-                            r[0] + 16.0 * scale,
-                            r[1] + 8.0 * scale,
-                            21.0 * scale,
+                            r[0] + 18.0 * s,
+                            r[1] + 13.0 * s,
+                            21.0 * s,
                             [255, 255, 255, 255],
                         )
                         .with_face(TextFace::Display),
@@ -1517,9 +2010,9 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     texts.push(
                         TextQuad::new(
                             c.desc(),
-                            r[0] + 16.0 * scale,
-                            r[1] + 34.0 * scale,
-                            15.0 * scale,
+                            r[0] + 18.0 * s,
+                            r[1] + 48.0 * s,
+                            16.0 * s,
                             [170, 200, 220, 255],
                         )
                         .with_face(TextFace::Display),
@@ -1550,15 +2043,9 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
             quads.push(Quad::new(0.0, 0.0, w, h, [8, 10, 8, 150]));
             quads.push(Quad::new(0.0, h * 0.24, w, h * 0.34, [12, 14, 12, 220]));
             texts.push(
-                TextQuad::new(
-                    "GAME OVER",
-                    w * 0.5,
-                    h * 0.30,
-                    46.0 * scale,
-                    [240, 96, 84, 255],
-                )
-                .aligned(TextAlign::Center)
-                .with_face(TextFace::Display),
+                TextQuad::new("GAME OVER", w * 0.5, h * 0.30, 44.0 * s, [240, 96, 84, 255])
+                    .aligned(TextAlign::Center)
+                    .with_face(TextFace::Display),
             );
             texts.push(
                 TextQuad::new(
@@ -1569,7 +2056,7 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     ),
                     w * 0.5,
                     h * 0.42,
-                    24.0 * scale,
+                    22.0 * s,
                     [255, 255, 255, 255],
                 )
                 .aligned(TextAlign::Center)
@@ -1581,7 +2068,7 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 w * 0.22,
                 h * 0.50,
                 w * 0.56 * bar,
-                16.0 * scale,
+                16.0 * s,
                 [240, 196, 72, 255],
             ));
         }
@@ -1592,7 +2079,7 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     "SURVIVOR",
                     w * 0.5,
                     h * 0.34,
-                    40.0 * scale,
+                    38.0 * s,
                     [255, 255, 255, 255],
                 )
                 .aligned(TextAlign::Center)
@@ -1764,6 +2251,188 @@ mod tests {
         assert_eq!(alive_cap(&spec, 18, 25.0), 4);
         assert_eq!(alive_cap(&spec, 18, 999.0), 5);
         assert_eq!(alive_cap(&spec, 3, 999.0), 3, "pool size clamps the cap");
+    }
+
+    #[test]
+    fn difficulty_curves_hold_the_grace_then_climb_to_their_caps() {
+        // The shipped curve numbers (spec defaults = the scene's):
+        // a 30 s grace where the authored numbers hold exactly,
+        // then HP +1%/s to a ×5 ceiling, speed +0.16%/s to ×1.45.
+        let spec: SurvivorSpec = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(enemy_hp_scale(&spec, 0.0), 1.0);
+        assert_eq!(enemy_hp_scale(&spec, 30.0), 1.0);
+        assert_eq!(enemy_speed_scale(&spec, 30.0), 1.0);
+        assert!((enemy_hp_scale(&spec, 90.0) - 1.6).abs() < 1e-4);
+        assert!((enemy_hp_scale(&spec, 180.0) - 2.5).abs() < 1e-4);
+        assert_eq!(enemy_hp_scale(&spec, 430.0), 5.0);
+        assert_eq!(enemy_hp_scale(&spec, 3600.0), 5.0);
+        assert!((enemy_speed_scale(&spec, 90.0) - 1.096).abs() < 1e-4);
+        assert_eq!(enemy_speed_scale(&spec, 400.0), 1.45);
+        assert_eq!(enemy_speed_scale(&spec, 3600.0), 1.45);
+    }
+
+    #[test]
+    fn spawn_density_ramps_and_the_cap_stays_inside_the_draw_budget() {
+        // The shipped scene's density numbers: spawns start at
+        // 0.5 s and ease to a 0.22 s floor over two minutes, while
+        // the alive cap climbs to 19 (the draw-budget ceiling) —
+        // density comes from turnover, not from flooding the stage.
+        let spec: SurvivorSpec = serde_json::from_value(json!({
+            "cap_start": 13, "cap_max": 19, "cap_ramp_s": 10.0,
+            "spawn_interval": 0.5, "spawn_interval_min": 0.22,
+            "spawn_ramp_s": 120.0
+        }))
+        .unwrap();
+        assert!((spawn_interval(&spec, 0.0) - 0.5).abs() < 1e-6);
+        assert!((spawn_interval(&spec, 60.0) - 0.36).abs() < 1e-6);
+        assert!((spawn_interval(&spec, 120.0) - 0.22).abs() < 1e-6);
+        assert!((spawn_interval(&spec, 999.0) - 0.22).abs() < 1e-6);
+        assert_eq!(alive_cap(&spec, 20, 0.0), 13);
+        assert_eq!(alive_cap(&spec, 20, 60.0), 19);
+        assert_eq!(alive_cap(&spec, 20, 999.0), 19);
+        assert_eq!(alive_cap(&spec, 18, 999.0), 18, "the pool clamps the cap");
+    }
+
+    #[test]
+    fn boss_walks_in_on_schedule_pays_out_and_returns_tougher() {
+        // No regular spawns (cap 0): the boss schedule is the only
+        // way in. The gun starts silent (damage 0) so the entrance,
+        // the bulk and the bite can be measured before the payout.
+        let dump = survivor_dump(
+            4,
+            json!({
+                "cap_start": 0, "cap_max": 0, "spawn_radius": 8.0,
+                "enemy_hp": 100.0, "shot_damage": 0.0, "fire_interval": 0.05,
+                "contact_dps": 5.0, "weapon_drop_chance": 0.0,
+                "boss_first_s": 2.0, "boss_interval_s": 3.0,
+                "boss_hp_mult": 3.0, "boss_hp_growth": 1.6, "boss_scale": 1.9
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        let boss_of = |play: &WorldPlay| {
+            play.survivor_loop
+                .enemies
+                .iter()
+                .find(|(_, e)| e.boss && e.mode == Mode::Alive)
+                .map(|(id, e)| (id.clone(), e.hp))
+        };
+        // Nothing before the schedule; the boss at ~2 s.
+        for _ in 0..60 {
+            play.tick(dt);
+        }
+        assert!(boss_of(&play).is_none(), "no boss before its time");
+        for _ in 0..120 {
+            play.tick(dt);
+            if boss_of(&play).is_some() {
+                break;
+            }
+        }
+        let (boss_id, boss_hp0) = boss_of(&play).expect("the boss walks in on schedule");
+        assert_eq!(play.survivor_loop.bosses_spawned, 1);
+        assert!(
+            (boss_hp0 - 300.0).abs() < 1e-3,
+            "boss hp = enemy hp x boss mult inside the grace, got {boss_hp0}"
+        );
+        let bw = enemy(&play, &boss_id);
+        assert_eq!(
+            bw.scale,
+            Some([1.9, 1.9, 1.9]),
+            "the boss body is scaled up"
+        );
+        assert!(
+            play.doc.points.iter().any(|p| p.id == BOSS_ID),
+            "the boss marker publishes"
+        );
+        let hud = play.build_hud(960, 720);
+        assert!(
+            hud.texts.iter().any(|t| t.text == "BOSS"),
+            "the HUD calls the boss out"
+        );
+        // The bite: drop the boss on the player for one second.
+        // (Inside its stop ring the seek pass holds it in place.)
+        let pp = play.doc.player.as_ref().unwrap().position;
+        for w in &mut play.doc.walkers {
+            if w.id == boss_id {
+                w.position = pp;
+            }
+        }
+        let hp_before = play.survivor_loop.hp;
+        for _ in 0..60 {
+            play.tick(dt);
+        }
+        let bitten = hp_before - play.survivor_loop.hp;
+        assert!(
+            (bitten - 12.5).abs() < 1.5,
+            "one second of boss contact = contact_dps x boss mult (12.5), got {bitten}"
+        );
+        // Kill it from a distance (no magnet or pickup can reach
+        // the payout): a gun for certain at drop chance 0, plus a
+        // burst of gems around the corpse.
+        for w in &mut play.doc.walkers {
+            if !w.survivor_enemy {
+                w.position = [pp[0] + 10.0, 0.0, pp[2]];
+            }
+        }
+        if let Some(p) = play.doc.player.as_mut() {
+            p.position = [pp[0] + 10.0, 0.0, pp[2]];
+        }
+        play.survivor_loop.enemies.get_mut(&boss_id).unwrap().hp = 10.0;
+        if let Some(s) = play.doc.survivor.as_mut() {
+            s.shot_damage = 34.0;
+        }
+        for _ in 0..300 {
+            play.tick(dt);
+            if play.survivor_loop.kills >= 1 {
+                break;
+            }
+        }
+        assert_eq!(play.survivor_loop.kills, 1, "the boss falls");
+        let gems = play
+            .survivor_loop
+            .drops
+            .iter()
+            .filter(|d| d.kind == DropKind::Gem)
+            .count();
+        assert_eq!(
+            gems,
+            BOSS_GEMS as usize + 1,
+            "the burst plus the standard gem"
+        );
+        assert!(
+            play.survivor_loop
+                .drops
+                .iter()
+                .any(|d| matches!(d.kind, DropKind::Weapon(_))),
+            "a boss always drops a gun"
+        );
+        // The corpse recycles at regular size...
+        if let Some(s) = play.doc.survivor.as_mut() {
+            s.shot_damage = 0.0;
+        }
+        for _ in 0..90 {
+            play.tick(dt);
+        }
+        assert_eq!(
+            enemy(&play, &boss_id).scale,
+            None,
+            "the recycled body is regular-sized again"
+        );
+        // ...and one interval after the first entrance, a tougher
+        // boss walks in: hp x the growth factor.
+        for _ in 0..360 {
+            play.tick(dt);
+            if play.survivor_loop.bosses_spawned >= 2 {
+                break;
+            }
+        }
+        assert_eq!(play.survivor_loop.bosses_spawned, 2);
+        let (_, hp2) = boss_of(&play).expect("the second boss walks in");
+        assert!(
+            (hp2 - 480.0).abs() < 1e-3,
+            "second boss hp = 300 x 1.6 growth, got {hp2}"
+        );
     }
 
     #[test]
@@ -2084,13 +2753,13 @@ mod tests {
         // camera: spawn 16.5 m, fire reach 12 m — combat inside the
         // view, contact reachable.)
         let dump = survivor_dump(
-            18,
+            20,
             json!({
                 "player_hp": 100.0, "fire_range": 12.0, "fire_interval": 0.28,
                 "shot_damage": 34.0, "enemy_hp": 100.0, "contact_dps": 5.0,
-                "cap_start": 13, "cap_max": 17, "cap_ramp_s": 12.0,
-                "spawn_interval": 0.6, "spawn_interval_min": 0.3,
-                "spawn_ramp_s": 90.0, "spawn_radius": 16.5
+                "cap_start": 13, "cap_max": 19, "cap_ramp_s": 10.0,
+                "spawn_interval": 0.5, "spawn_interval_min": 0.22,
+                "spawn_ramp_s": 120.0, "spawn_radius": 16.5
             }),
         );
         let mut play = WorldPlay::from_json(&dump).unwrap();
@@ -2713,5 +3382,373 @@ mod tests {
         state.apply_choice(Choice::Magnet);
         assert!(state.magnet_r > magnet);
         assert!(!state.level_pending, "each pick closes the cards");
+    }
+
+    /// Project a world point through the play's live camera, the
+    /// same math `tap_select` picks with.
+    fn project(play: &WorldPlay, p: [f32; 3], w: f32, h: f32) -> (f32, f32) {
+        let cam = &play.doc.cameras[0];
+        let view = crate::game_core::view::View {
+            eye: cam.position,
+            target: cam.target,
+            fov: cam.fov,
+        };
+        view.project(p, w, h).expect("the point is on screen")
+    }
+
+    fn two_foe_stage() -> WorldPlay {
+        // Two unkillable zombies: one walks in close-right, one
+        // holds far-left (teleported after the spawn, so the stage
+        // geometry is exact). The gun ticks at both; nothing dies.
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 2, "cap_max": 2, "spawn_radius": 9.0,
+                "spawn_interval": 0.05, "spawn_interval_min": 0.05,
+                "enemy_hp": 100000.0, "shot_damage": 10.0,
+                "fire_interval": 0.05, "contact_dps": 0.0,
+                "weapon_drop_chance": 0.0,
+                "cam_distance": 14.5, "cam_height": 10.8
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..120 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.alive_now, 2, "both zombies walk in");
+        for w in &mut play.doc.walkers {
+            match w.id.as_str() {
+                "walker:z0" => w.position = [2.5, 0.0, -3.0],
+                "walker:z1" => w.position = [-4.0, 0.0, -7.0],
+                _ => {}
+            }
+        }
+        play
+    }
+
+    #[test]
+    fn a_tap_locks_the_tapped_foe_over_the_auto_aim() {
+        let mut play = two_foe_stage();
+        let dt = 1.0 / 60.0;
+        // Auto-aim alone takes the near zombie.
+        for _ in 0..10 {
+            play.tick(dt);
+        }
+        assert_eq!(
+            play.survivor_loop.aim_id.as_deref(),
+            Some("walker:z0"),
+            "auto-aim starts on the nearest foe"
+        );
+        // Tap the far zombie's chest: the lock takes it, and the
+        // gun follows the lock, not the nearer body.
+        let z1 = enemy(&play, "walker:z1").position;
+        let (sx, sy) = project(&play, [z1[0], 1.1, z1[2]], 960.0, 720.0);
+        play.survivor_touch(ptr(9, sx, sy, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), Some("walker:z1"));
+        for _ in 0..10 {
+            play.tick(dt);
+        }
+        assert_eq!(
+            play.survivor_loop.aim_id.as_deref(),
+            Some("walker:z1"),
+            "the tap lock outranks the nearer auto-aim target"
+        );
+        assert!(
+            play.doc.points.iter().any(|p| p.id == LOCK_ID),
+            "the locked foe wears the amber marker"
+        );
+        // A tap on bare sky clears the lock (no foe up there).
+        play.survivor_touch(ptr(9, 480.0, 30.0, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), None);
+        // Tap the foe again to lock, again to release (the toggle).
+        let z1 = enemy(&play, "walker:z1").position;
+        let (sx, sy) = project(&play, [z1[0], 1.1, z1[2]], 960.0, 720.0);
+        play.survivor_touch(ptr(9, sx, sy, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), Some("walker:z1"));
+        play.survivor_touch(ptr(9, sx, sy, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), None);
+        // Lock once more, then let the gun finish it: death
+        // releases the lock and takes the marker down.
+        play.survivor_touch(ptr(9, sx, sy, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), Some("walker:z1"));
+        play.survivor_loop.enemies.get_mut("walker:z1").unwrap().hp = 5.0;
+        for _ in 0..300 {
+            play.tick(dt);
+            if play.survivor_loop.kills >= 1 {
+                break;
+            }
+        }
+        assert_eq!(play.survivor_loop.kills, 1, "the locked foe falls");
+        // The release lands on the next step's selection pass.
+        for _ in 0..5 {
+            play.tick(dt);
+        }
+        assert_eq!(play.survivor_loop.tap_locked(), None);
+        assert!(
+            play.doc.points.iter().all(|p| p.id != LOCK_ID),
+            "the marker leaves with the lock"
+        );
+    }
+
+    #[test]
+    fn a_second_finger_tap_picks_while_the_stick_is_held() {
+        let mut play = two_foe_stage();
+        let dt = 1.0 / 60.0;
+        for _ in 0..10 {
+            play.tick(dt);
+        }
+        // The steering thumb lands in the zone and holds.
+        play.survivor_touch(ptr(1, 200.0, 550.0, PointerPhase::Begin), 960, 720);
+        assert!(play.survivor_loop.stick_vector().is_some(), "stick held");
+        // The other thumb taps the far zombie: a pick, not a stick,
+        // and the steering thumb keeps its stick.
+        let z1 = enemy(&play, "walker:z1").position;
+        let (sx, sy) = project(&play, [z1[0], 1.1, z1[2]], 960.0, 720.0);
+        play.survivor_touch(ptr(2, sx, sy, PointerPhase::Begin), 960, 720);
+        assert_eq!(play.survivor_loop.tap_locked(), Some("walker:z1"));
+        assert!(
+            play.survivor_loop.stick_vector().is_some(),
+            "the tap must not steal the steering thumb"
+        );
+        // Lifting the steering thumb frees the stick; the lock stays.
+        play.survivor_touch(ptr(1, 200.0, 550.0, PointerPhase::End), 960, 720);
+        assert!(play.survivor_loop.stick_vector().is_none());
+        assert_eq!(play.survivor_loop.tap_locked(), Some("walker:z1"));
+    }
+
+    #[test]
+    fn burst_refill_fills_a_cleared_stage_faster() {
+        // The pacing numbers: burst at 35% of the base interval
+        // while the stage is under 40% of the cap, base otherwise.
+        let spec: SurvivorSpec = serde_json::from_value(json!({
+            "spawn_interval": 2.0, "spawn_interval_min": 2.0, "spawn_ramp_s": 0.0
+        }))
+        .unwrap();
+        assert!((spawn_pacing(&spec, 0.0, 0, 6) - 0.7).abs() < 1e-6);
+        assert!((spawn_pacing(&spec, 0.0, 2, 6) - 0.7).abs() < 1e-6);
+        assert!((spawn_pacing(&spec, 0.0, 3, 6) - 2.0).abs() < 1e-6);
+        assert!((spawn_pacing(&spec, 0.0, 0, 0) - 2.0).abs() < 1e-6);
+        // The stage itself: fill to cap, park everyone by hand
+        // (a wipe), and count what 1.5 s of refills bring back —
+        // the burst lands three, the old single pace would land one.
+        let dump = survivor_dump(
+            8,
+            json!({
+                "cap_start": 6, "cap_max": 6, "spawn_radius": 9.0,
+                "spawn_interval": 2.0, "spawn_interval_min": 2.0,
+                "spawn_ramp_s": 0.0, "enemy_hp": 100000.0,
+                "shot_damage": 0.0, "contact_dps": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..1200 {
+            play.tick(dt);
+            if play.survivor_loop.alive_now >= 6 {
+                break;
+            }
+        }
+        assert_eq!(play.survivor_loop.alive_now, 6, "the stage fills");
+        for e in play.survivor_loop.enemies.values_mut() {
+            e.mode = Mode::Parked;
+        }
+        // Zero the spawn clock so the refill phase is exact: the
+        // burst then lands spawns at 0 s, 0.7 s and 1.4 s.
+        play.survivor_loop.spawn_t = 0.0;
+        for _ in 0..90 {
+            play.tick(dt);
+        }
+        assert!(
+            play.survivor_loop.alive_now >= 3,
+            "burst refill must return a wave, alive={}",
+            play.survivor_loop.alive_now
+        );
+    }
+
+    #[test]
+    fn the_run_starts_its_music_and_cues_its_shots() {
+        crate::mixer::reset_mixer();
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 1, "cap_max": 1, "spawn_radius": 8.0,
+                "enemy_hp": 100000.0, "shot_damage": 10.0,
+                "fire_interval": 0.05, "contact_dps": 0.0,
+                "weapon_drop_chance": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..180 {
+            play.tick(dt);
+        }
+        assert!(play.survivor_loop.shots > 0, "the gun must have fired");
+        let cues: serde_json::Value = serde_json::from_str(&crate::mixer::cues_json()).unwrap();
+        assert_eq!(cues["bgm_name"], "bgm", "the run starts its music");
+        assert!(
+            cues["bgm_gain"].as_f64().unwrap() > 0.5,
+            "the music fades in, gain={}",
+            cues["bgm_gain"]
+        );
+        let shots = cues["oneshots"].as_array().unwrap();
+        assert!(
+            shots.iter().any(|s| s == "shoot"),
+            "shots must chirp: {shots:?}"
+        );
+        assert!(
+            shots.iter().any(|s| s == "hit"),
+            "hits must tick: {shots:?}"
+        );
+    }
+
+    #[test]
+    fn contact_cues_hurt_and_death_stings_and_stops_the_music() {
+        crate::mixer::reset_mixer();
+        let dump = survivor_dump(
+            2,
+            json!({
+                "cap_start": 1, "cap_max": 1, "spawn_radius": 6.0,
+                "player_hp": 5.0, "shot_damage": 0.0, "contact_dps": 10.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        // The page drains the cue queue every frame, and the mixer
+        // holds at most 8 at a time — so the test drains as it goes
+        // and keeps the whole run's shots.
+        let mut heard: Vec<String> = Vec::new();
+        let mut last_gain = 1.0f64;
+        for i in 0..3600 {
+            play.tick(dt);
+            if i % 30 == 29 {
+                let cues: serde_json::Value =
+                    serde_json::from_str(&crate::mixer::cues_json()).unwrap();
+                heard.extend(
+                    cues["oneshots"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|s| s.as_str().unwrap().to_string()),
+                );
+                last_gain = cues["bgm_gain"].as_f64().unwrap();
+            }
+            if play.survivor_loop.over {
+                break;
+            }
+        }
+        assert!(play.survivor_loop.over, "the mauling ends the run");
+        // Let the death fade run out on the mixer.
+        for i in 0..90 {
+            play.tick(dt);
+            if i % 30 == 29 {
+                let cues: serde_json::Value =
+                    serde_json::from_str(&crate::mixer::cues_json()).unwrap();
+                heard.extend(
+                    cues["oneshots"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|s| s.as_str().unwrap().to_string()),
+                );
+                last_gain = cues["bgm_gain"].as_f64().unwrap();
+            }
+        }
+        assert!(
+            heard.iter().any(|s| s == "hurt"),
+            "contact must growl: {heard:?}"
+        );
+        assert!(
+            heard.iter().any(|s| s == "gameover"),
+            "death must sting: {heard:?}"
+        );
+        assert!(
+            last_gain < 0.01,
+            "the music stops with the run, gain={last_gain}"
+        );
+    }
+
+    #[test]
+    fn the_shipped_scene_carries_its_audio_block() {
+        // The fixture is the scene the pack ships: its `game.audio`
+        // block is what the page and the native plan both read.
+        // Every cue the loop can emit must map to a file that
+        // exists in the repo's shared pool.
+        let world: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/vrm_verify_survivor_world.json"
+        ))
+        .unwrap();
+        let spec = crate::audio_plan::spec_of(&world).expect("the scene names its sounds");
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        for f in crate::audio_plan::sfx_files(Some(&spec)) {
+            assert!(root.join(&f).is_file(), "sfx file must exist: {f}");
+        }
+        let cues = crate::audio_plan::Cues {
+            muted: false,
+            master: 0.8,
+            bgm: 0.7,
+            sfx: 1.0,
+            bgm_name: "bgm".into(),
+            bgm_gain: 1.0,
+            oneshots: [
+                "shoot", "hit", "kill", "hurt", "gem", "pickup", "pick", "levelup", "boom",
+                "elite", "gameover",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+        };
+        let plan = crate::audio_plan::plan(Some(&spec), &cues);
+        assert_eq!(
+            plan.shots.len(),
+            11,
+            "every cue the loop emits must resolve to a file"
+        );
+        assert_eq!(
+            plan.bgm.expect("the loop has a file").file,
+            "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3"
+        );
+    }
+
+    #[test]
+    fn hud_text_rides_the_arena_kit_scale() {
+        // The HUD alignment with Moonlit: at a 720-wide canvas the
+        // HUD scale is 1.8 (the kit's own), where the old world
+        // scale gave 1.0 — clock and cards grow by that ratio.
+        let state = SurvivorLoop {
+            hp: 80.0,
+            hp_max: 100.0,
+            ..Default::default()
+        };
+        let hud = build_hud(&state, GamePhase::Playing, 720, 1280);
+        let time = hud
+            .texts
+            .iter()
+            .find(|t| t.text.starts_with("TIME"))
+            .expect("the clock is drawn");
+        assert!(
+            (time.size - 19.0 * 1.8).abs() < 0.01,
+            "clock size rides the kit scale, got {}",
+            time.size
+        );
+        let mut pending = state.clone();
+        pending.level_pending = true;
+        let hud = build_hud(&pending, GamePhase::Playing, 720, 1280);
+        let name = hud
+            .texts
+            .iter()
+            .find(|t| t.text == "RAPID FIRE")
+            .expect("the card names are drawn");
+        assert!((name.size - 21.0 * 1.8).abs() < 0.01);
+        let rects = level_card_rects(720.0, 1280.0);
+        assert!(
+            (rects[0][3] - 80.0 * 1.8).abs() < 0.01,
+            "cards are kit-height, got {}",
+            rects[0][3]
+        );
     }
 }

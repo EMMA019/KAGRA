@@ -348,6 +348,28 @@ impl WorldPlay {
         let release = matches!(ev.phase, PointerPhase::End | PointerPhase::Cancel);
         if self.has_survivor() && (self.game.is_playing() || release) {
             self.survivor_loop.touch(ev, width, height);
+            // A target tap parks its pixel in the loop (the loop
+            // has neither the doc nor the camera); resolve the pick
+            // here, on the same event, with the live camera.
+            if self.game.is_playing() {
+                if let Some((x, y)) = self.survivor_loop.take_pending_tap() {
+                    if let Some(cam) = self.doc.cameras.first() {
+                        let view = crate::game_core::view::View {
+                            eye: cam.position,
+                            target: cam.target,
+                            fov: cam.fov,
+                        };
+                        self.survivor_loop.tap_select(
+                            &self.doc,
+                            view,
+                            x,
+                            y,
+                            width as f32,
+                            height as f32,
+                        );
+                    }
+                }
+            }
         }
     }
 
