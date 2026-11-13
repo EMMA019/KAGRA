@@ -1,0 +1,47 @@
+KAGRA vendored meshes from Kenney Space Kit 2.0
+
+Author: Kenney (www.kenney.nl)
+Pack: Space Kit (2.0), creation date 27-08-2020
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+Official pack: https://kenney.nl/assets/space-kit
+Downloaded from:
+https://kenney.nl/media/pages/assets/space-kit/20874c75ac-1677698978/kenney_space-kit.zip
+
+Files (GLB, no external textures):
+- craft_speederC.glb — player ship
+- meteor.glb, meteor_detailed.glb, rock_largeA.glb, turret_single.glb — gate obstacles
+- rock_crystals.glb — ring pickup
+- satelliteDish.glb — side scenery
+
+The pack's Blender export places each model at translation [2, 0, 1.5].
+That root translation was set to [0, 0, 0] so the mesh sits on the origin.
+Vertices, materials, and hierarchy are otherwise unchanged.
+Attribution is not required. Credit to Kenney is appreciated.
+
+Original License.txt follows.
+
+	
+
+	Space Kit (2.0)
+
+	Created/distributed by Kenney (www.kenney.nl)
+	Creation date: 27-08-2020 14:20
+
+			------------------------------
+
+	License: (Creative Commons Zero, CC0)
+	http://creativecommons.org/publicdomain/zero/1.0/
+
+	This content is free to use in personal, educational and commercial projects.
+
+	Support us by crediting Kenney or www.kenney.nl (this is not mandatory)
+
+			------------------------------
+
+	Donate:   http://support.kenney.nl
+	Request:  http://request.kenney.nl
+	Patreon:  http://patreon.com/kenney/
+
+	Follow on Twitter for updates:
+	http://twitter.com/KenneyNL

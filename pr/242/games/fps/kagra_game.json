@@ -1,0 +1,7 @@
+{
+  "title": "FPS Range",
+  "version": "0.1.0",
+  "slug": "fps",
+  "entry": "examples/fps_minimal.py",
+  "world": "kagra-shared/tests/fixtures/fps_world.json"
+}
