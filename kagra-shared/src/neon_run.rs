@@ -784,6 +784,7 @@ impl NeonRun {
             positions,
             color: [255, 70, 190, 230],
             size: 0.05,
+            ..crate::strokes::PointCloud::default()
         });
     }
 

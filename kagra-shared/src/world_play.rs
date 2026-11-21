@@ -170,8 +170,11 @@ impl WorldPlay {
         let cook_game = CookGame::from_doc(&doc);
         // Survivor loop: read the pool under authored names first,
         // then park it off-stage so the seed doc starts parked too.
-        let survivor_loop = SurvivorLoop::from_doc(&doc);
+        let mut survivor_loop = SurvivorLoop::from_doc(&doc);
         world_survivor::park_pool(&mut doc);
+        // Declare the loop's fx clouds into the seed doc, so their
+        // atlases are resident from the first frame.
+        survivor_loop.declare_fx(&mut doc);
         if action2d::is_action2d(&doc) {
             action2d::place_side_camera(&mut doc);
         }
@@ -677,10 +680,13 @@ impl WorldPlay {
         if self.flow_paused() {
             return;
         }
-        if self.has_survivor() && self.survivor_loop.level_pending {
-            // Level-up cards are up: the whole world holds still so
-            // the choice is made in safety. The HUD and the card taps
-            // live outside this step, so the screen stays alive.
+        if self.has_survivor()
+            && (self.survivor_loop.level_pending || self.survivor_loop.reward_pending)
+        {
+            // Level-up / mission-reward cards are up: the whole world
+            // holds still so the choice is made in safety. The HUD and
+            // the card taps live outside this step, so the screen
+            // stays alive.
             return;
         }
         let mut input = self.input.clamped();
@@ -1602,7 +1608,9 @@ impl WorldPlay {
         // the stock distance / height.
         let (mut dist, mut base_h) = (CAM_DISTANCE, CAM_HEIGHT);
         if let Some(spec) = &self.doc.survivor {
-            dist = spec.cam_distance;
+            // The boss entrance beat pushes the eye in (the loop
+            // owns the beat; the scale is 1.0 outside it).
+            dist = spec.cam_distance * self.survivor_loop.cam_scale();
             base_h = spec.cam_height;
         }
         let height = base_h - CAM_LOOK_Y + pitch * 4.0;

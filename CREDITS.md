@@ -30,17 +30,23 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [Kenney Nature Kit 2.1 (old/examples open_world)](https://kenney.nl/assets/nature-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/nature/**` |
 | [Kenney Fantasy Town Kit 2.0 (old/examples open_world)](https://kenney.nl/assets/fantasy-town-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/open_world/kenney/town/**` |
 | [Kenney Mini Forest 1.0 and Nature Kit 2.1 (old/examples relic_run)](https://kenney.nl/assets/mini-forest) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `old/examples/assets/relic_run/kenney/**` |
+| [Kenney Particle Pack](https://kenney.nl/assets/particle-pack) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
 | [Kenney Platformer Kit](https://kenney.nl/assets/platformer-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/platformer-kit/**` |
 | [Kenney Racing Kit](https://kenney.nl/assets/racing-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/racing-kit/**` |
+| [Kenney Smoke Particles](https://kenney.nl/assets/smoke-particles) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
 | [Kenney Space Kit](https://kenney.nl/assets/space-kit) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/models/kenney/space-kit/**` |
 | [Kenney UI Pack Adventure (paper and banner)](https://kenney.nl/assets/ui-pack-adventure) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/diamond_days/paper.png`, `assets/diamond_days/banner.png` … |
 | [Kenney UI Pack (green and gold controls)](https://kenney.nl/assets/ui-pack) | Kenney (www.kenney.nl) | CC0-1.0 | not required | `assets/diamond_days/btn_green.png`, `assets/diamond_days/btn_gold.png` … |
 | [OpenGameArt: 8 wet squish / slurp impacts (impactsplat03)](https://opengameart.org/content/8-wet-squish-slurp-impacts) | Independent.nu | CC0-1.0 | not required | `assets/audio/oga-wet-squish/*.wav` |
 | [Adobe Mixamo characters and animations (not committed)](https://www.mixamo.com/) | Adobe | custom | not required | `assets-private/mixamo/**` |
+| [Cethiel — Arcane Magic Effect](https://opengameart.org/content/arcane-magic-effect) | Cethiel | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
+| [Cethiel — Fire Wrath, Magic Effect](https://opengameart.org/content/fire-wrath-magic-effect) | Cethiel | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
 | [Baseball Pack (ball icon)](https://opengameart.org/content/baseball-pack) | looneybits | CC0-1.0 | not required | `assets/diamond_days/ball.png` |
 | [OpenGameArt: 50 CC0 retro / synth SFX (7 used)](https://opengameart.org/content/50-cc0-retro-synth-sfx) | rubberduck | CC0-1.0 | not required | `assets/audio/oga-retro-synth-sfx/*.wav` |
 | [OpenGameArt: Flowerbed Fields (loop)](https://opengameart.org/content/flowerbed-fields-loop) | Zane Little Music | CC0-1.0 | not required | `assets/audio/oga-flowerbed-fields/*.mp3` |
+| [13rice — Radial Lightning Effect](https://opengameart.org/content/radial-lightning-effect) | 13rice | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
 | [Cartoon Field Game Background](https://opengameart.org/content/cartoon-field-game-background) | Segel | CC0-1.0 | not required | `assets/diamond_days/country.png` |
+| [wreaderror — Lightning](https://opengameart.org/content/lightning) | wreaderror | CC0-1.0 | not required | `assets/textures/city_action/magic_atlas.png` |
 | [Shibuya demo street map (from OpenStreetMap)](https://www.openstreetmap.org/copyright) | OpenStreetMap contributors | ODbL-1.0 | required | `kagra-shared/assets/maps/shibuya_demo.kagra.json` |
 | [Poly Haven props (31 models)](https://polyhaven.com/models) | Poly Haven contributors (per model, see credits) | CC0-1.0 | not required | `assets/library/polyhaven/props/**` |
 | [Poly Haven sky plates (Kloppenheim 02, Moonless Golf)](https://polyhaven.com/license) | Poly Haven | CC0-1.0 | not required | `assets/diamond_days/sky_day.png`, `assets/diamond_days/sky_night.png` |
@@ -48,18 +54,25 @@ license. Assets under other terms (paid, EULA, restricted) are never committed; 
 | [KAGRA Bar door, glass and register sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/bar/se/*.wav` |
 | [KAGRA Bar textures, portraits and logo](https://github.com/EMMA019/KAGRA) | KAGRA project (procedural) | custom | not required | `assets/bar/tex/**` |
 | [KAGRA biplane.glb](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/biplane.glb` |
+| [Boss Stomp (city_action boss BGM)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/city_action/boss_stomp.mp3` |
+| [City Action BG vignette (Blender, original)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/city/bg_vignette.glb` |
 | [KAGRA package data (unit_cube.glb, synthetic_dance.bvh)](https://github.com/EMMA019/KAGRA) | KAGRA project (generated) | custom | not required | `kagra/data/*` |
 | [KAGRA demo road grid](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `kagra-shared/assets/maps/demo_grid.kagra.json` |
 | [Diamond Days launcher icon (whole, adaptive front and back layers)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/diamond_days.png`, `assets/icons/diamond_days_front.png` … |
+| [Harlem Night (city_action BGM)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/city_action/*.mp3` |
 | [HOP-BEAT models (bunny, slime, beetle, frog, bat, rooftop towers, lit windows, lamp post)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/hop_beat/*.glb` |
 | [HOP-BEAT music (procedural loop + stingers)](https://github.com/EMMA019/KAGRA) | KAGRA project (Emma) | CC0-1.0 | not required | `assets/audio/hop_beat/hop_beat_*.mp3`, `assets/audio/hop_beat/hop_beat_beatgrid.json` |
 | [HOP-BEAT effects (hop, land, perfect, good, combo, hit, fall, stomp, warn)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/hop_beat/*.wav` |
 | [KAGRA placeholder launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/game_placeholder.png` |
+| [Lenox After Hours (city_action BGM)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/city_action/lenox_after_hours.mp3` |
 | [Moonlit Swarm launcher icon](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/icons/moonlit_swarm.png` |
 | [Neon Cat placeholder sounds](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/neon_cat/*.wav` |
 | [Neon Cat concrete wall texture](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/neon_cat/*.png` |
+| [Night Wind (city_action bg ambience)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/city_action/night_wind.mp3` |
 | [KAGRA placeholder models (scenery stand-ins and the Neon Cat gate arch)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/models/placeholder/*.glb`, `assets/models/neon_cat/gate_arch.glb` |
 | [Moonlit Swarm textures (original)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/textures/survivor_arena/*.png` |
+| [Ult Ready (city_action SFX)](https://github.com/EMMA019/KAGRA) | KAGRA project | CC0-1.0 | not required | `assets/audio/city_action/ult_ready.mp3` |
+| [Synty POLYGON Fantasy Kingdom models (not committed)](https://syntystore.com/products/polygon-fantasy-kingdom) | Synty Studios | custom | not required | `assets-private/synty/**` |
 
 ## Required attribution
 

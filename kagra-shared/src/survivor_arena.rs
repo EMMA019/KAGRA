@@ -290,18 +290,47 @@ const MAX_FOE_R: f32 = 1.0;
 const HOLD: f32 = 0.85;
 const PUSH_NEIGHBOURS: u32 = 6;
 
-/// One effect particle (hit spark, puff, glint, muzzle flash).
-#[derive(Clone, Copy, Debug)]
-struct Fx {
-    x: f32,
-    y: f32,
-    z: f32,
-    vx: f32,
-    vy: f32,
-    vz: f32,
-    age: f32,
-    life: f32,
-    kind: u8,
+/// The arena's effect kinds as a shared [`crate::game_core::fx`] spec: the
+/// looks come from [`FX_LOOK`], the flight from the drag/gravity table the
+/// old local `step_fx` hardcoded (sparks and hurt fall, glints float up, the
+/// rest just drag). The pool cap stays the JSON's `fx.cap`. Kind order is
+/// the `FX_*` constant order, so every burst call site is unchanged.
+fn arena_fx_spec(spec: &SurvivorSpec) -> crate::game_core::fx::FxSpec {
+    const NAMES: [&str; 8] = [
+        "spark",
+        "puff_ghost",
+        "puff_zombie",
+        "glint",
+        "muzzle",
+        "hurt",
+        "blast",
+        "zap",
+    ];
+    let kinds = FX_LOOK
+        .iter()
+        .enumerate()
+        .map(|(i, (rgb, sizes, alphas))| {
+            let (drag, gravity) = match i as u8 {
+                FX_SPARK | FX_HURT => (1.6, 12.0),
+                FX_GLINT => (0.8, -2.2),
+                _ => (2.6, 0.0),
+            };
+            crate::game_core::fx::KindSpec {
+                name: NAMES[i].into(),
+                drag,
+                gravity,
+                color: *rgb,
+                sizes: *sizes,
+                alphas: *alphas,
+                ..crate::game_core::fx::KindSpec::default()
+            }
+        })
+        .collect();
+    crate::game_core::fx::FxSpec {
+        atlases: Vec::new(),
+        kinds,
+        cap: spec.fx.cap,
+    }
 }
 
 /// A floating damage number (world position, shown by the HUD).
@@ -387,10 +416,10 @@ pub struct SurvivorArena {
     syn_mask: u32,
     budget: Budget,
     rng: Rng,
-    /// Effects roll their own dice, so switching them off never changes a run.
-    fx_rng: Rng,
-    fx: Vec<Fx>,
-    fx_cap: usize,
+    /// The shared particle pool ([`crate::game_core::fx`]). Effects roll
+    /// their own dice inside the pool, so switching them off never changes
+    /// a run.
+    fx: crate::game_core::fx::FxPool,
     dmg: Vec<DmgNum>,
     tier: usize,
     /// Camera zoom-in kick, 0..1, decays fast.
@@ -514,6 +543,10 @@ impl SurvivorArena {
             .collect();
         let half = spec.arena.half;
         let (nw, np) = (spec.weapons.len(), spec.passives.len());
+        let fx_pool = crate::game_core::fx::FxPool::new(
+            arena_fx_spec(&spec),
+            spec.director.seed ^ 0x9e37_79b9,
+        );
         let mut me = Self {
             flow,
             core: Core::default(),
@@ -549,9 +582,7 @@ impl SurvivorArena {
             syn_mask: 0,
             budget: Budget::default(),
             rng: Rng::new(spec.director.seed),
-            fx_rng: Rng::new(spec.director.seed ^ 0x9e37_79b9),
-            fx: Vec::new(),
-            fx_cap: 0,
+            fx: fx_pool,
             dmg: Vec::new(),
             tier: 1,
             zoom_kick: 0.0,
@@ -620,8 +651,8 @@ impl SurvivorArena {
             _ => 1,
         };
         self.tier = tier;
-        self.fx_cap = self.spec.fx.cap[tier] as usize;
-        self.fx = Vec::with_capacity(self.fx_cap);
+        self.fx.set_tier(tier);
+        self.fx.clear();
         self.dmg = Vec::with_capacity(DMG_CAP[tier]);
         let cap = self.spec.caps.foes[tier] as usize;
         self.foes = Foes::with_capacity(cap);
@@ -796,8 +827,7 @@ impl SurvivorArena {
         };
         self.budget.reset();
         self.rng = Rng::new(self.spec.director.seed);
-        self.fx_rng = Rng::new(self.spec.director.seed ^ 0x9e37_79b9);
-        self.fx.clear();
+        self.fx.reset(self.spec.director.seed ^ 0x9e37_79b9);
         self.dmg.clear();
         self.zoom_kick = 0.0;
         (self.hx, self.hz, self.vx, self.vz, self.face) = (0.0, 0.0, 0.0, 0.0, 0.0);
@@ -1210,53 +1240,16 @@ impl SurvivorArena {
         if !self.spec.fx.particles {
             return;
         }
-        let n = (n as f32 * [0.5, 1.0, 1.5][self.tier] * self.hint_particles).ceil() as u32;
-        for _ in 0..n {
-            if self.fx.len() >= self.fx_cap {
-                return;
-            }
-            let a = self.fx_rng.range(0.0, std::f32::consts::TAU);
-            let sp = speed * self.fx_rng.range(0.4, 1.0);
-            self.fx.push(Fx {
-                x: at[0],
-                y: at[1],
-                z: at[2],
-                vx: dir[0] * speed * 0.7 + a.cos() * sp * fan,
-                vy: up * self.fx_rng.range(0.5, 1.0),
-                vz: dir[1] * speed * 0.7 + a.sin() * sp * fan,
-                age: 0.0,
-                life: life * self.fx_rng.range(0.7, 1.0),
-                kind,
-            });
-        }
+        // The pool applies the tier count scale (set in apply_quality) and
+        // this hint itself, in the same order the local math used to.
+        self.fx.set_scale(self.hint_particles);
+        self.fx
+            .burst(kind as usize, n, at, dir, speed, fan, up, life);
     }
 
     fn step_fx(&mut self, dt: f32) {
         self.zoom_kick = (self.zoom_kick - dt * 3.5).max(0.0);
-        for i in (0..self.fx.len()).rev() {
-            let p = &mut self.fx[i];
-            p.age += dt;
-            if p.age >= p.life {
-                self.fx.swap_remove(i);
-                continue;
-            }
-            let (drag, grav) = match p.kind {
-                FX_SPARK | FX_HURT => (1.6, 12.0),
-                FX_GLINT => (0.8, -2.2),
-                _ => (2.6, 0.0),
-            };
-            let k = (1.0 - drag * dt).max(0.0);
-            p.vx *= k;
-            p.vz *= k;
-            p.vy = p.vy * k - grav * dt;
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.z += p.vz * dt;
-            if p.y < 0.04 {
-                p.y = 0.04;
-                p.vy = -p.vy * 0.25;
-            }
-        }
+        self.fx.step(dt);
         for i in (0..self.dmg.len()).rev() {
             self.dmg[i].age += dt;
             if self.dmg[i].age >= DMG_LIFE {

@@ -93,6 +93,9 @@ scratch/
 !assets/models/**/*.png
 !assets/textures/survivor_arena/
 !assets/textures/survivor_arena/*.png
+# City Action magic VFX atlas (CC0 sprites, see assets/LEDGER.json)
+!assets/textures/city_action/
+!assets/textures/city_action/*.png
 # Diamond Days free CC0 pictures (countryside, skies, paper, medals).
 !assets/diamond_days/
 !assets/diamond_days/**/*.png
@@ -144,7 +147,7 @@ cache/
 examples/*.mp4
 /python
 
-# torneko headless runner stray save (--seed フラグのパース残り)
+# torneko headless runner stray save (--seed 繝輔Λ繧ｰ縺ｮ繝代�ｼ繧ｹ谿九ｊ)
 --seed*
 
 assets-private/

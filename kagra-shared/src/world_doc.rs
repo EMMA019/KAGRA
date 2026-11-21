@@ -92,6 +92,15 @@ pub struct WorldDoc {
     pub props: Vec<WorldProp>,
     #[serde(default)]
     pub walkers: Vec<WorldWalker>,
+    /// glTF specs a kit declares it may show as skinned walkers later
+    /// (bosses, summons, companions: `game_core::declare_walkers`). Their
+    /// skinned slots are pinned in `gltf_slots` from the first frame, so a
+    /// walker of a declared model entering or leaving the doc never
+    /// changes `gpu_mesh_key` — the renderer would otherwise drop and
+    /// re-upload every mesh the frame the walker appears (a hitch of
+    /// seconds on a phone when the model set is large).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub declared_walkers: Vec<String>,
     #[serde(default)]
     pub lights: Vec<WorldLight>,
     #[serde(default)]
@@ -1496,10 +1505,11 @@ impl WorldDoc {
                 .collect()
         };
         let steady = self.heightfield.is_none()
-            && !self
-                .gltf_slots()
-                .iter()
-                .any(|s| matches!(s, GltfSlot::Skinned { .. }));
+            && !self.gltf_slots().iter().any(|s| {
+                // Pinned slots never change pose, so they stay steady;
+                // only a live walker's skinning moves bounds per frame.
+                matches!(s, GltfSlot::Skinned { pinned: false, .. })
+            });
         if !steady {
             return build(self);
         }
@@ -1950,6 +1960,18 @@ impl WorldDoc {
                 || prop.name.eq_ignore_ascii_case("ring")
                 || prop.name.eq_ignore_ascii_case("plane")
                 || prop.name.eq_ignore_ascii_case("tile")
+                // Ground surfaces themselves never take a blob: a
+                // floor laid as many tile props (city_action's
+                // stone grid) would otherwise grow a dark disc at
+                // every tile centre — read on device as stains
+                // scattered over empty floor (2026-11-20).
+                || prop.name.eq_ignore_ascii_case("floor")
+                || prop.name.eq_ignore_ascii_case("road")
+                // Merged set dressing is world-baked geometry on a
+                // prop parked at the origin; a blob there lands in
+                // the middle of the street, under nothing
+                // (2026-11-20, same device report).
+                || prop.name.eq_ignore_ascii_case("dressing")
                 || prop.name.eq_ignore_ascii_case("studio_floor")
                 || prop.name.eq_ignore_ascii_case("board_frame")
                 || prop.name.eq_ignore_ascii_case("brass_trim")
@@ -2249,6 +2271,12 @@ impl WorldDoc {
     /// reorders props of models already named keeps the same set, so the renderer does not
     /// decode and upload every model again (`gpu_mesh_key`). Declare a model a game will show
     /// later with a disabled prop and its first appearance costs nothing either.
+    ///
+    /// Skinned models work the same way through `declared_walkers`: a declared model keeps
+    /// its slots (pinned, undrawn) while no walker wears it, and a live walker of that model
+    /// takes the very same slots over. Skinned slot groups are emitted in spec order, so the
+    /// sequence — and with it the mesh ids and `gpu_mesh_key` — depends only on the set of
+    /// models, never on which walkers happen to be in the doc this frame.
     pub(crate) fn gltf_slots(&self) -> Vec<GltfSlot> {
         let mut rest = std::collections::BTreeSet::new();
         for prop in &self.props {
@@ -2264,18 +2292,24 @@ impl WorldDoc {
             .into_iter()
             .map(|spec| GltfSlot::Rest(spec.to_string()))
             .collect();
+        // One slot group per skinned model: the parts of one walker (or of
+        // one pinned declaration), in part order.
+        let mut groups: Vec<(String, Vec<GltfSlot>)> = Vec::new();
         let mut seen_w = HashSet::new();
+        let mut live_specs: HashSet<&str> = HashSet::new();
         for walk in self.walkers.iter().chain(self.player.iter()) {
             if !seen_w.insert(walk.id.as_str()) {
                 continue;
             }
             if let Some(spec) = walker_gltf_spec(walk) {
+                live_specs.insert(spec);
                 let n = skinned_part_count(spec);
-                for part in 0..n {
-                    out.push(GltfSlot::Skinned {
+                let group = (0..n)
+                    .map(|part| GltfSlot::Skinned {
                         walker_id: walk.id.clone(),
                         spec: spec.to_string(),
                         part,
+                        pinned: false,
                         clip: walk.clip,
                         hair: walk.hair,
                         morph: walk.morph,
@@ -2290,10 +2324,45 @@ impl WorldDoc {
                         fade_from: walk.fade_from.clone(),
                         fade_from_clip: walk.fade_from_clip,
                         fade_from_weight: walk.fade_from_weight,
-                    });
-                }
+                    })
+                    .collect();
+                groups.push((spec.to_string(), group));
             }
         }
+        for declared in &self.declared_walkers {
+            let spec = declared.trim();
+            if spec.is_empty() || live_specs.contains(spec) {
+                continue;
+            }
+            let n = skinned_part_count(spec);
+            let group = (0..n)
+                .map(|part| GltfSlot::Skinned {
+                    walker_id: format!("declared:{spec}"),
+                    spec: spec.to_string(),
+                    part,
+                    pinned: true,
+                    clip: 0.0,
+                    hair: 0.0,
+                    morph: 0.0,
+                    expression: default_expression(),
+                    look_yaw: 0.0,
+                    look_pitch: 0.0,
+                    anim_blend: 0.0,
+                    overlay_bones: HashMap::new(),
+                    overlay_weight: 0.0,
+                    anim: default_idle_anim(),
+                    clip_name: None,
+                    fade_from: None,
+                    fade_from_clip: 0.0,
+                    fade_from_weight: 0.0,
+                })
+                .collect();
+            groups.push((spec.to_string(), group));
+        }
+        // Stable sort: groups of one spec keep their relative order, and a
+        // pinned group and a live group of one spec never coexist.
+        groups.sort_by(|a, b| a.0.cmp(&b.0));
+        out.extend(groups.into_iter().flat_map(|(_, group)| group));
         out
     }
 
@@ -2630,6 +2699,11 @@ pub(crate) enum GltfSlot {
         walker_id: String,
         spec: String,
         part: usize,
+        /// True for a slot pinned by a `declared_walkers` entry with no
+        /// live walker: it reserves the mesh id range (and the mesh-key
+        /// segment) so a later walker of the same model lands on the
+        /// same slots. Nothing draws or re-skins a pinned slot.
+        pinned: bool,
         clip: f32,
         hair: f32,
         morph: f32,
@@ -3434,7 +3508,110 @@ pub(crate) fn decimate_mesh(m: &mut MeshData, keep: f32) {
     }
 }
 
+/// Parsed Rest meshes, keyed by spec, each tagged with a fingerprint of
+/// the source content it was parsed from. A `gpu_mesh_key` change makes
+/// the renderer re-run `compile_meshes` for the whole doc; without this
+/// cache every Rest model in the set was re-parsed from its GLB on every
+/// such change (~25 MB of parses for one city_action re-upload — the
+/// multi-second hitch behind the 2026-11-17 boss-spawn freeze). The
+/// fingerprint is re-checked on every hit, so bytes re-mounted under
+/// the same path are re-parsed, and `clear_runtime_asset_cache` drops
+/// the whole cache on a bundle reload like the skinned-parts cache.
+type RestMeshCache = Mutex<HashMap<String, (u64, Option<Arc<MeshData>>)>>;
+
+fn rest_mesh_cache() -> &'static RestMeshCache {
+    static CACHE: OnceLock<RestMeshCache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn fnv1a(bytes: &[u8], seed: u64) -> u64 {
+    let mut h = seed ^ (bytes.len() as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// Content identity of the source a spec parses from: the spec itself
+/// for embedded / synthetic content (the bytes are in the string or in
+/// the binary), the file bytes for a `.glb` / `.vrm`, and the JSON plus
+/// its external buffer / image files for a `.gltf`. `None` when no
+/// source can be read — the caller then parses uncached, as before.
+fn rest_mesh_fingerprint(spec: &str) -> Option<u64> {
+    let spec = spec.trim();
+    if spec.starts_with('{')
+        || is_walk_skinned_spec(spec)
+        || is_walk_vrm_spec(spec)
+        || bare_primitive_alias(spec)
+    {
+        return Some(fnv1a(spec.as_bytes(), 0xcbf2_9ce4_8422_2325));
+    }
+    let (base_spec, _) = split_mesh_selector(spec);
+    let path = existing_asset_path(base_spec)?;
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "glb" | "vrm" => {
+            let bytes = crate::assets::read_bytes(&path).ok()?;
+            Some(fnv1a(&bytes, 0xcbf2_9ce4_8422_2325))
+        }
+        "gltf" => {
+            let json = crate::assets::read_to_string(&path).ok()?;
+            let mut h = fnv1a(json.as_bytes(), 0xcbf2_9ce4_8422_2325);
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
+                let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+                for section in ["buffers", "images"] {
+                    let Some(items) = v.get(section).and_then(|s| s.as_array()) else {
+                        continue;
+                    };
+                    for item in items {
+                        let Some(uri) = item.get("uri").and_then(|u| u.as_str()) else {
+                            continue;
+                        };
+                        if uri.starts_with("data:") {
+                            continue; // inline: already covered by the JSON hash
+                        }
+                        if let Ok(bytes) = crate::assets::read_bytes(base.join(uri)) {
+                            h = fnv1a(&bytes, h);
+                        }
+                    }
+                }
+            }
+            Some(h)
+        }
+        _ => None,
+    }
+}
+
 fn gltf_mesh_for(spec: &str) -> Option<MeshData> {
+    let key = spec.trim();
+    let fingerprint = rest_mesh_fingerprint(key);
+    if let Some(fp) = fingerprint {
+        if let Ok(cache) = rest_mesh_cache().lock() {
+            if let Some((cached_fp, hit)) = cache.get(key) {
+                if *cached_fp == fp {
+                    return hit.as_ref().map(|m| (**m).clone());
+                }
+            }
+        }
+    }
+    let parsed = gltf_mesh_for_uncached(spec);
+    if let Some(fp) = fingerprint {
+        if let Ok(mut cache) = rest_mesh_cache().lock() {
+            cache.insert(
+                key.to_string(),
+                (fp, parsed.as_ref().map(|m| Arc::new(m.clone()))),
+            );
+        }
+    }
+    parsed
+}
+
+fn gltf_mesh_for_uncached(spec: &str) -> Option<MeshData> {
     let spec = spec.trim();
     if spec.starts_with('{') {
         return mesh_from_embedded_gltf(spec).ok();
@@ -3498,6 +3675,9 @@ fn skinned_parts_cache() -> &'static Mutex<HashMap<String, Arc<Vec<crate::gltf_l
 /// Drop CPU-skinned meshes so a reloaded bundle (browser or KAGRA Dev) is read again.
 pub(crate) fn clear_runtime_asset_cache() {
     if let Ok(mut cache) = skinned_parts_cache().lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = rest_mesh_cache().lock() {
         cache.clear();
     }
 }
@@ -3739,6 +3919,116 @@ mod tests {
         assert_eq!(doc.gpu_mesh_key(), key, "another prop of a known model");
         doc.props.push(glb("d", "c.glb", false));
         assert_ne!(doc.gpu_mesh_key(), key, "a new model is a new set");
+    }
+
+    /// A declared skinned model keeps its slots while no walker wears it, so a boss
+    /// entering, dying, being removed and the next boss entering never change the
+    /// GPU mesh key or move another walker's mesh ids (the 2026-11-17 freeze: each
+    /// of those frames used to re-parse and re-upload the whole model set).
+    #[test]
+    fn declared_walker_slots_pin_the_gpu_mesh_key() {
+        // Four spellings of the bundled skinned fixture: distinct specs,
+        // one part each — a hero and three "bosses".
+        const HERO: &str = "walk.gltf";
+        const BOSS_A: &str = "walk_skinned.gltf";
+        const BOSS_B: &str = "walk.glb";
+        const BOSS_C: &str = "walk_skinned.glb";
+        let walker = |id: &str, spec: &str| WorldWalker {
+            id: id.into(),
+            gltf: Some(spec.into()),
+            ..WorldWalker::default()
+        };
+        let mut doc = WorldDoc {
+            walkers: vec![walker("walker:hero", HERO)],
+            declared_walkers: vec![BOSS_A.into(), BOSS_B.into(), BOSS_C.into()],
+            ..WorldDoc::default()
+        };
+        let key = doc.gpu_mesh_key();
+        // All three bosses are pinned while idle, each under its declared id.
+        let (_, ids_idle) = doc.gltf_mesh_ids();
+        for spec in [BOSS_A, BOSS_B, BOSS_C] {
+            assert!(
+                ids_idle.contains_key(&format!("declared:{spec}")),
+                "{spec} pinned while idle"
+            );
+        }
+        // Boss A enters: same key, and it takes over the very mesh ids
+        // its pinned slots held.
+        doc.walkers.push(walker("walker:boss", BOSS_A));
+        assert_eq!(doc.gpu_mesh_key(), key, "boss A spawn keeps the key");
+        let (_, ids_a) = doc.gltf_mesh_ids();
+        assert_eq!(
+            ids_a.get("walker:boss"),
+            ids_idle.get(&format!("declared:{BOSS_A}")),
+            "the live walker lands on the pinned slots"
+        );
+        assert!(!ids_a.contains_key(&format!("declared:{BOSS_A}")));
+        // The hero's ids never moved.
+        assert_eq!(ids_a.get("walker:hero"), ids_idle.get("walker:hero"));
+        // Corpse removal: back to the idle doc, same key.
+        doc.walkers.pop();
+        assert_eq!(doc.gpu_mesh_key(), key, "corpse removal keeps the key");
+        // Boss B (a different model) enters: still the same key, and it draws.
+        doc.walkers.push(walker("walker:boss", BOSS_B));
+        assert_eq!(doc.gpu_mesh_key(), key, "boss B spawn keeps the key");
+        let (_, ids_b) = doc.gltf_mesh_ids();
+        let boss_mesh = ids_b["walker:boss"][0];
+        let scene = doc.compile_scene(1.0);
+        assert!(
+            scene.batches.iter().any(|b| b.mesh == boss_mesh),
+            "the live boss draws on its pinned slot"
+        );
+        // Without declarations the same entrance changes the key, as it
+        // always has: kits that declare nothing see no change in behavior.
+        let mut plain = WorldDoc {
+            walkers: vec![walker("walker:hero", HERO)],
+            ..WorldDoc::default()
+        };
+        let plain_key = plain.gpu_mesh_key();
+        plain.walkers.push(walker("walker:boss", BOSS_A));
+        assert_ne!(plain.gpu_mesh_key(), plain_key);
+    }
+
+    /// The Rest parse cache serves a second parse of the same content without
+    /// re-parsing, follows the content when new bytes are mounted under the
+    /// same path, and is dropped by `clear_runtime_asset_cache`.
+    #[test]
+    fn rest_mesh_cache_hits_and_follows_content() {
+        let path = "assets/models/rest_cache_probe.glb";
+        let root = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/models/kenney/graveyard-kit"
+        );
+        let vampire = std::fs::read(format!("{root}/character-vampire.glb")).unwrap();
+        let zombie = std::fs::read(format!("{root}/character-zombie.glb")).unwrap();
+        let cached_ptr = |path: &str| {
+            let cache = rest_mesh_cache().lock().unwrap();
+            let (_, hit) = cache.get(path).expect("cache entry");
+            std::sync::Arc::as_ptr(hit.as_ref().expect("parsed mesh")) as usize
+        };
+        crate::assets::mount_file(path, vampire);
+        let first = gltf_mesh_for(path).expect("vampire parses");
+        let ptr = cached_ptr(path);
+        let second = gltf_mesh_for(path).expect("cached parse");
+        assert_eq!(first, second, "same content, same mesh");
+        assert_eq!(
+            cached_ptr(path),
+            ptr,
+            "the second parse was served from the cache, not re-parsed"
+        );
+        // New bytes under the same path: the fingerprint no longer
+        // matches, so the mesh is re-parsed from the new content.
+        crate::assets::mount_file(path, zombie);
+        let third = gltf_mesh_for(path).expect("zombie parses");
+        assert_ne!(first, third, "new content under one path re-parses");
+        assert_eq!(third, gltf_mesh_for(path).unwrap());
+        // A bundle reload drops the cache entry.
+        clear_runtime_asset_cache();
+        assert!(
+            !rest_mesh_cache().lock().unwrap().contains_key(path),
+            "reload clears the parse cache"
+        );
+        crate::assets::unmount_file(path);
     }
 
     #[test]

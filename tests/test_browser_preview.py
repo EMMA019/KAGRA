@@ -65,6 +65,9 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     assert "play.html?game=chess" not in index
     play = (tmp_path / "site" / "play.html").read_text(encoding="utf-8")
     assert "setPlayInput" in play
+    # A kit that reports its own per-stage records (stage_bests) is the
+    # canonical source for the best the shell shows and stores.
+    assert "stage_bests" in play and "kitBest" in play
     assert "data-orient" in play
     assert '"neon_run"' in play
     assert "startGame" in play
@@ -95,7 +98,14 @@ def test_preview_links_every_browser_genre(tmp_path: Path):
     )
     assert knight.is_file()
     staged = [p for p in (tmp_path / "site").rglob("*") if p.is_file()]
-    assert len(staged) < 400
+    # File budget: 400 until 2026-11-14, when city_action's six weapon
+    # GLBs (one hero bake per sword) added five staged files; raised to
+    # 500 the same day when the enemy roster landed — ten kinds × eight
+    # lean pose bakes (plus four elite extras) are ~76 more files, each
+    # deliberately small. The byte budget below is the binding one;
+    # packed delivery (the Dusk Horde route) is the structural answer
+    # when it tightens.
+    assert len(staged) < 500
     assert sum(p.stat().st_size for p in staged) < 80_000_000
 
 

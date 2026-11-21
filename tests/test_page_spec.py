@@ -94,6 +94,24 @@ def test_page_resume_offers_continue_and_a_new_game():
 
 
 
+def test_page_recovers_from_an_app_switch():
+    html = PLAY.read_text(encoding="utf-8")
+    # A lost graphics context is only ever restored when the lost
+    # event is canceled; with no listener the canvas stays black
+    # forever after an app switch while the sim runs on blind.
+    assert "webglcontextlost" in html and "preventDefault()" in html
+    assert "webglcontextrestored" in html, "the restore rebuilds the renderer"
+    assert "session.detachRenderer" in html, "the dead renderer drops before the re-attach"
+    # The pause the page itself imposes when the tab hides lifts on
+    # return (a kit's pause card takes no tap); a pause the player
+    # chose is not lifted, so the flag is set only for the auto-pause.
+    assert "autoPaused" in html and "backToFront" in html
+    assert "session.resumeRun" in html
+    # The wasm side exposes the detach the recovery calls.
+    wasm = (ROOT / "kagra-shared" / "src" / "wasm.rs").read_text(encoding="utf-8")
+    assert "detachRenderer" in wasm
+
+
 def test_page_pads_choose_the_touch_pads():
     assert normalize_page({"pads": "stick"}) == {"pads": "stick"}
     assert normalize_page({"pads": "none"}) == {"pads": "none"}

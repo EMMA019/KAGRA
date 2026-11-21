@@ -289,6 +289,15 @@ impl Animator {
         self.start_clip("idle", true);
     }
 
+    /// Swap the move set under a living animator (a weapon change, a
+    /// form change): the current clip keeps playing — the sets that swap
+    /// share their clip names, only the timings differ — and the new
+    /// timings apply from the next move that starts. Callers swap while
+    /// no one-shot is in flight; a held move (a death) is left alone.
+    pub fn set_moves(&mut self, set: MoveSet) {
+        self.set = set;
+    }
+
     fn start_clip(&mut self, name: &str, restart: bool) {
         let Some(m) = self.set.moves.get(name) else {
             return;

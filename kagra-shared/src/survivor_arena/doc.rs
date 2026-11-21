@@ -630,9 +630,10 @@ impl SurvivorArena {
             for b in 0..3 {
                 doc.points.push(crate::strokes::PointCloud {
                     id: format!("fx-{k}-{b}"),
-                    positions: Vec::with_capacity(self.fx_cap),
+                    positions: Vec::with_capacity(self.fx.cap()),
                     color: [rgb[0], rgb[1], rgb[2], alpha[b]],
                     size: size[b],
+                    ..crate::strokes::PointCloud::default()
                 });
             }
         }
@@ -944,7 +945,7 @@ impl SurvivorArena {
         for c in &mut self.doc.points {
             c.positions.clear();
         }
-        for p in &self.fx {
+        for p in self.fx.particles() {
             let b = ((p.age / p.life * 3.0) as usize).min(2);
             self.doc.points[p.kind as usize * 3 + b]
                 .positions

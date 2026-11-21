@@ -27,7 +27,7 @@
       display: block;
       width: 100%;
       height: 100%;
-      background: #6f93b4;
+      background: #10141c;
       touch-action: none;
     }
     #boot, #overlay {
@@ -218,6 +218,14 @@
       color: #ff4f9a;
       text-shadow: 0 0 18px rgba(255, 60, 150, 0.55), 3px 3px 0 rgba(0, 0, 0, 0.5);
     }
+    /* A cleared run's heading: same metrics as #gameover, gold for the win. */
+    #gameclear {
+      margin: 0 0 4px;
+      font-size: clamp(30px, 9vw, 44px);
+      letter-spacing: 0.12em;
+      color: #ffd76a;
+      text-shadow: 0 0 18px rgba(255, 190, 60, 0.55), 3px 3px 0 rgba(0, 0, 0, 0.5);
+    }
     html[data-swipe="1"] #death { margin: 0 0 14px; font-size: 16px; letter-spacing: 0.03em; color: #ffd0e2; }
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; text-align: center; }
     .stats b { display: block; font-size: clamp(18px, 5.6vw, 24px); font-variant-numeric: tabular-nums; color: #bff8ff; }
@@ -243,6 +251,7 @@
     html[data-swipe="1"][data-orient="landscape"] #result .panel { margin: 0; }
     html[data-swipe="1"][data-orient="landscape"] .stats { grid-template-columns: repeat(2, 1fr) !important; }
     html[data-swipe="1"][data-orient="landscape"] #gameover { font-size: 28px; }
+    html[data-swipe="1"][data-orient="landscape"] #gameclear { font-size: 28px; }
     html[data-swipe="1"][data-orient="landscape"] table.rank td { padding: 3px 4px; }
     html[data-swipe="1"][data-orient="landscape"] #death { margin-bottom: 8px; }
     .goals { text-align: left; padding: 10px 14px; }
@@ -310,6 +319,7 @@
       <div class="card">
         <h1 id="title">KAGRA</h1>
         <h2 id="gameover" hidden data-i18n="gameover">GAME OVER</h2>
+        <h2 id="gameclear" hidden data-i18n="gameclear">GAME CLEAR</h2>
         <div id="bestBanner" class="newbest big" hidden data-i18n="newbest">NEW BEST!</div>
         <p id="tagline" class="tagline" hidden data-i18n="hop.tagline">Hop to the beat</p>
         <p id="blurb" class="hint" data-i18n="blurb">タップではじめる。左が移動、右下ジャンプ、右上アクション。</p>
@@ -496,8 +506,16 @@
       const unit = (v, d) => Math.max(0, Math.min(1, num(v, d)));
       const sfx = cfg && typeof cfg.sfx === "object" && cfg.sfx ? cfg.sfx : {};
       const bgm = (cfg && cfg.bgm) || {};
+      // Several music entries may be tabled under the mixer's names
+      // (`bgm`, `bgm_boss`, ...): the current name picks its own file
+      // and volume, and any other name keeps the plain `bgm` entry, so
+      // single-track games are untouched.
+      const tracks = {};
+      for (const [key, val] of Object.entries(cfg && typeof cfg === "object" ? cfg : {})) {
+        if (val && typeof val === "object" && typeof val.file === "string" && val.file) tracks[key] = val;
+      }
       const master = unit(cfg && cfg.master, 0.8);
-      const bgmVolume = unit(cfg && cfg.bgm_volume, 0.7) * unit(bgm.volume, 0.55);
+      const trackVolume = (t) => unit(cfg && cfg.bgm_volume, 0.7) * unit(t && t.volume, 0.55);
       const sfxVolume = unit(cfg && cfg.sfx_volume, 1);
       const Ctor = deps.AudioContextCtor;
       let usable = !!Ctor && !!cfg && cfg.enabled !== false;
@@ -507,6 +525,7 @@
       let bgmNode = null;
       let sfxNode = null;
       let bgmSource = null;
+      let bgmFile = null;
       // Beat-synced games (HOP-BEAT): the page asks the sim where the music
       // should be (`bgmPos`), starts the loop there, and reads the clock back
       // with songClock(). bgmT0 is the context time of music position 0.
@@ -519,7 +538,7 @@
       // Fetching needs no gesture, so the bytes are on their way before the
       // first tap. Decoding waits for the context.
       const raw = new Map();
-      const files = [bgm.file, ...Object.values(sfx).map((c) => c && c.file)]
+      const files = [...Object.values(tracks).map((t) => t.file), ...Object.values(sfx).map((c) => c && c.file)]
         .filter((f) => typeof f === "string" && f);
       if (usable) {
         for (const f of files) {
@@ -603,16 +622,19 @@
         src.start(0);
       };
       const stopBgm = () => {
+        bgmFile = null;
         if (!bgmSource) return;
         try { bgmSource.stop(0); } catch {}
         bgmSource = null;
       };
       const syncBgm = (name, gain) => {
         if (!ctx) return;
-        const want = !!name && gain > 0.001 && !!bgm.file;
+        const track = tracks[name] || tracks.bgm || null;
+        const want = !!name && gain > 0.001 && !!track;
         if (!want) { stopBgm(); return; }
+        if (bgmSource && bgmFile !== track.file) stopBgm();
         if (!bgmSource) {
-          const buf = buffers.get(bgm.file);
+          const buf = buffers.get(track.file);
           if (!buf) return;
           // A synced loop only starts on a running clock, so the seek is exact.
           if (bgmPos && ctx.state !== "running") return;
@@ -630,8 +652,9 @@
             src.start(0);
           }
           bgmSource = src;
+          bgmFile = track.file;
         }
-        const target = bgmVolume * Math.max(0, Math.min(1, gain));
+        const target = trackVolume(track) * Math.max(0, Math.min(1, gain));
         if (typeof bgmNode.gain.setTargetAtTime === "function") {
           bgmNode.gain.setTargetAtTime(target, ctx.currentTime, 0.04);
         } else {
@@ -1086,9 +1109,14 @@
     if (/img-tec|imagination|powervr/i.test(gpuName) && !(dev && params.has("scale"))) safeCap = Math.min(safeCap, 1.5);
     const effectiveCap = () => Math.min(safeCap, scaleStep ? Math.min(tierCap, SCALE_STEPS[scaleStep]) : tierCap);
     let redraw = 0;
+    let fitCalls = 0; // fit() reallocations so far (freeze instrumentation)
+    let lastFitMs = 0; // the most recent fit()'s own cost
+    let fitTotalMs = 0;
     let sizeCheck = 0; // frames until a new canvas size is checked for a blank picture
     let sizeScale = 1;
     const fit = () => {
+      fitCalls += 1;
+      const fitT0 = performance.now();
       orient();
       const scale = Math.min(window.devicePixelRatio || 1, effectiveCap());
       const w = Math.max(1, Math.round(canvas.clientWidth * scale));
@@ -1101,6 +1129,8 @@
         sizeCheck = 10;
         sizeScale = scale;
       }
+      lastFitMs = performance.now() - fitT0;
+      fitTotalMs += lastFitMs;
     };
     const checkSize = () => {
       if (!sizeCheck || --sizeCheck > 0 || document.hidden) return;
@@ -1134,11 +1164,36 @@
       console.warn(`kagra: frame sample max=${max} min=${min} backend=${activeBackend}`);
       return max < 12 || min > 248;
     };
+    // App-switch survival: when the browser takes the graphics context
+    // away (an app switch on a phone evicts it under memory pressure),
+    // the context is only ever given back if the lost event is
+    // canceled — with no listener at all (the shell had none, and wgpu
+    // installs none) the canvas stays black forever while the sim runs
+    // blind. Cancel it, remember the loss so the frame loop stays quiet
+    // instead of failing, and rebuild the renderer when the browser
+    // hands the context back (`graphicsRecover`, wired up by the loop).
+    let contextLost = false;
+    let graphicsRecover = null;
+    const watchContext = (el) => {
+      if (!el || el.dataset.kagraCtxWatch) return;
+      el.dataset.kagraCtxWatch = "1";
+      el.addEventListener("webglcontextlost", (e) => {
+        e.preventDefault();
+        contextLost = true;
+        console.warn("kagra: graphics context lost; the game runs on, drawing waits for the restore");
+      });
+      el.addEventListener("webglcontextrestored", () => {
+        contextLost = false;
+        console.warn("kagra: graphics context restored; rebuilding the renderer");
+        if (graphicsRecover) graphicsRecover();
+      });
+    };
     const attachBackend = async (backend) => {
       activeBackend = backend;
       // A phone that never finishes starting the GPU shows which step it is on, not a dark page.
       if (boot.style.display !== "none") boot.textContent = t("boot.gpu", { backend });
       session.setGraphicsBackend(backend);
+      watchContext(canvas);
       fit();
       await session.attachCanvas(canvas);
       fit();
@@ -1426,7 +1481,12 @@
       document.getElementById("syncRow").hidden = !(page.music_sync && phase !== "playing");
       paintSync();
       if (swipeMode) {
-        gameover.hidden = phase !== "complete";
+        // A kit that reports a win (sim.win === true) ends on the
+        // CLEAR heading, not GAME OVER; kits that never report one
+        // render exactly as before.
+        const cleared = phase === "complete" && sim.win === true;
+        gameover.hidden = phase !== "complete" || cleared;
+        document.getElementById("gameclear").hidden = !cleared;
         document.getElementById("title").hidden = phase === "complete";
         document.getElementById("blurb").hidden = phase === "complete";
         if (page.tagline) document.getElementById("tagline").hidden = phase === "complete";
@@ -1441,7 +1501,19 @@
       }
       const goalsTitle = document.getElementById("goalsTitle");
       const runGoals = document.getElementById("runGoals");
-      const bestNow = Math.max(Number(sim.best) || 0, loadBest(slug));
+      // A kit that keeps its own per-stage records (it reports
+      // `stage_bests`) is the canonical source for its best: the
+      // shell's own store once froze a different number for the
+      // same run — the kit filed one score, the result board
+      // reported another. Kits that report no records keep the
+      // shell's device best, exactly as before.
+      const kitBests = Array.isArray(sim.stage_bests)
+        ? sim.stage_bests.map((v) => Number(v) || 0).filter((n) => n > 0)
+        : [];
+      const kitBest = kitBests.length ? Math.max(...kitBests) : null;
+      const bestNow = kitBest !== null
+        ? kitBest
+        : Math.max(Number(sim.best) || 0, loadBest(slug));
       if (swipeMode && phase === "title") {
         renderGoals(goalsTitle, sim.missions, bestNow, t("missions"));
       } else {
@@ -1449,7 +1521,16 @@
       }
       if (showResult) {
         renderGoals(runGoals, sim.result.missions || sim.missions, Math.max(bestNow, Number(sim.score) || 0), t("missions"));
-        if (!boardDone) saveBest(slug, Math.max(Number(sim.best) || 0, Number(sim.result?.run?.score) || 0));
+        if (!boardDone) {
+          if (kitBest !== null) {
+            // Adopt the kit's canonical best as the device best
+            // too (it may sit below the shell's older store —
+            // that store is what diverged; the kit's record wins).
+            try { localStorage.setItem(bestKey(slug), String(kitBest)); } catch {}
+          } else {
+            saveBest(slug, Math.max(Number(sim.best) || 0, Number(sim.result?.run?.score) || 0));
+          }
+        }
       } else {
         runGoals.hidden = true;
       }
@@ -1636,17 +1717,56 @@
         if (hopPhase() === "pause") session.resumeRun(); else session.pauseRun();
       }
     });
+    // Coming back from an app switch: refit (the browser may have
+    // changed the viewport while away), rebuild the renderer if the
+    // graphics context was lost and restored in the meantime, and
+    // lift the pauses this page itself imposed when the tab hid.
+    // Two layers engage on hide: the kit's flow pause (pauseRun,
+    // below) and the portal's session pause (portal.js hears the
+    // same event and calls session.pause(), which stops the sim
+    // cold in request_frame). Either one alone leaves the game
+    // frozen on return — a kit in pause cannot be resumed by a tap
+    // (its card waits for a key), and the portal's card lifts only
+    // its own layer. A pause the player chose (Escape, the pause
+    // button) is not lifted: each flag is set only when that layer
+    // was still running at the moment the tab hid (the portal's
+    // state is mirrored every frame, since its own listener runs
+    // before this one on the same event).
+    let autoPaused = false;
+    let autoPortalPaused = false;
+    let portalPausedSeen = false;
+    const backToFront = () => {
+      fit();
+      if (contextLost && graphicsRecover) graphicsRecover();
+      if (autoPortalPaused) {
+        autoPortalPaused = false;
+        if (portalPage && portalPage.resume) portalPage.resume();
+      }
+      if (!autoPaused) return;
+      autoPaused = false;
+      if (session.resumeRun && hopPhase() === "pause") session.resumeRun();
+    };
     document.addEventListener("visibilitychange", () => {
       // A hidden page may never see the lift (app switch,
       // notification shade, a call): let every finger the engine
       // holds go now, or it walks on by itself when the player
       // returns. (Window blur is deliberately not hooked: a focus
       // change on desktop must not cut a drag.)
-      if (document.hidden) cancelCanvasPointers();
-      if (page.pause && document.hidden && phase === "playing" && session.pauseRun) session.pauseRun();
-      if (document.hidden) storeSave(slug);
+      if (document.hidden) {
+        cancelCanvasPointers();
+        if (portalPage && portalPage.paused && !portalPausedSeen) autoPortalPaused = true;
+        if (page.pause && phase === "playing" && session.pauseRun) {
+          const was = hopPhase();
+          session.pauseRun();
+          if (was === "play") autoPaused = true;
+        }
+        storeSave(slug);
+      } else {
+        backToFront();
+      }
     });
     window.addEventListener("pagehide", () => cancelCanvasPointers());
+    window.addEventListener("pageshow", () => { if (!document.hidden) backToFront(); });
     // The pause card steps the sync in the canvas: keep the device copy in step.
     window.addEventListener("pointerup", () => {
       if (!page.music_sync || phase !== "playing") return;
@@ -1715,6 +1835,31 @@
 
     let presented = 0;
     let recovering = false;
+    let renderStrikes = 0;
+    let lastRecoverAt = 0;
+    // Rebuild the renderer on the canvas as it stands (a restored
+    // graphics context, a lost device): the dead renderer drops
+    // first so its stale GPU objects cannot collide with the new
+    // device's, then a fresh attach re-uploads everything (the mesh
+    // parse cache keeps that cheap). The frame loop pauses while
+    // `recovering` is set and this restarts it, the same choreography
+    // as the blank-WebGPU fallback below. The sim state is never
+    // touched: the run continues where it was.
+    graphicsRecover = () => {
+      if (recovering) return;
+      recovering = true;
+      rendering = false;
+      try { if (session.detachRenderer) session.detachRenderer(); } catch {}
+      attachBackend(activeBackend).then(() => {
+        rendering = session.hasRenderer();
+        recovering = false;
+        if (boot.classList.contains("err")) { boot.className = ""; boot.style.display = "none"; }
+        requestAnimationFrame(loop);
+      }).catch((err) => {
+        recovering = false;
+        fail(t("err.fallback", { err: errText(err) }));
+      });
+    };
     // Dynamic quality: a running average of the frame gap. Over 26 ms
     // (under about 38 fps) for 2.5 s drops one rung of the render scale;
     // pauses (a hidden tab, a long hitch) are not counted.
@@ -1737,6 +1882,56 @@
       console.warn(`kagra: slow frames, render scale cap ${SCALE_STEPS[scaleStep]}`);
       fit();
     };
+    // Long-frame watchdog (freeze instrumentation, 2026-11-17): a rAF
+    // gap over 500 ms is a hitch a player feels as a freeze. Record
+    // what the shell was doing - the adaptive scale step before and
+    // after this frame's adapt, how many fit() reallocations have
+    // run, whether the tab was hidden, and a snapshot of the kit's
+    // state - so one recurrence on a phone names its culprit. The
+    // last 8 entries stay on window.__freezeLog for probes; nothing
+    // is recorded (or allocated) on an ordinary frame.
+    const freezeLog = [];
+    let lastWatchT = 0;
+    let watchStep = 0;
+    let longFrames = 0;
+    const watchFrame = (now) => {
+      const gap = lastWatchT ? now - lastWatchT : 0;
+      lastWatchT = now;
+      const stepBefore = watchStep;
+      watchStep = scaleStep;
+      if (gap <= 500) return;
+      longFrames += 1;
+      let snap = null;
+      try {
+        const s = JSON.parse(session.gameJson());
+        snap = {
+          charging: !!s.charging,
+          charge_tier: s.charge_tier ?? null,
+          charge_tier1_at: s.charge_tier1_at ?? null,
+          charge_tier2_at: s.charge_tier2_at ?? null,
+          stage_t: s.stage_t ?? null,
+          action: s.action ?? null,
+          phase: s.phase ?? null,
+        };
+      } catch {}
+      const entry = {
+        gap_ms: Math.round(gap),
+        t_ms: Math.round(now),
+        long_frame_index: longFrames,
+        at: new Date().toISOString(),
+        hidden: document.hidden,
+        scale_step_before: stepBefore,
+        scale_step_after: scaleStep,
+        fit_calls: fitCalls,
+        last_fit_ms: Math.round(lastFitMs * 10) / 10,
+        fit_total_ms: Math.round(fitTotalMs),
+        state: snap,
+      };
+      freezeLog.push(entry);
+      if (freezeLog.length > 8) freezeLog.shift();
+      console.warn("kagra: long frame", entry);
+    };
+    window.__freezeLog = freezeLog;
     // The sim steps at 60 Hz whatever the screen does (a 120 Hz phone would
     // otherwise play double speed). A slightly early step is allowed so a
     // steady 60 Hz does not stutter between zero and two steps.
@@ -1825,6 +2020,7 @@
       looping = true;
       if (recovering) return;
       adapt(performance.now());
+      watchFrame(performance.now());
       const k = keyAxis();
       const gpd = padAxis();
       const jump = state.jump || held.has(" ") || held.has("Spacebar") || gpd.act;
@@ -1844,13 +2040,30 @@
       // render_skip: a 120 Hz frame where the sim did not step draws the same picture.
       const skipDraw = renderSkip && stepped === 0 && redraw <= 0;
       if (redraw > 0) redraw -= 1;
-      if (rendering && !skipDraw) {
-        try { session.render(); }
-        catch (err) {
-          rendering = false;
-          fail(t("err.stopped", { err: errText(err) }));
+      // While the graphics context is lost the sim steps on but
+      // nothing can draw; the restore handler rebuilds the renderer.
+      if (rendering && !skipDraw && !contextLost) {
+        try {
+          session.render();
+          presented += 1;
+          renderStrikes = 0;
         }
-        presented += 1;
+        catch (err) {
+          if (contextLost) {
+            // The context went away mid-frame; the restore is pending.
+          } else if (renderStrikes < 3 && performance.now() - lastRecoverAt > 4000 && graphicsRecover) {
+            // A lost device (the WebGPU shape of a context loss)
+            // gets a few rebuilds before the error screen, which
+            // stays the answer for a renderer that truly is broken.
+            renderStrikes += 1;
+            lastRecoverAt = performance.now();
+            console.warn("kagra: render failed; rebuilding the renderer", err);
+            graphicsRecover();
+          } else {
+            rendering = false;
+            fail(t("err.stopped", { err: errText(err) }));
+          }
+        }
         if (presented === 8 && activeBackend !== "gl" && requestedBackend !== "webgpu" && canvasIsBlank(canvas)) {
           recovering = true;
           rendering = false;
@@ -1874,7 +2087,12 @@
         const next = readPhase();
         if (next !== phase) showPhase(next);
       } catch {}
-      requestAnimationFrame(loop);
+      // The portal's pause state, mirrored while frames run: the
+      // return path tells a hide-imposed pause from the player's own.
+      if (portalPage) portalPausedSeen = !!portalPage.paused;
+      // While a rebuild is in flight the recovery restarts the loop
+      // itself; scheduling here too would run two loops.
+      if (!recovering) requestAnimationFrame(loop);
     };
     loop();
   </script>

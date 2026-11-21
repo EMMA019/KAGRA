@@ -1002,7 +1002,7 @@ fn crowd_probe() {
             "{name}: foes {} gems {} fx cap {} dmg cap {}",
             g.foes.len(),
             g.gems.len(),
-            g.fx_cap,
+            g.fx.cap(),
             DMG_CAP[g.tier]
         );
         time("grid.rebuild", &mut g, &|g| {
@@ -1615,7 +1615,7 @@ fn effects_fill_pools_inside_their_caps_and_never_change_the_run() {
         kite_each(&mut g, 40.0, |g| {
             peak = peak.max(g.fx.len());
             peak_dmg = peak_dmg.max(g.dmg.len());
-            assert!(g.fx.len() <= g.fx_cap);
+            assert!(g.fx.len() <= g.fx.cap());
             assert!(g.dmg.len() <= DMG_CAP[g.tier]);
         });
         g.build_doc();

@@ -338,6 +338,16 @@ impl WasmSession {
         Ok(())
     }
 
+    /// Drop the renderer without touching the game state. The page
+    /// calls this before re-attaching after a graphics context
+    /// restore, so the dead renderer's GPU objects are gone before
+    /// the new device starts handing out handles.
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = detachRenderer)]
+    pub fn detach_renderer(&mut self) {
+        self.inner.detach_renderer();
+    }
+
     /// 現在のシーンを 1 枚描く。`requestFrame()` の後に呼ぶ。
     #[cfg(feature = "render")]
     pub fn render(&mut self) -> Result<(), JsValue> {
@@ -350,6 +360,13 @@ impl WasmSession {
     #[wasm_bindgen(js_name = pictureStatus)]
     pub fn picture_status(&self) -> String {
         self.inner.picture_status()
+    }
+
+    /// Full mesh re-uploads so far (freeze instrumentation).
+    #[cfg(feature = "render")]
+    #[wasm_bindgen(js_name = meshUploads)]
+    pub fn mesh_uploads(&self) -> u32 {
+        self.inner.mesh_uploads()
     }
 
     /// 描画先が接続済みか。
