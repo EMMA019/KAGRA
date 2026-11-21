@@ -1,0 +1,841 @@
+{
+  "version": 1,
+  "genre": "rhythm",
+  "half": 16.0,
+  "floor_y": 0.0,
+  "gravity": 9.8,
+  "water_y": null,
+  "coins": 0,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [
+      0.15,
+      0.0,
+      4.55
+    ],
+    "yaw": 3.1415927,
+    "face": 3.1415927,
+    "on_ground": true,
+    "model": "knight",
+    "gltf": "knight",
+    "clip": 0.0,
+    "hair": 0.0,
+    "morph": 0.0,
+    "look_yaw": 0.0,
+    "look_pitch": 0.0,
+    "anim": "idle",
+    "expression": "blink",
+    "anim_blend": 0.0,
+    "overlay_bones": {},
+    "overlay_weight": 0.0
+  },
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [
+        0.0,
+        -0.12,
+        -1.2
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        16.0,
+        0.12,
+        18.0
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        32,
+        28,
+        44
+      ],
+      "metallic": 0.02,
+      "roughness": 0.92,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:lane-0",
+      "type": "prop",
+      "name": "lane",
+      "position": [
+        -1.7249999,
+        0.02,
+        -2.4499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.92,
+        0.05,
+        8.150001
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        53,
+        18,
+        19
+      ],
+      "metallic": 0.04,
+      "roughness": 0.88,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:lane-1",
+      "type": "prop",
+      "name": "lane",
+      "position": [
+        -0.575,
+        0.02,
+        -2.4499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.92,
+        0.05,
+        8.150001
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        16,
+        34,
+        53
+      ],
+      "metallic": 0.04,
+      "roughness": 0.88,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:lane-2",
+      "type": "prop",
+      "name": "lane",
+      "position": [
+        0.575,
+        0.02,
+        -2.4499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.92,
+        0.05,
+        8.150001
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        59,
+        49,
+        18
+      ],
+      "metallic": 0.04,
+      "roughness": 0.88,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:lane-3",
+      "type": "prop",
+      "name": "lane",
+      "position": [
+        1.7249999,
+        0.02,
+        -2.4499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.92,
+        0.05,
+        8.150001
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        18,
+        46,
+        26
+      ],
+      "metallic": 0.04,
+      "roughness": 0.88,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:judge",
+      "type": "prop",
+      "name": "judge",
+      "position": [
+        0.0,
+        0.08,
+        1.45
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        4.95,
+        0.08,
+        0.16
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        236,
+        232,
+        244
+      ],
+      "metallic": 0.35,
+      "roughness": 0.28,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:receptor-0",
+      "type": "prop",
+      "name": "receptor",
+      "position": [
+        -1.7249999,
+        0.28,
+        1.45
+      ],
+      "yaw": 0.0,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [
+        0.62,
+        0.62,
+        0.62
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        214,
+        72,
+        78
+      ],
+      "metallic": 0.08,
+      "roughness": 0.45,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:receptor-1",
+      "type": "prop",
+      "name": "receptor",
+      "position": [
+        -0.575,
+        0.28,
+        1.45
+      ],
+      "yaw": 0.0,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [
+        0.62,
+        0.62,
+        0.62
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        64,
+        136,
+        214
+      ],
+      "metallic": 0.08,
+      "roughness": 0.45,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:receptor-2",
+      "type": "prop",
+      "name": "receptor",
+      "position": [
+        0.575,
+        0.28,
+        1.45
+      ],
+      "yaw": 0.0,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [
+        0.62,
+        0.62,
+        0.62
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        236,
+        196,
+        72
+      ],
+      "metallic": 0.08,
+      "roughness": 0.45,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:receptor-3",
+      "type": "prop",
+      "name": "receptor",
+      "position": [
+        1.7249999,
+        0.28,
+        1.45
+      ],
+      "yaw": 0.0,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [
+        0.62,
+        0.62,
+        0.62
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        186,
+        104
+      ],
+      "metallic": 0.08,
+      "roughness": 0.45,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-0",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        -1.7249999,
+        0.48,
+        -1.1499996
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        214,
+        72,
+        78
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-1",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        -0.575,
+        0.48,
+        -2.4499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        64,
+        136,
+        214
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-2",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        0.575,
+        0.48,
+        -3.7499998
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        236,
+        196,
+        72
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-3",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        1.7249999,
+        0.48,
+        -5.0499997
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        72,
+        186,
+        104
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-4",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        -1.7249999,
+        0.48,
+        -6.35
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        214,
+        72,
+        78
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:note-5",
+      "type": "prop",
+      "name": "note",
+      "position": [
+        0.575,
+        0.48,
+        -6.35
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.52,
+        0.52,
+        0.52
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        236,
+        196,
+        72
+      ],
+      "metallic": 0.12,
+      "roughness": 0.48,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:flag",
+      "type": "prop",
+      "name": "flag",
+      "position": [
+        3.35,
+        0.85,
+        2.4
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": null,
+      "scale": [
+        0.16,
+        1.15,
+        0.1
+      ],
+      "enabled": false,
+      "parent": null,
+      "color": [
+        70,
+        76,
+        72
+      ],
+      "metallic": 0.0,
+      "roughness": 0.8,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:inn",
+      "type": "prop",
+      "name": "inn",
+      "position": [
+        0.0,
+        0.0,
+        -9.2
+      ],
+      "yaw": 0.0,
+      "model": "inn",
+      "gltf": "inn",
+      "scale": [
+        0.42,
+        0.42,
+        0.42
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        186,
+        164,
+        140
+      ],
+      "metallic": 0.02,
+      "roughness": 0.8,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:tree",
+      "type": "prop",
+      "name": "tree",
+      "position": [
+        -4.6,
+        0.0,
+        -2.4
+      ],
+      "yaw": 0.0,
+      "model": "stylized_tree",
+      "gltf": "stylized_tree",
+      "scale": [
+        0.72,
+        0.72,
+        0.72
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        64,
+        130,
+        72
+      ],
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:pine",
+      "type": "prop",
+      "name": "pine",
+      "position": [
+        4.7,
+        0.0,
+        -3.1
+      ],
+      "yaw": 0.0,
+      "model": "stylized_pine",
+      "gltf": "stylized_pine",
+      "scale": [
+        0.62,
+        0.62,
+        0.62
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        48,
+        96,
+        72
+      ],
+      "metallic": 0.0,
+      "roughness": 0.85,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:rock",
+      "type": "prop",
+      "name": "rock",
+      "position": [
+        -4.2,
+        0.15,
+        2.8
+      ],
+      "yaw": 0.0,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [
+        0.48,
+        0.36,
+        0.48
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        140,
+        136,
+        128
+      ],
+      "metallic": 0.02,
+      "roughness": 0.9,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    },
+    {
+      "id": "prop:crate-side",
+      "type": "prop",
+      "name": "crate",
+      "position": [
+        3.6,
+        0.38,
+        3.3
+      ],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [
+        0.7,
+        0.7,
+        0.7
+      ],
+      "enabled": true,
+      "parent": null,
+      "color": [
+        168,
+        122,
+        78
+      ],
+      "metallic": 0.08,
+      "roughness": 0.62,
+      "is_static": true,
+      "friction": 0.85,
+      "restitution": 0.0
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [
+        0.15,
+        0.0,
+        4.55
+      ],
+      "yaw": 3.1415927,
+      "face": 3.1415927,
+      "on_ground": true,
+      "model": "knight",
+      "gltf": "knight",
+      "clip": 0.0,
+      "hair": 0.0,
+      "morph": 0.0,
+      "look_yaw": 0.0,
+      "look_pitch": 0.0,
+      "anim": "idle",
+      "expression": "blink",
+      "anim_blend": 0.0,
+      "overlay_bones": {},
+      "overlay_weight": 0.0
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [
+        -1.2,
+        5.2,
+        3.4
+      ],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.45,
+      "radius": 18.0,
+      "color": [
+        1.0,
+        0.9,
+        0.78
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [
+        2.8,
+        3.4,
+        2.2
+      ],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.55,
+      "radius": 14.0,
+      "color": [
+        0.45,
+        0.62,
+        1.0
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:2",
+      "type": "light",
+      "name": "rim",
+      "position": [
+        -2.6,
+        3.2,
+        -3.4
+      ],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.62,
+      "radius": 16.0,
+      "color": [
+        0.85,
+        0.45,
+        0.95
+      ],
+      "direction": null
+    },
+    {
+      "id": "light:3",
+      "type": "light",
+      "name": "lane",
+      "position": [
+        0.2,
+        1.8,
+        1.2
+      ],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.7,
+      "radius": 8.0,
+      "color": [
+        1.0,
+        0.82,
+        0.55
+      ],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "stage",
+      "position": [
+        0.0,
+        3.55,
+        7.15
+      ],
+      "target": [
+        0.0,
+        0.55,
+        -0.4
+      ],
+      "fov": 42.0
+    }
+  ],
+  "heightfield": null,
+  "ibl": 0.42,
+  "exposure": 1.12,
+  "tonemap": null,
+  "timers": [],
+  "events": [],
+  "wind": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "sky": [
+    14,
+    12,
+    24,
+    255
+  ],
+  "ground": false
+}

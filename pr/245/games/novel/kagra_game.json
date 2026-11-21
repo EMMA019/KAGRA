@@ -1,0 +1,7 @@
+{
+  "title": "Novel",
+  "version": "0.1.0",
+  "slug": "novel",
+  "entry": "examples/novel_minimal.py",
+  "world": "kagra-shared/tests/fixtures/novel_world.json"
+}

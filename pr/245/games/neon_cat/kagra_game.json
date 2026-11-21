@@ -1,0 +1,7 @@
+{
+  "title": "Neon Cat",
+  "version": "0.1.0",
+  "slug": "neon_cat",
+  "entry": "examples/neon_cat_minimal.py",
+  "world": "kagra-shared/tests/fixtures/neon_cat_world.json"
+}

@@ -1,0 +1,201 @@
+{
+  "version": 1,
+  "genre": "box_hop",
+  "half": 22.0,
+  "floor_y": -12.0,
+  "gravity": 22.0,
+  "water_y": null,
+  "coins": 0,
+  "ground": false,
+  "sky": [142, 186, 224, 255],
+  "ibl": 0.42,
+  "exposure": 1.05,
+  "player": {
+    "id": "walker:player",
+    "type": "walker",
+    "name": "player",
+    "position": [-10.0, 1.75, 0.0],
+    "yaw": 1.5708,
+    "face": 1.5708,
+    "on_ground": true,
+    "model": "knight",
+    "gltf": "knight"
+  },
+  "props": [
+    {
+      "id": "prop:plat-start",
+      "type": "prop",
+      "name": "platform",
+      "position": [-10.0, 0.4, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [6.0, 0.8, 3.2],
+      "enabled": true,
+      "parent": null,
+      "color": [128, 122, 110],
+      "metallic": 0.02,
+      "roughness": 0.86
+    },
+    {
+      "id": "prop:plat-step",
+      "type": "prop",
+      "name": "platform",
+      "position": [-3.15, 0.75, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [4.5, 0.8, 3.0],
+      "enabled": true,
+      "parent": null,
+      "color": [146, 124, 96],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:plat-high",
+      "type": "prop",
+      "name": "platform",
+      "position": [2.95, 1.1, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [4.5, 0.8, 2.8],
+      "enabled": true,
+      "parent": null,
+      "color": [112, 128, 114],
+      "metallic": 0.02,
+      "roughness": 0.84
+    },
+    {
+      "id": "prop:plat-goal",
+      "type": "prop",
+      "name": "platform",
+      "position": [9.3, 1.05, 0.0],
+      "yaw": 0.0,
+      "model": "box",
+      "gltf": "crate.glb",
+      "scale": [5.0, 0.8, 3.2],
+      "enabled": true,
+      "parent": null,
+      "color": [98, 132, 116],
+      "metallic": 0.02,
+      "roughness": 0.82
+    },
+    {
+      "id": "prop:checkpoint",
+      "type": "prop",
+      "name": "checkpoint",
+      "position": [-3.15, 1.85, 0.0],
+      "yaw": 0.0,
+      "model": "well",
+      "gltf": "well",
+      "scale": [1.0, 1.4, 1.0],
+      "enabled": true,
+      "parent": null,
+      "color": [220, 186, 92]
+    },
+    {
+      "id": "prop:goal",
+      "type": "prop",
+      "name": "goal",
+      "position": [10.4, 1.45, 0.0],
+      "yaw": 0.4,
+      "model": "chest",
+      "gltf": "chest",
+      "scale": [0.7, 0.7, 0.7],
+      "enabled": true,
+      "parent": null,
+      "color": [186, 140, 64]
+    },
+    {
+      "id": "prop:rock-start",
+      "type": "prop",
+      "name": "rock",
+      "position": [-12.2, 0.8, -0.9],
+      "yaw": 0.4,
+      "model": "rock",
+      "gltf": "rock",
+      "scale": [0.42, 0.32, 0.42],
+      "enabled": true,
+      "parent": null,
+      "color": [140, 136, 128]
+    },
+    {
+      "id": "prop:tree-back",
+      "type": "prop",
+      "name": "tree",
+      "position": [-8.0, 0.0, -6.5],
+      "yaw": 0.2,
+      "model": "stylized_tree",
+      "gltf": "stylized_tree",
+      "scale": [0.5, 0.5, 0.5],
+      "enabled": true,
+      "parent": null,
+      "color": [70, 120, 64]
+    },
+    {
+      "id": "prop:pine-back",
+      "type": "prop",
+      "name": "pine",
+      "position": [4.5, 0.0, -7.0],
+      "yaw": -0.3,
+      "model": "stylized_pine",
+      "gltf": "stylized_pine",
+      "scale": [0.45, 0.45, 0.45],
+      "enabled": true,
+      "parent": null,
+      "color": [48, 96, 72]
+    }
+  ],
+  "walkers": [
+    {
+      "id": "walker:player",
+      "type": "walker",
+      "name": "player",
+      "position": [-10.0, 1.75, 0.0],
+      "yaw": 1.5708,
+      "face": 1.5708,
+      "on_ground": true,
+      "model": "knight",
+      "gltf": "knight"
+    }
+  ],
+  "lights": [
+    {
+      "id": "light:0",
+      "type": "light",
+      "name": "key",
+      "position": [0.0, 8.0, 14.0],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 1.35,
+      "radius": 32.0,
+      "color": [1.0, 0.96, 0.9],
+      "direction": null
+    },
+    {
+      "id": "light:1",
+      "type": "light",
+      "name": "fill",
+      "position": [-8.0, 5.0, 8.0],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 0.45,
+      "radius": 24.0,
+      "color": [0.72, 0.82, 1.0],
+      "direction": null
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [-1.0, 4.8, 20.0],
+      "target": [-1.0, 1.8, 0.0],
+      "fov": 52.0
+    }
+  ],
+  "heightfield": null
+}

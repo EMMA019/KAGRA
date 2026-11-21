@@ -1,0 +1,11 @@
+"Ult Ready" — the city_action ult-ready chime.
+
+An original sound effect composed and synthesized for KAGRA: a
+two-bell ping — an E6 bell (inharmonic partials with exponential
+decays) answered 70 ms later by a quieter B6 bell — struck once at
+the moment the ultimate's gauge tops out and its button lights.
+0.6 s. Fully synthesized from oscillators and a breath of filtered
+noise; no third-party samples, recordings or material.
+
+License: CC0 1.0 Universal (public domain dedication).
+Author: KAGRA project, 2026-11-16.

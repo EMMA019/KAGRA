@@ -1,0 +1,7 @@
+{
+  "title": "City Action",
+  "version": "0.1.0",
+  "slug": "city_action",
+  "entry": "examples/city_action_minimal.py",
+  "world": "kagra-shared/tests/fixtures/city_action_world.json"
+}

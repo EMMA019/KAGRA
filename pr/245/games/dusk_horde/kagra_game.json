@@ -1,0 +1,7 @@
+{
+  "title": "Dusk Horde",
+  "version": "0.1.0",
+  "slug": "dusk_horde",
+  "entry": "examples/dusk_horde_minimal.py",
+  "world": "kagra-shared/tests/fixtures/dusk_horde_world.json"
+}

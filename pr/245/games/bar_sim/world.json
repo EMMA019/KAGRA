@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "half": 8.0,
+  "floor_y": 0.0,
+  "sky": [18, 14, 16, 255],
+  "ground": false,
+  "gravity": 9.8,
+  "coins": 0,
+  "player": null,
+  "props": [
+    {
+      "id": "prop:floor",
+      "type": "prop",
+      "name": "floor",
+      "position": [0.0, -0.48, 0.0],
+      "model": "box",
+      "scale": [16.0, 1.0, 12.0],
+      "enabled": true,
+      "roughness": 0.95,
+      "texture": "assets/bar/tex/wood.png",
+      "uv_scale": [8, 6]
+    },
+    {
+      "id": "prop:backwall",
+      "type": "prop",
+      "name": "wall",
+      "position": [0.0, 2.0, -4.5],
+      "model": "box",
+      "scale": [16.0, 4.4, 0.4],
+      "enabled": true,
+      "roughness": 0.9,
+      "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:sidewall_l",
+      "type": "prop",
+      "name": "wall",
+      "position": [-8.0, 2.0, 0.0],
+      "model": "box",
+      "scale": [0.4, 4.4, 12.0],
+      "enabled": true,
+      "roughness": 0.9,
+      "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:sidewall_r",
+      "type": "prop",
+      "name": "wall",
+      "position": [8.0, 2.0, 0.0],
+      "model": "box",
+      "scale": [0.4, 4.4, 12.0],
+      "enabled": true,
+      "roughness": 0.9,
+      "texture": "assets/bar/tex/wall.png"
+    },
+    {
+      "id": "prop:ceiling",
+      "type": "prop",
+      "name": "ceiling",
+      "position": [0.0, 4.3, 0.0],
+      "model": "box",
+      "scale": [16.0, 0.3, 12.0],
+      "enabled": true,
+      "color": [28, 20, 24],
+      "roughness": 1.0
+    },
+    {
+      "id": "prop:counter",
+      "type": "prop",
+      "name": "counter",
+      "position": [0.0, 0.45, 2.6],
+      "model": "box",
+      "scale": [6.0, 0.9, 0.8],
+      "enabled": true,
+      "roughness": 0.55,
+      "texture": "assets/bar/tex/wood.png",
+      "interact": { "kind": "use", "prompt": "counter", "on_use": "counter", "reach": 3.0 }
+    },
+    {
+      "id": "prop:shelf",
+      "type": "prop",
+      "name": "shelf",
+      "position": [0.0, 1.8, -4.2],
+      "model": "box",
+      "scale": [5.5, 0.14, 0.5],
+      "enabled": true,
+      "color": [90, 60, 40],
+      "interact": { "kind": "examine", "prompt": "shelf", "on_use": "shelf", "reach": 4.0 }
+    },
+    {
+      "id": "prop:door",
+      "type": "prop",
+      "name": "door",
+      "position": [-6.2, 1.1, -1.0],
+      "model": "box",
+      "scale": [0.2, 2.2, 1.1],
+      "enabled": true,
+      "color": [70, 42, 32],
+      "interact": { "kind": "use", "prompt": "door", "on_use": "door", "reach": 2.5 }
+    },
+    {
+      "id": "prop:bottle0",
+      "type": "prop",
+      "name": "bottle",
+      "position": [-1.4, 2.15, -4.15],
+      "model": "sprite",
+      "scale": [0.28, 0.55, 1.0],
+      "enabled": true,
+      "texture": "assets/bar/tex/bottle_whiskey.png"
+    },
+    {
+      "id": "prop:bottle1",
+      "type": "prop",
+      "name": "bottle",
+      "position": [0.0, 2.15, -4.15],
+      "model": "sprite",
+      "scale": [0.28, 0.55, 1.0],
+      "enabled": true,
+      "texture": "assets/bar/tex/bottle_gin.png"
+    },
+    {
+      "id": "prop:bottle2",
+      "type": "prop",
+      "name": "bottle",
+      "position": [1.4, 2.15, -4.15],
+      "model": "sprite",
+      "scale": [0.28, 0.55, 1.0],
+      "enabled": true,
+      "texture": "assets/bar/tex/bottle_wine.png"
+    },
+    {
+      "id": "prop:stool",
+      "type": "prop",
+      "name": "stool",
+      "position": [1.6, 0.16, 1.7],
+      "model": "box",
+      "scale": [0.5, 0.32, 0.5],
+      "enabled": true,
+      "color": [70, 48, 36]
+    }
+  ],
+  "walkers": [],
+  "lights": [
+    {
+      "id": "light:warm",
+      "type": "light",
+      "name": "warm",
+      "position": [0.0, 2.8, 1.2],
+      "kind": "point",
+      "slot": 0,
+      "intensity": 3.4,
+      "radius": 7.0,
+      "color": [1.0, 0.78, 0.55]
+    },
+    {
+      "id": "light:shelf",
+      "type": "light",
+      "name": "shelf",
+      "position": [0.0, 2.4, -3.2],
+      "kind": "point",
+      "slot": 1,
+      "intensity": 1.4,
+      "radius": 5.0,
+      "color": [0.7, 0.65, 1.0]
+    },
+    {
+      "id": "light:door",
+      "type": "light",
+      "name": "door",
+      "position": [-5.0, 2.0, 0.0],
+      "kind": "point",
+      "slot": 2,
+      "intensity": 0.8,
+      "radius": 4.0,
+      "color": [1.0, 0.7, 0.4]
+    },
+    {
+      "id": "light:fill",
+      "type": "light",
+      "name": "fill",
+      "position": [3.0, 2.2, 2.0],
+      "kind": "point",
+      "slot": 3,
+      "intensity": 0.6,
+      "radius": 5.0,
+      "color": [0.9, 0.85, 0.7]
+    }
+  ],
+  "cameras": [
+    {
+      "id": "camera:main",
+      "type": "camera",
+      "name": "main",
+      "position": [0.0, 2.2, 7.2],
+      "target": [0.0, 1.2, -1.0],
+      "fov": 44.0
+    }
+  ],
+  "heightfield": null,
+  "ibl": 0.28,
+  "exposure": 1.05,
+  "tonemap": true
+}

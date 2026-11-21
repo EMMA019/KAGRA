@@ -1,0 +1,7 @@
+{
+  "title": "Moonlit Tactics",
+  "version": "0.1.0",
+  "slug": "moonlit_tactics",
+  "entry": "examples/moonlit_tactics_minimal.py",
+  "world": "kagra-shared/tests/fixtures/moonlit_tactics_world.json"
+}

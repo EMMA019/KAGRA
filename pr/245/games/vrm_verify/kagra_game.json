@@ -1,0 +1,7 @@
+{
+  "title": "VRM Verify (dev only)",
+  "version": "0.1.0",
+  "slug": "vrm_verify",
+  "entry": "examples/vrm_verify_minimal.py",
+  "world": "kagra-shared/tests/fixtures/vrm_verify_world.json"
+}

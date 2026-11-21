@@ -1,0 +1,7 @@
+{
+  "title": "Stealth",
+  "version": "0.1.0",
+  "slug": "stealth",
+  "entry": "examples/stealth_minimal.py",
+  "world": "kagra-shared/tests/fixtures/stealth_world.json"
+}
