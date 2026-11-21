@@ -18533,7 +18533,9 @@ mod tests {
             assert!((inner - half).abs() < 0.01, "{id} inner face at {inner}");
         }
         // Fence sections shoulder to shoulder on all four sides
-        // (2.47 m sections at a 2.47 m pitch: 24 a side).
+        // (2.47 m sections at a 2.47 m pitch: 24 a side). The
+        // sections wear the fence bake: without it (a clean
+        // checkout) the line is the curb alone.
         let segs = g
             .doc
             .props
@@ -18541,7 +18543,11 @@ mod tests {
             .filter(|p| p.id.starts_with("prop:perim-"))
             .count()
             - 4;
-        assert_eq!(segs, 96, "the fence line is continuous ({segs} sections)");
+        if glb_ready(FENCE_GLB) {
+            assert_eq!(segs, 96, "the fence line is continuous ({segs} sections)");
+        } else {
+            assert_eq!(segs, 0, "no fence bake: the curb alone ({segs} sections)");
+        }
         // The hero ring: 14 teal points centred on the hero.
         let ring = g
             .doc
@@ -20796,8 +20802,12 @@ mod tests {
 
     #[test]
     fn the_doc_wears_the_synty_dressing() {
-        // With the bakes on disk (the dev/CI tree), the built document
-        // carries the full dressing; counts are the placement tables'.
+        // The built document carries the full dressing when the
+        // bakes are on disk; in a clean checkout (CI) every
+        // model-gated piece falls back deterministically — no
+        // shells, no neon, no lamps, the perimeter curb alone —
+        // and the counts below pin both forms against the
+        // placement tables.
         let g = CityAction::new(CityActionSpec::default());
         let count = |prefix: &str| {
             g.doc
@@ -20806,20 +20816,35 @@ mod tests {
                 .filter(|p| p.id.starts_with(prefix))
                 .count()
         };
+        let city_ready = BLOCK_MODELS.iter().all(|g| glb_ready(g));
         assert_eq!(count("prop:escape-"), 0, "fire escapes retired");
         assert_eq!(count("prop:stoop-"), 0, "stoops retired");
-        assert_eq!(count("prop:sign-"), 6, "board, disc and strip per shop");
-        assert_eq!(count("prop:lamp-"), 9);
         assert_eq!(
-            count("prop:lampglow-"),
-            11,
-            "one halo per lantern: seven singles, two doubles"
+            count("prop:sign-"),
+            if city_ready { 6 } else { 0 },
+            "board, disc and strip per shop, hung on the shells"
         );
-        assert_eq!(count("prop:fence-"), 4, "the street barricade spots");
-        assert_eq!(count("prop:perim-"), 100, "96 fence sections + 4 curbs");
+        // Seven singles wear LAMP_GLB, the two doubles LAMP2_GLB;
+        // one halo per lantern head (the doubles wear two).
+        let lamp_n =
+            (if glb_ready(LAMP_GLB) { 7 } else { 0 }) + (if glb_ready(LAMP2_GLB) { 2 } else { 0 });
+        let glow_n =
+            (if glb_ready(LAMP_GLB) { 7 } else { 0 }) + (if glb_ready(LAMP2_GLB) { 4 } else { 0 });
+        assert_eq!(count("prop:lamp-"), lamp_n, "one lamp per ready spot");
+        assert_eq!(count("prop:lampglow-"), glow_n, "one halo per lantern head");
+        assert_eq!(
+            count("prop:fence-"),
+            if glb_ready(FENCE_GLB) { 4 } else { 0 },
+            "the street barricade spots"
+        );
+        assert_eq!(
+            count("prop:perim-"),
+            if glb_ready(FENCE_GLB) { 100 } else { 4 },
+            "96 fence sections + 4 curbs, or the curbs alone"
+        );
         assert_eq!(
             count("prop:dressx-"),
-            1,
+            if glb_ready(DRESSING_GLB) { 1 } else { 0 },
             "one merged dressing bake: two markets, two plazas inside"
         );
         // The ground (ground re-skin round): with the tile model
@@ -20850,7 +20875,15 @@ mod tests {
             .filter(|p| p.id.starts_with("prop:block-"))
             .filter_map(|p| p.gltf.as_deref())
             .collect();
-        assert_eq!(shells.len(), 7, "seven distinct Synty presets");
+        if city_ready {
+            assert_eq!(shells.len(), 7, "seven distinct Synty presets");
+        } else {
+            assert_eq!(
+                shells.len(),
+                0,
+                "no shells mounted: the blocks are flat boxes"
+            );
+        }
     }
 
     #[test]
@@ -20890,7 +20923,16 @@ mod tests {
             .iter()
             .find(|p| p.id == "prop:block-0")
             .unwrap();
-        assert_eq!(b0.gltf.as_deref(), Some(BLOCK_MODELS[0]));
+        let city_ready = BLOCK_MODELS.iter().all(|g| glb_ready(g));
+        if city_ready {
+            assert_eq!(b0.gltf.as_deref(), Some(BLOCK_MODELS[0]));
+        } else {
+            assert_eq!(
+                b0.gltf.as_deref(),
+                None,
+                "no shells mounted: block 0 is a flat box"
+            );
+        }
         // The switch the page merges from `?look=bg`: the grade
         // arrives on stage 1's exact tuning, and the save silences
         // so an experiment session never writes the campaign's.
@@ -20902,16 +20944,25 @@ mod tests {
         assert_eq!(bg.doc.exposure, Some(0.85));
         assert!(crate::kit_host::KitHost::save_json(&bg).is_none());
         // The stage re-skin retired the Harlem vignette: block 0
-        // wears its Synty preset in BOTH looks, and the vignette's
-        // lamp halos are gone — bg mode is grade and atmosphere
-        // over the shared stage.
+        // wears its Synty preset in BOTH looks (or its flat box
+        // in both, without the bakes), and the vignette's lamp
+        // halos are gone — bg mode is grade and atmosphere over
+        // the shared stage.
         let b0 = bg
             .doc
             .props
             .iter()
             .find(|p| p.id == "prop:block-0")
             .unwrap();
-        assert_eq!(b0.gltf.as_deref(), Some(BLOCK_MODELS[0]));
+        if city_ready {
+            assert_eq!(b0.gltf.as_deref(), Some(BLOCK_MODELS[0]));
+        } else {
+            assert_eq!(
+                b0.gltf.as_deref(),
+                None,
+                "no shells mounted: block 0 is a flat box"
+            );
+        }
         let count = |prefix: &str| {
             bg.doc
                 .props
@@ -20937,8 +20988,13 @@ mod tests {
                 .iter()
                 .filter(|w| w.id.starts_with("walker:comp"))
                 .count(),
-            1,
-            "the shipped game walks the one equipped companion"
+            if glb_ready(COMPANION_DEFS[COMP_MEGAN].glb) {
+                1
+            } else {
+                0
+            },
+            "the shipped game walks the one equipped companion \
+             (when her bake is mounted)"
         );
         assert!(
             !plain
@@ -20977,16 +21033,29 @@ mod tests {
         assert_eq!(g.showcase_mates[0].idx, COMP_NIGHTSHADE);
         assert_eq!(g.showcase_mates[1].idx, COMP_LEONARD);
         // All three stand in the title document already, each on
-        // her own model, each wearing her ring.
+        // her own model, each wearing her ring. (Without a bake
+        // mounted — a clean checkout — she does not stand at all;
+        // her ring below is not model-gated and still declares.)
         for def in COMPANION_DEFS {
-            assert!(
-                g.doc
-                    .walkers
-                    .iter()
-                    .any(|w| w.gltf.as_deref() == Some(def.glb)),
-                "{} stands in the doc",
-                def.id
-            );
+            if glb_ready(def.glb) {
+                assert!(
+                    g.doc
+                        .walkers
+                        .iter()
+                        .any(|w| w.gltf.as_deref() == Some(def.glb)),
+                    "{} stands in the doc",
+                    def.id
+                );
+            } else {
+                assert!(
+                    g.doc
+                        .walkers
+                        .iter()
+                        .all(|w| w.gltf.as_deref() != Some(def.glb)),
+                    "{} waits for her bake",
+                    def.id
+                );
+            }
         }
         for ring in [
             "fx:companion-ring",
@@ -21104,14 +21173,21 @@ mod tests {
         };
         assert_eq!(count(&plain, "prop:bg-decal-"), 0);
         assert_eq!(count(&plain, "prop:bg-clutter-"), 0);
-        let glow = plain
-            .doc
-            .props
-            .iter()
-            .find(|p| p.id == "prop:lampglow-0")
-            .unwrap();
-        assert_eq!(glow.emissive, Some(2.1));
-        assert_eq!(glow.scale, [0.30, 0.30, 0.30]);
+        if glb_ready(LAMP_GLB) {
+            let glow = plain
+                .doc
+                .props
+                .iter()
+                .find(|p| p.id == "prop:lampglow-0")
+                .unwrap();
+            assert_eq!(glow.emissive, Some(2.1));
+            assert_eq!(glow.scale, [0.30, 0.30, 0.30]);
+        } else {
+            assert!(
+                plain.doc.props.iter().all(|p| p.id != "prop:lampglow-0"),
+                "lamp 0's halo waits for its bake"
+            );
+        }
 
         // BG mode: the atmosphere pool joins the doc after the
         // magic clouds, primed at reset — mist is on the streets
@@ -21162,6 +21238,15 @@ mod tests {
     #[test]
     fn bg_lamp_halos_flicker_on_the_atmosphere_clock() {
         let mut bg = CityAction::from_json("{\"look\": \"bg\"}").unwrap();
+        if !glb_ready(LAMP_GLB) {
+            // No lamp bake mounted (a clean checkout): lamp 0 has
+            // no halo to flicker — pin the fallback form instead.
+            assert!(
+                bg.doc.props.iter().all(|p| p.id != "prop:lampglow-0"),
+                "lamp 0's halo waits for its bake"
+            );
+            return;
+        }
         let glow_e = |g: &CityAction| {
             g.doc
                 .props
@@ -23438,13 +23523,13 @@ mod tests {
         step_n(&mut g, 1);
         assert_eq!(g.action, HeroAction::Ult);
         g.build_doc();
-        let sword = g
-            .doc
-            .props
-            .iter()
-            .find(|p| p.id == "prop:ult-sword")
-            .expect("the ult sword prop rides the doc");
         if glb_ready("assets/models/city/wep_ember.glb") {
+            let sword = g
+                .doc
+                .props
+                .iter()
+                .find(|p| p.id == "prop:ult-sword")
+                .expect("the ult sword prop rides the doc");
             assert_eq!(
                 sword.gltf.as_deref(),
                 Some("assets/models/city/wep_ember.glb")
@@ -23458,8 +23543,32 @@ mod tests {
         } else if glb_ready(ULT_SWORD_GLB) {
             // The fallback chain, for a tree without the Synty
             // files mounted: the item sword at the bare ★ scale.
+            let sword = g
+                .doc
+                .props
+                .iter()
+                .find(|p| p.id == "prop:ult-sword")
+                .expect("the ult sword prop rides the doc");
             assert_eq!(sword.gltf.as_deref(), Some(ULT_SWORD_GLB));
             assert!((sword.scale[0] - ULT_SWORD_SCALE).abs() < 1e-6);
+        } else {
+            // No sword model mounted at all (a clean checkout):
+            // the cast sweeps three primitives in the same
+            // transform instead of a GLB prop.
+            assert!(
+                g.doc.props.iter().all(|p| p.id != "prop:ult-sword"),
+                "no model mounted, no GLB sword prop"
+            );
+            for part in [
+                "prop:ult-sword-blade",
+                "prop:ult-sword-guard",
+                "prop:ult-sword-grip",
+            ] {
+                assert!(
+                    g.doc.props.iter().any(|p| p.id == part),
+                    "{part} rides the doc"
+                );
+            }
         }
     }
 
@@ -24015,22 +24124,39 @@ mod tests {
             .iter()
             .find(|p| p.id == "prop:cutaway-6")
             .expect("the stump stands in for the tower");
-        assert_eq!(
-            stump.color,
-            Some([108, 107, 105]),
-            "the stump wears the stone mean, not BLOCK_COLORS"
-        );
+        let city_ready = BLOCK_MODELS.iter().all(|g| glb_ready(g));
+        if city_ready {
+            assert_eq!(
+                stump.color,
+                Some([108, 107, 105]),
+                "the stump wears the stone mean, not BLOCK_COLORS"
+            );
+        } else {
+            assert_eq!(
+                stump.color,
+                Some(BLOCK_COLORS[6]),
+                "no shells mounted: the stump keeps its flat colour"
+            );
+        }
         let cap = g
             .doc
             .props
             .iter()
             .find(|p| p.id == "prop:cutaway-cap-6")
             .expect("the stump keeps its cap");
-        assert_eq!(
-            cap.gltf.as_deref(),
-            Some(GROUND_GLB),
-            "the cap is the ground tile laid over the cut"
-        );
+        if city_ready && glb_ready(GROUND_GLB) {
+            assert_eq!(
+                cap.gltf.as_deref(),
+                Some(GROUND_GLB),
+                "the cap is the ground tile laid over the cut"
+            );
+        } else {
+            // The fallback cap: a flat box in the stump's tint,
+            // dimmed — the same formula the doc builder uses.
+            assert_eq!(cap.gltf.as_deref(), None, "the fallback cap wears no model");
+            let want = stump.color.unwrap().map(|c| (c as f32 * 0.55) as u32);
+            assert_eq!(cap.color, Some(want), "the cap dims the stump's tint");
+        }
     }
 
     #[test]
@@ -25207,12 +25333,21 @@ mod tests {
         let (ax, az) = g.companion.anchor(g.hero, g.face);
         let d = (ax - g.companion.x).hypot(az - g.companion.z);
         assert!(d <= 0.05 + 0.01, "resting at the anchor: {d:.2} m out");
-        // The walker rides the doc while she is equipped.
+        // The walker rides the doc while she is equipped — with
+        // her bake mounted. Without it (a clean checkout) she
+        // simply does not render: there is no fallback prop.
         g.build_doc();
-        assert!(
-            g.doc.walkers.iter().any(|w| w.id == "walker:companion"),
-            "her walker is in the doc"
-        );
+        if glb_ready(COMPANION_DEFS[COMP_MEGAN].glb) {
+            assert!(
+                g.doc.walkers.iter().any(|w| w.id == "walker:companion"),
+                "her walker is in the doc"
+            );
+        } else {
+            assert!(
+                g.doc.walkers.iter().all(|w| w.id != "walker:companion"),
+                "no bake mounted, no walker"
+            );
+        }
     }
 
     #[test]
