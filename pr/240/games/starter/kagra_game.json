@@ -1,7 +1,0 @@
-{
-  "title": "Starter",
-  "version": "0.1.0",
-  "slug": "starter",
-  "entry": "examples/starter_minimal.py",
-  "world": "kagra-shared/tests/fixtures/starter_world.json"
-}

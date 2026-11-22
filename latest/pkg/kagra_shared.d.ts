@@ -33,6 +33,13 @@ export class WasmSession {
     clearMount(): void;
     createSurface(width: number, height: number): void;
     /**
+     * Drop the renderer without touching the game state. The page
+     * calls this before re-attaching after a graphics context
+     * restore, so the dead renderer's GPU objects are gone before
+     * the new device starts handing out handles.
+     */
+    detachRenderer(): void;
+    /**
      * ゲーム状態 JSON（phase / time / score / objective）。
      */
     gameJson(): string;
@@ -56,6 +63,10 @@ export class WasmSession {
      * セーブ JSON を読み込んで状態を復元する。
      */
     loadJson(json: string): void;
+    /**
+     * Full mesh re-uploads so far (freeze instrumentation).
+     */
+    meshUploads(): number;
     /**
      * Repo-relative file for [`crate::assets::resolve_asset`] (no filesystem on wasm).
      */
@@ -297,11 +308,13 @@ export interface InitOutput {
     readonly wasmsession_audioJson: (a: number) => [number, number];
     readonly wasmsession_clearMount: (a: number) => void;
     readonly wasmsession_createSurface: (a: number, b: number, c: number) => void;
+    readonly wasmsession_detachRenderer: (a: number) => void;
     readonly wasmsession_gameJson: (a: number) => [number, number];
     readonly wasmsession_hasRenderer: (a: number) => number;
     readonly wasmsession_kitSaveJson: (a: number) => [number, number];
     readonly wasmsession_loadGame: (a: number, b: number, c: number) => [number, number];
     readonly wasmsession_loadJson: (a: number, b: number, c: number) => [number, number];
+    readonly wasmsession_meshUploads: (a: number) => number;
     readonly wasmsession_mountFile: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly wasmsession_new: () => number;
     readonly wasmsession_pause: (a: number) => void;
@@ -354,10 +367,11 @@ export interface InitOutput {
     readonly wasmsession_loadGameJson: (a: number, b: number, c: number) => [number, number];
     readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wasm_bindgen_e6f8932c242b8643___JsValue__core_d941ad8722425d2e___result__Result_____wasm_bindgen_e6f8932c242b8643___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wasm_bindgen_e6f8932c242b8643___sys__JsOption_wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d941ad8722425d2e___result__Result_____wasm_bindgen_e6f8932c242b8643___JsError___true_: (a: number, b: number, c: any) => [number, number];
-    readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wasm_bindgen_e6f8932c242b8643___sys__JsOption_wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d941ad8722425d2e___result__Result_____wasm_bindgen_e6f8932c242b8643___JsError___true__3: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wasm_bindgen_e6f8932c242b8643___sys__JsOption_wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d941ad8722425d2e___result__Result_____wasm_bindgen_e6f8932c242b8643___JsError___true__4: (a: number, b: number, c: any) => [number, number];
+    readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wasm_bindgen_e6f8932c242b8643___sys__JsOption_wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuError__GpuError___core_d941ad8722425d2e___result__Result_____wasm_bindgen_e6f8932c242b8643___JsError___true__5: (a: number, b: number, c: any) => [number, number];
     readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___js_sys_ebd15a16527a1140___Function_fn_wasm_bindgen_e6f8932c242b8643___JsValue_____wasm_bindgen_e6f8932c242b8643___sys__Undefined___js_sys_ebd15a16527a1140___Function_fn_wasm_bindgen_e6f8932c242b8643___JsValue_____wasm_bindgen_e6f8932c242b8643___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
     readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuDeviceLostInfo__GpuDeviceLostInfo______true_: (a: number, b: number, c: any) => void;
+    readonly wasm_bindgen_e6f8932c242b8643___convert__closures_____invoke___wgpu_57727a0b86786d1d___backend__webgpu__webgpu_sys__gen_GpuDeviceLostInfo__GpuDeviceLostInfo______true__3: (a: number, b: number, c: any) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

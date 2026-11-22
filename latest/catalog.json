@@ -56,6 +56,17 @@
       "icon": "games/card/icon.png"
     },
     {
+      "slug": "city_action",
+      "title": "City Action",
+      "version": "0.1.0",
+      "browser": true,
+      "genre": "city_action",
+      "entry": "examples/city_action_minimal.py",
+      "world": "kagra-shared/tests/fixtures/city_action_world.json",
+      "href": "play.html?game=city_action",
+      "icon": "games/city_action/icon.png"
+    },
+    {
       "slug": "crate_tower",
       "title": "Crate Tower",
       "version": "0.1.0",

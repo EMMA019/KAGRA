@@ -1,7 +1,0 @@
-{
-  "title": "Push Puzzle",
-  "version": "0.1.0",
-  "slug": "puzzle",
-  "entry": "examples/puzzle_minimal.py",
-  "world": "kagra-shared/tests/fixtures/puzzle_world.json"
-}

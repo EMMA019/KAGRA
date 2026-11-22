@@ -1,0 +1,15 @@
+"Lenox After Hours" — a city_action stage BGM (loop).
+
+An original loop composed and synthesized for KAGRA: a soul-jazz /
+midnight-blues companion to "Harlem Night" — a 12-bar F-minor blues
+chorus at 100 BPM on a lightly swung eighth grid, with a walking
+bass, soft ride cymbal, feathered kick, brushy snare, long
+electric-piano chords and a sparse vibraphone motif answering in the
+phrase gaps. Fully synthesized from oscillators and filtered noise;
+no third-party samples, recordings or material.
+
+License: CC0 1.0 Universal (public domain dedication).
+Author: KAGRA project, 2026-11-15.
+Loop: the 12-bar form (28.8 s) loops on its own turnaround; the
+render keeps the steady-state second pass and closes the seam with
+an 80 ms crossfade.

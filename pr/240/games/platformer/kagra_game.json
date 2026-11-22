@@ -1,7 +1,0 @@
-{
-  "title": "Box Hop",
-  "version": "0.1.0",
-  "slug": "platformer",
-  "entry": "examples/platformer_minimal.py",
-  "world": "kagra-shared/tests/fixtures/platformer_world.json"
-}

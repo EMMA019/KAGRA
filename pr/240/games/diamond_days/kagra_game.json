@@ -1,7 +1,0 @@
-{
-  "title": "Diamond Days",
-  "version": "0.1.0",
-  "slug": "diamond_days",
-  "entry": "examples/diamond_days_minimal.py",
-  "world": "kagra-shared/tests/fixtures/diamond_days_world.json"
-}

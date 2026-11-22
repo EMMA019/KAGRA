@@ -1,0 +1,592 @@
+{
+  "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/city_action/harlem_night.mp3",
+        "volume": 0.6
+      },
+      "bgm_alt": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/city_action/lenox_after_hours.mp3",
+        "volume": 0.6
+      },
+      "bgm_boss": {
+        "fade_secs": 0.5,
+        "file": "assets/audio/city_action/boss_stomp.mp3",
+        "volume": 0.65
+      },
+      "bgm_volume": 0.5,
+      "enabled": true,
+      "master": 0.8,
+      "sfx": {
+        "ambience": {
+          "file": "assets/audio/city_action/night_wind.mp3",
+          "rate": 1.0,
+          "volume": 0.42
+        },
+        "blast1": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.9,
+          "volume": 0.42
+        },
+        "blast2": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.62,
+          "volume": 0.6
+        },
+        "cast0": {
+          "file": "assets/audio/oga-retro-synth-sfx/shot_01.wav",
+          "rate": 1.25,
+          "volume": 0.38
+        },
+        "cast1": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 0.8,
+          "volume": 0.5
+        },
+        "cast2": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 0.62,
+          "volume": 0.62
+        },
+        "charge1": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.05,
+          "volume": 0.22
+        },
+        "charge2": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.0,
+          "volume": 0.28
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.7
+        },
+        "hit": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.4,
+          "volume": 0.3
+        },
+        "hit1": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.5,
+          "volume": 0.28
+        },
+        "hit2": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.3,
+          "volume": 0.34
+        },
+        "hit3": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.05,
+          "volume": 0.48
+        },
+        "hit4": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.2,
+          "volume": 0.36
+        },
+        "hit5": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 1.1,
+          "volume": 0.44
+        },
+        "hit6": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.95,
+          "volume": 0.5
+        },
+        "hit7": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.8,
+          "volume": 0.6
+        },
+        "pickup_heal": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 0.75,
+          "volume": 0.32
+        },
+        "pickup_rune": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.15,
+          "volume": 0.42
+        },
+        "roar": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 0.45,
+          "volume": 0.7
+        },
+        "stomp": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_explosion_02.wav",
+          "rate": 0.55,
+          "volume": 0.7
+        },
+        "swing1": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.3,
+          "volume": 0.32
+        },
+        "swing2": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.55,
+          "volume": 0.36
+        },
+        "swing3": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.45,
+          "volume": 0.46
+        },
+        "swing4": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.75,
+          "volume": 0.34
+        },
+        "swing5": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.9,
+          "volume": 0.36
+        },
+        "swing6": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.65,
+          "volume": 0.48
+        },
+        "swing7": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.2,
+          "volume": 0.55
+        },
+        "ult_ready": {
+          "file": "assets/audio/city_action/ult_ready.mp3",
+          "rate": 1.0,
+          "volume": 0.55
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "half": 30.0,
+    "id": "city_action",
+    "meta": {
+      "catalog": [
+        {
+          "clip_cast": "cast_1h",
+          "desc": "Heals 9 HP in combat every 10s",
+          "id": "comp.megan",
+          "kind": "companion",
+          "model": "assets/models/comp_megan.glb",
+          "name": "MEGAN",
+          "price": 0,
+          "role": "HEALER",
+          "stars": [],
+          "weapon": null
+        },
+        {
+          "clip_cast": "cast_2h",
+          "desc": "Aura: +8% speed, +15% ult gain nearby",
+          "id": "comp.leonard",
+          "kind": "companion",
+          "model": "assets/models/comp_leonard.glb",
+          "name": "LEONARD",
+          "price": 650,
+          "role": "BUFFER",
+          "stars": [],
+          "weapon": null
+        },
+        {
+          "clip_cast": "cast_1h",
+          "desc": "Casts your element at the nearest foe",
+          "id": "comp.nightshade",
+          "kind": "companion",
+          "model": "assets/models/comp_nightshade.glb",
+          "name": "NIGHTSHADE",
+          "price": 1000,
+          "role": "CASTER",
+          "stars": [],
+          "weapon": null
+        },
+        {
+          "clip_cast": null,
+          "desc": "The all-round sword",
+          "id": "wep.standard",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_standard.glb",
+          "name": "STANDARD",
+          "price": 0,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 0
+        },
+        {
+          "clip_cast": null,
+          "desc": "A quarter faster, lighter cuts",
+          "id": "wep.swift",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_swift.glb",
+          "name": "SWIFT",
+          "price": 400,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 1
+        },
+        {
+          "clip_cast": null,
+          "desc": "Slow, wide and heavy-hitting",
+          "id": "wep.heavy",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_heavy.glb",
+          "name": "HEAVY",
+          "price": 650,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 2
+        },
+        {
+          "clip_cast": null,
+          "desc": "Every cut leaves a burn",
+          "id": "wep.ember",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_ember.glb",
+          "name": "EMBER",
+          "price": 500,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 3
+        },
+        {
+          "clip_cast": null,
+          "desc": "Every cut chills and slows",
+          "id": "wep.frost",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_frost.glb",
+          "name": "FROST",
+          "price": 500,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 4
+        },
+        {
+          "clip_cast": null,
+          "desc": "Every cut arcs to a neighbour",
+          "id": "wep.volt",
+          "kind": "weapon",
+          "model": "assets/models/city/wep_volt.glb",
+          "name": "VOLT",
+          "price": 650,
+          "role": "",
+          "stars": [
+            {
+              "dmg": 0.0,
+              "emissive": 0.0,
+              "price": 0,
+              "sword_scale": 2.0,
+              "tier": 1,
+              "tint": [
+                255,
+                255,
+                255
+              ]
+            },
+            {
+              "dmg": 0.04,
+              "emissive": 0.35,
+              "price": 600,
+              "sword_scale": 2.2,
+              "tier": 2,
+              "tint": [
+                255,
+                214,
+                130
+              ]
+            },
+            {
+              "dmg": 0.08,
+              "emissive": 0.6,
+              "price": 1200,
+              "sword_scale": 2.45,
+              "tier": 3,
+              "tint": [
+                255,
+                170,
+                90
+              ]
+            }
+          ],
+          "weapon": 5
+        }
+      ],
+      "currency": {
+        "id": "coins",
+        "name": "COINS"
+      },
+      "earn": {
+        "cap": 300,
+        "clear": 40,
+        "per_boss": 12,
+        "per_kill": 0.35,
+        "per_score": 0.05
+      },
+      "loops": {
+        "boss_hp_per": 0.35,
+        "coin_per": 0.5,
+        "count_cap": 8,
+        "count_per": 2,
+        "dmg_cap": 4,
+        "dmg_per": 1,
+        "hp_per": 0.3,
+        "speed_cap": 1.15,
+        "speed_per": 0.03
+      },
+      "upgrades": [
+        {
+          "cost_base": 150,
+          "cost_growth": 1.6,
+          "id": "atk",
+          "max_level": 10,
+          "per_level": 0.03,
+          "stat": "damage"
+        },
+        {
+          "cost_base": 120,
+          "cost_growth": 1.6,
+          "id": "hp",
+          "max_level": 10,
+          "per_level": 10.0,
+          "stat": "max_hp"
+        },
+        {
+          "cost_base": 200,
+          "cost_growth": 1.7,
+          "id": "spd",
+          "max_level": 5,
+          "per_level": 0.015,
+          "stat": "speed"
+        },
+        {
+          "cost_base": 200,
+          "cost_growth": 1.7,
+          "id": "gauge",
+          "max_level": 5,
+          "per_level": 0.04,
+          "stat": "gauge"
+        }
+      ]
+    },
+    "radius": 0.38,
+    "secs": 600.0,
+    "seed": 11,
+    "speed": 5.4,
+    "stick_dead": 0.12,
+    "stick_px": 70.0,
+    "title": "City Action",
+    "zombie_radius": 0.42,
+    "zombie_speed": 1.9
+  },
+  "genre": "city_action",
+  "quality_tiers": {
+    "tiers": {
+      "high": {
+        "shadow_cascades": 1,
+        "shadow_softness": 1.0
+      },
+      "max": {
+        "atmo": 1.0,
+        "scale": 2.0,
+        "shadow_cascades": 1,
+        "shadow_pcss": false,
+        "shadow_softness": 1.0,
+        "ssao": 0.0,
+        "taa": false
+      }
+    }
+  },
+  "version": 1
+}

@@ -31,6 +31,56 @@
       "v": "82d078f0df"
     },
     {
+      "path": "assets/audio/city_action/BOSS_STOMP.txt",
+      "url": "assets/audio/city_action/BOSS_STOMP.txt",
+      "v": "a4c5c70c91"
+    },
+    {
+      "path": "assets/audio/city_action/CREDITS.md",
+      "url": "assets/audio/city_action/CREDITS.md",
+      "v": "5ae8f6201d"
+    },
+    {
+      "path": "assets/audio/city_action/HARLEM_NIGHT.txt",
+      "url": "assets/audio/city_action/HARLEM_NIGHT.txt",
+      "v": "e91010b1e4"
+    },
+    {
+      "path": "assets/audio/city_action/LENOX_AFTER_HOURS.txt",
+      "url": "assets/audio/city_action/LENOX_AFTER_HOURS.txt",
+      "v": "41128d2e3b"
+    },
+    {
+      "path": "assets/audio/city_action/ULT_READY.txt",
+      "url": "assets/audio/city_action/ULT_READY.txt",
+      "v": "1a1ce8880a"
+    },
+    {
+      "path": "assets/audio/city_action/boss_stomp.mp3",
+      "url": "assets/audio/city_action/boss_stomp.mp3",
+      "v": "0542d7beb2"
+    },
+    {
+      "path": "assets/audio/city_action/harlem_night.mp3",
+      "url": "assets/audio/city_action/harlem_night.mp3",
+      "v": "8cbef401a6"
+    },
+    {
+      "path": "assets/audio/city_action/lenox_after_hours.mp3",
+      "url": "assets/audio/city_action/lenox_after_hours.mp3",
+      "v": "72ffa646ba"
+    },
+    {
+      "path": "assets/audio/city_action/night_wind.mp3",
+      "url": "assets/audio/city_action/night_wind.mp3",
+      "v": "e262590d96"
+    },
+    {
+      "path": "assets/audio/city_action/ult_ready.mp3",
+      "url": "assets/audio/city_action/ult_ready.mp3",
+      "v": "b7958360ef"
+    },
+    {
       "path": "assets/audio/fire.wav",
       "url": "assets/audio/fire.wav",
       "v": "e0c24e16c8"
@@ -311,5 +361,5 @@
       "v": "e33afdb620"
     }
   ],
-  "build": "cb83d7ad672b"
+  "build": "7b18f8d579a5"
 }
