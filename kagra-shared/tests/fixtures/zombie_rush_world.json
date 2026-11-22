@@ -1,0 +1,326 @@
+{
+  "game": {
+    "audio": {
+      "bgm": {
+        "fade_secs": 0.4,
+        "file": "assets/audio/oga-flowerbed-fields/flowerbed_fields.mp3",
+        "volume": 0.55
+      },
+      "bgm_volume": 0.45,
+      "enabled": true,
+      "master": 0.85,
+      "sfx": {
+        "bad": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_01.wav",
+          "rate": 1.05,
+          "volume": 0.7
+        },
+        "gate": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_coin_01.wav",
+          "rate": 1.15,
+          "volume": 0.55
+        },
+        "go": {
+          "file": "assets/audio/kenney-interface-sounds/confirmation_001.wav",
+          "rate": 1.0,
+          "volume": 0.65
+        },
+        "hit": {
+          "file": "assets/audio/kenney-impact-sounds/impactGeneric_light_001.wav",
+          "rate": 0.9,
+          "volume": 0.8
+        },
+        "lose": {
+          "file": "assets/audio/oga-retro-synth-sfx/retro_die_03.wav",
+          "rate": 1.0,
+          "volume": 0.75
+        },
+        "save": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_02.wav",
+          "rate": 1.1,
+          "volume": 0.7
+        },
+        "win": {
+          "file": "assets/audio/oga-retro-synth-sfx/power_up_04.wav",
+          "rate": 1.0,
+          "volume": 0.8
+        }
+      },
+      "sfx_volume": 1.0
+    },
+    "id": "zombie_rush",
+    "levels": [
+      {
+        "gates": [
+          {
+            "at": 0.18000000715255737,
+            "left": "x2",
+            "right": "+3"
+          },
+          {
+            "at": 0.46000000834465027,
+            "left": "+8",
+            "right": "-5"
+          },
+          {
+            "at": 0.699999988079071,
+            "left": "/2",
+            "right": "x2"
+          }
+        ],
+        "name": "Sunny Mile",
+        "name_ja": "サニーマイル",
+        "secs": 32.0,
+        "speed": 8.0,
+        "start": 8,
+        "waves": [
+          {
+            "at": 0.3199999928474426,
+            "boss": false,
+            "count": 6
+          },
+          {
+            "at": 0.5799999833106995,
+            "boss": false,
+            "count": 8
+          },
+          {
+            "at": 0.8399999737739563,
+            "boss": false,
+            "count": 12
+          },
+          {
+            "at": 0.949999988079071,
+            "boss": true,
+            "count": 6
+          }
+        ]
+      },
+      {
+        "gates": [
+          {
+            "at": 0.15000000596046448,
+            "left": "x2",
+            "right": "+6"
+          },
+          {
+            "at": 0.41999998688697815,
+            "left": "+18",
+            "right": "x2"
+          },
+          {
+            "at": 0.6800000071525574,
+            "left": "-8",
+            "right": "/2"
+          }
+        ],
+        "name": "Red Gate",
+        "name_ja": "レッドゲート",
+        "secs": 38.0,
+        "speed": 8.800000190734863,
+        "start": 10,
+        "waves": [
+          {
+            "at": 0.2800000011920929,
+            "boss": false,
+            "count": 6
+          },
+          {
+            "at": 0.550000011920929,
+            "boss": false,
+            "count": 10
+          },
+          {
+            "at": 0.800000011920929,
+            "boss": false,
+            "count": 8
+          },
+          {
+            "at": 0.9399999976158142,
+            "boss": true,
+            "count": 5
+          }
+        ]
+      },
+      {
+        "gates": [
+          {
+            "at": 0.14000000059604645,
+            "left": "x2",
+            "right": "-4"
+          },
+          {
+            "at": 0.4000000059604645,
+            "left": "+12",
+            "right": "x2"
+          },
+          {
+            "at": 0.6399999856948853,
+            "left": "/2",
+            "right": "x2"
+          },
+          {
+            "at": 0.8799999952316284,
+            "left": "+10",
+            "right": "-8"
+          }
+        ],
+        "name": "Split Road",
+        "name_ja": "スプリット",
+        "secs": 44.0,
+        "speed": 9.199999809265137,
+        "start": 8,
+        "waves": [
+          {
+            "at": 0.25999999046325684,
+            "boss": false,
+            "count": 5
+          },
+          {
+            "at": 0.5199999809265137,
+            "boss": false,
+            "count": 10
+          },
+          {
+            "at": 0.7599999904632568,
+            "boss": false,
+            "count": 14
+          },
+          {
+            "at": 0.9599999785423279,
+            "boss": true,
+            "count": 16
+          }
+        ]
+      },
+      {
+        "gates": [
+          {
+            "at": 0.11999999731779099,
+            "left": "x2",
+            "right": "+2"
+          },
+          {
+            "at": 0.3400000035762787,
+            "left": "x2",
+            "right": "/2"
+          },
+          {
+            "at": 0.5799999833106995,
+            "left": "+20",
+            "right": "x2"
+          },
+          {
+            "at": 0.800000011920929,
+            "left": "-10",
+            "right": "/2"
+          }
+        ],
+        "name": "Thin Crowd",
+        "name_ja": "うすいれつ",
+        "secs": 50.0,
+        "speed": 9.600000381469727,
+        "start": 6,
+        "waves": [
+          {
+            "at": 0.2199999988079071,
+            "boss": false,
+            "count": 4
+          },
+          {
+            "at": 0.46000000834465027,
+            "boss": false,
+            "count": 7
+          },
+          {
+            "at": 0.699999988079071,
+            "boss": false,
+            "count": 16
+          },
+          {
+            "at": 0.8999999761581421,
+            "boss": false,
+            "count": 3
+          },
+          {
+            "at": 0.9700000286102295,
+            "boss": true,
+            "count": 2
+          }
+        ]
+      },
+      {
+        "gates": [
+          {
+            "at": 0.10000000149011612,
+            "left": "x2",
+            "right": "+4"
+          },
+          {
+            "at": 0.2800000011920929,
+            "left": "x2",
+            "right": "-6"
+          },
+          {
+            "at": 0.47999998927116394,
+            "left": "+24",
+            "right": "x2"
+          },
+          {
+            "at": 0.6800000071525574,
+            "left": "x2",
+            "right": "/2"
+          },
+          {
+            "at": 0.8600000143051147,
+            "left": "/2",
+            "right": "-30"
+          }
+        ],
+        "name": "Last Horde",
+        "name_ja": "ラストホード",
+        "secs": 58.0,
+        "speed": 10.199999809265137,
+        "start": 10,
+        "waves": [
+          {
+            "at": 0.18000000715255737,
+            "boss": false,
+            "count": 8
+          },
+          {
+            "at": 0.3799999952316284,
+            "boss": false,
+            "count": 10
+          },
+          {
+            "at": 0.5799999833106995,
+            "boss": false,
+            "count": 16
+          },
+          {
+            "at": 0.7799999713897705,
+            "boss": false,
+            "count": 18
+          },
+          {
+            "at": 0.9300000071525574,
+            "boss": false,
+            "count": 8
+          },
+          {
+            "at": 0.9800000190734863,
+            "boss": true,
+            "count": 4
+          }
+        ]
+      }
+    ],
+    "road": 3.3499999046325684,
+    "steer": 11.0,
+    "title": "Horde Gates",
+    "title_ja": "ホードゲート"
+  },
+  "genre": "zombie_rush",
+  "version": 1
+}

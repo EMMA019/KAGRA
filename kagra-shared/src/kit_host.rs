@@ -133,6 +133,9 @@ pub const KITS: &[(Detect, Load)] = &[
     (crate::diamond_days::is_diamond_days_dump, |json| {
         Ok(Box::new(crate::diamond_days::DiamondDays::from_json(json)?))
     }),
+    (crate::zombie_rush::is_zombie_rush_dump, |json| {
+        Ok(Box::new(crate::zombie_rush::ZombieRush::from_json(json)?))
+    }),
     // new_kit.py adds kits above this line.
 ];
 
