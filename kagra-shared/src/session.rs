@@ -1221,6 +1221,14 @@ impl SharedSession {
         self.renderer.is_some()
     }
 
+    /// Full mesh re-uploads so far (freeze instrumentation).
+    pub fn mesh_uploads(&self) -> u32 {
+        self.renderer
+            .as_ref()
+            .map(|r| r.mesh_uploads())
+            .unwrap_or(0)
+    }
+
     /// Tier, backend, and which post passes ran. `pending` before the first 3D frame.
     pub fn picture_status(&self) -> String {
         self.renderer

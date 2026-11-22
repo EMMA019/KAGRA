@@ -15,6 +15,7 @@ pub mod atmosphere;
 pub mod audio;
 pub mod audio_plan;
 pub mod card;
+pub mod city_action;
 pub mod collectathon;
 pub mod collide;
 pub mod constraint;

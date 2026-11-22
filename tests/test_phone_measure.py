@@ -169,7 +169,9 @@ def test_render_skip_is_off_by_default_and_never_skips_a_stepped_frame():
     html = PLAY.read_text(encoding="utf-8")
     assert 'let renderSkip = params.get("render_skip") === "1";' in html
     assert "const skipDraw = renderSkip && stepped === 0 && redraw <= 0;" in html
-    assert "if (rendering && !skipDraw)" in html
+    # A lost graphics context also skips the draw (nothing can draw
+    # until the restore rebuilds the renderer); the sim still steps.
+    assert "if (rendering && !skipDraw && !contextLost)" in html
     # a game that is not on the fixed 60 Hz sim steps every frame, so it never skips
     assert re.search(r"if \(!page\.fixed_step\) \{ session\.requestFrame\(\); return 1; \}", html)
 

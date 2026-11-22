@@ -33,10 +33,16 @@
 //!   scene authors one) whose every return is tougher.
 
 use crate::game::GamePhase;
+use crate::game_core::boss::{draw_boss_bar, draw_entrance_banner, BossMeter, EntranceBeat};
+use crate::game_core::fx::{AmbientEmitter, AmbientEmitters, AtlasSpec, FxPool, FxSpec, KindSpec};
+use crate::game_core::mission_cycle::{
+    CycleBanner, CycleEvent, CycleMission, MissionCycle, MissionCycleSpec,
+};
 use crate::game_core::stick;
+use crate::game_core::swarm::Rng;
 use crate::input::{PointerEvent, PointerPhase};
 use crate::scene::{DrawList, Quad, TextAlign, TextFace, TextQuad};
-use crate::strokes::{FatLine, PointCloud};
+use crate::strokes::{FatLine, PointBlend, PointCloud};
 use crate::world_doc::{load_skinned_parts, SurvivorSpec, WorldDoc, WorldWalker};
 use std::collections::HashMap;
 
@@ -362,6 +368,417 @@ impl Choice {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Rich-round parts (2026-11-18): the loop adopts the shared parts
+// city_action grew — timed missions (`game_core::mission_cycle`),
+// boss presentation (`game_core::boss`) and the textured/ambient
+// effects (`game_core::fx`) — instead of growing a second copy.
+// ---------------------------------------------------------------------------
+
+/// Burst-pool kind of a weapon's hit sparks (tracer colours).
+fn spark_kind(w: Weapon) -> usize {
+    match w {
+        Weapon::Rifle => 0,
+        Weapon::MachineGun => 1,
+        Weapon::Laser => 2,
+        Weapon::Rocket => 3,
+    }
+}
+
+/// Burst-pool kind of the kill burst (a pale soul-pop where a body fell).
+const FX_KILL: usize = 4;
+/// Burst-pool kind of the boss-hit sparks (hotter, bigger).
+const FX_BOSS_SPARK: usize = 5;
+
+/// Pool seeds: fixed, so a run's effects replay identically.
+const FX_SEED: u32 = 0x5eed_0001;
+const ATMO_SEED: u32 = 0x5eed_0002;
+const MISSION_SEED: u32 = 0x5eed_0003;
+
+/// The burst effect set: per-weapon hit sparks in the tracer
+/// colours, the kill burst, the boss sparks. Untextured soft discs
+/// (no atlas), so the clouds can ride the loop's dynamic doc the
+/// way its own fx entries always have — no texture first-appears
+/// mid-run. Caps are the quality tiers' (low, mid, high); the pool
+/// runs on the mid tier (WorldPlay worlds get no session tier
+/// signal — that feed is Kit-only), sized so even the high count
+/// scale stays far under city_action's trimmed blast peak.
+fn burst_fx_spec() -> FxSpec {
+    let spark = |name: &str, color: [u8; 3]| KindSpec {
+        name: name.into(),
+        drag: 3.2,
+        gravity: 2.4,
+        color,
+        sizes: [0.085, 0.065, 0.035],
+        alphas: [255, 190, 70],
+        ..KindSpec::default()
+    };
+    FxSpec {
+        atlases: Vec::new(),
+        kinds: vec![
+            spark("spark_rifle", [255, 224, 140]),
+            spark("spark_mg", [255, 170, 60]),
+            spark("spark_laser", [120, 240, 255]),
+            spark("spark_rocket", [255, 110, 60]),
+            KindSpec {
+                name: "kill_burst".into(),
+                drag: 2.0,
+                gravity: 0.5,
+                color: [206, 188, 255],
+                sizes: [0.17, 0.14, 0.07],
+                alphas: [235, 175, 60],
+                ..KindSpec::default()
+            },
+            KindSpec {
+                name: "boss_spark".into(),
+                drag: 3.0,
+                gravity: 2.2,
+                color: [255, 122, 70],
+                sizes: [0.13, 0.10, 0.05],
+                alphas: [255, 200, 80],
+                ..KindSpec::default()
+            },
+        ],
+        cap: [24, 48, 80],
+    }
+}
+
+/// Atmosphere kind slots in [`atmo_fx_spec`].
+const ATMO_MIST_A: usize = 0;
+const ATMO_MIST_B: usize = 1;
+const ATMO_ASH: usize = 2;
+
+/// The atmosphere's pictures, painted procedurally once per
+/// process (own work, CC0 — no files): two mist billboards and the
+/// ash mote's soft dot, registered through `image2d` so the
+/// textures are resident from the first frame (first-occurrence
+/// rule). The same pattern as city_action's atmosphere set, with a
+/// dusk palette painted for this scene.
+struct AtmoPics {
+    mist_a: crate::image2d::PicId,
+    mist_b: crate::image2d::PicId,
+    dot: crate::image2d::PicId,
+}
+
+fn atmo_pictures() -> &'static AtmoPics {
+    static PICS: std::sync::OnceLock<AtmoPics> = std::sync::OnceLock::new();
+    PICS.get_or_init(|| {
+        let reg = |w: u32, h: u32, px: Vec<u8>| {
+            crate::image2d::register_rgba(w, h, px).expect("atmosphere picture registers")
+        };
+        let (w, h, px) = paint_mist(0x1115_7a11);
+        let mist_a = reg(w, h, px);
+        let (w, h, px) = paint_mist(0x22d5_7b22);
+        let mist_b = reg(w, h, px);
+        let (w, h, px) = paint_dot();
+        let dot = reg(w, h, px);
+        AtmoPics {
+            mist_a,
+            mist_b,
+            dot,
+        }
+    })
+}
+
+/// A soft horizontal bank of fog: overlapping radial blobs in a
+/// band, faded to nothing at every edge so the billboard's square
+/// never shows. White paint — the kind's tint colours it.
+fn paint_mist(seed: u32) -> (u32, u32, Vec<u8>) {
+    let (w, h) = (256u32, 256u32);
+    let mut alpha = vec![0.0f32; (w * h) as usize];
+    let mut rng = Rng::new(seed);
+    for _ in 0..30 {
+        let cx = rng.range(20.0, 236.0);
+        let cy = rng.range(88.0, 168.0);
+        let r = rng.range(26.0, 78.0);
+        let peak = rng.range(0.35, 0.8);
+        let x0 = (cx - r).max(0.0) as u32;
+        let x1 = ((cx + r) as u32).min(w - 1);
+        let y0 = (cy - r * 0.62).max(0.0) as u32;
+        let y1 = ((cy + r * 0.62) as u32).min(h - 1);
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let d = ((x as f32 - cx) / r).powi(2) + ((y as f32 - cy) / (r * 0.62)).powi(2);
+                if d < 1.0 {
+                    let a = peak * (1.0 - d) * (1.0 - d);
+                    alpha[(y * w + x) as usize] += a;
+                }
+            }
+        }
+    }
+    let mut px = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let ex = edge_fade(x, w, 48.0);
+            let ey = edge_fade(y, h, 40.0);
+            let a = (alpha[(y * w + x) as usize] * ex * ey).min(1.0);
+            let i = ((y * w + x) * 4) as usize;
+            px[i] = 235;
+            px[i + 1] = 240;
+            px[i + 2] = 248;
+            px[i + 3] = (a * 185.0) as u8;
+        }
+    }
+    (w, h, px)
+}
+
+/// 0 at the edge, 1 inside `margin` px, smooth between.
+fn edge_fade(v: u32, side: u32, margin: f32) -> f32 {
+    let d = (v as f32).min((side - 1 - v) as f32) / margin;
+    let d = d.clamp(0.0, 1.0);
+    d * d * (3.0 - 2.0 * d)
+}
+
+/// The ash mote's picture: one soft radial dot.
+fn paint_dot() -> (u32, u32, Vec<u8>) {
+    let (w, h) = (64u32, 64u32);
+    let mut px = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        for x in 0..w {
+            let d = ((x as f32 - 31.5) / 30.0).hypot((y as f32 - 31.5) / 30.0);
+            let a = (1.0 - d).max(0.0);
+            let i = ((y * w + x) * 4) as usize;
+            px[i] = 255;
+            px[i + 1] = 255;
+            px[i + 2] = 255;
+            px[i + 3] = (a * a * 255.0) as u8;
+        }
+    }
+    (w, h, px)
+}
+
+/// The atmosphere effect set: two dusk mist billboards (Alpha —
+/// mist must occlude softly, not glow) and the ash motes (additive
+/// specks on the wind).
+fn atmo_fx_spec() -> FxSpec {
+    let pics = atmo_pictures();
+    let mut mist_a = KindSpec {
+        name: "mist_a".into(),
+        drag: 0.04,
+        color: [188, 164, 170],
+        sizes: [3.0, 4.2, 5.0],
+        alphas: [16, 40, 14],
+        atlas: Some(0),
+        spin: 0.04,
+        ..KindSpec::default()
+    };
+    mist_a.blend = PointBlend::Alpha;
+    mist_a.floor = 0.0;
+    mist_a.bounce = 0.0;
+    let mut mist_b = KindSpec {
+        name: "mist_b".into(),
+        drag: 0.04,
+        color: [172, 152, 164],
+        sizes: [2.4, 3.4, 4.2],
+        alphas: [18, 44, 16],
+        atlas: Some(1),
+        spin: -0.05,
+        ..KindSpec::default()
+    };
+    mist_b.blend = PointBlend::Alpha;
+    mist_b.floor = 0.0;
+    mist_b.bounce = 0.0;
+    let ash = KindSpec {
+        name: "ash_mote".into(),
+        drag: 0.35,
+        gravity: 0.22,
+        color: [255, 190, 130],
+        sizes: [0.05, 0.042, 0.03],
+        alphas: [120, 85, 30],
+        atlas: Some(2),
+        spin: 0.6,
+        ..KindSpec::default()
+    };
+    FxSpec {
+        atlases: vec![
+            AtlasSpec {
+                texture: crate::image2d::texture_spec(pics.mist_a),
+                cols: 1,
+                rows: 1,
+            },
+            AtlasSpec {
+                texture: crate::image2d::texture_spec(pics.mist_b),
+                cols: 1,
+                rows: 1,
+            },
+            AtlasSpec {
+                texture: crate::image2d::texture_spec(pics.dot),
+                cols: 1,
+                rows: 1,
+            },
+        ],
+        kinds: vec![mist_a, mist_b, ash],
+        cap: [28, 44, 64],
+    }
+}
+
+/// The declared ambient emitters (shared `AmbientEmitter` part):
+/// mist pooling over the whole graveyard and ash on the wind.
+/// Steady state ≈ 10 mist + 10 ash alive at the authored density.
+fn atmo_emitters(half: f32) -> Vec<AmbientEmitter> {
+    let ext = (half - 4.0).max(8.0);
+    vec![
+        AmbientEmitter {
+            kind: ATMO_MIST_A,
+            area: [0.0, 0.0, ext, ext],
+            height: [0.30, 1.0],
+            every: 9.0,
+            batch: 3,
+            drift: [0.50, 0.28],
+            speed: 0.40,
+            up: 0.0,
+            life: 17.0,
+        },
+        AmbientEmitter {
+            kind: ATMO_MIST_B,
+            area: [0.0, 0.0, ext, ext],
+            height: [0.30, 1.0],
+            every: 11.0,
+            batch: 3,
+            drift: [-0.42, 0.36],
+            speed: 0.40,
+            up: 0.0,
+            life: 15.0,
+        },
+        AmbientEmitter {
+            kind: ATMO_ASH,
+            area: [0.0, 0.0, ext, ext],
+            height: [0.6, 3.2],
+            every: 1.6,
+            batch: 2,
+            drift: [0.60, -0.25],
+            speed: 0.50,
+            up: 0.0,
+            life: 8.0,
+        },
+    ]
+}
+
+/// Mission kind indices (the shared cycle carries numbers; the
+/// meanings live here).
+const MISSION_SLAY: usize = 0;
+const MISSION_HUNT: usize = 1;
+const MISSION_GEMS: usize = 2;
+
+/// The mission cycle's tuning: city_action's rhythm, kept — the
+/// first mission at 35 s, a minute's rest between goal posts.
+const MISSION_SPEC: MissionCycleSpec = MissionCycleSpec {
+    first_secs: 35.0,
+    gap_secs: 60.0,
+    banner_secs: 2.0,
+    fail_banner_secs: 1.2,
+};
+
+/// Huntable prey families by walker base name (the hulk cut is
+/// never prey: it is the boss's body and a rare regular).
+const PREY_NAMES: [&str; 3] = ["COP ZOMBIES", "GIRL ZOMBIES", "WAR ZOMBIES"];
+
+fn prey_index(base_name: &str) -> Option<usize> {
+    if base_name.contains("cop") {
+        Some(0)
+    } else if base_name.contains("girl") {
+        Some(1)
+    } else if base_name.contains("war") {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+/// The start banner's objective line: what is owed, in one breath.
+fn mission_objective(m: &CycleMission) -> String {
+    match m.kind {
+        MISSION_HUNT => format!(
+            "HUNT {} x{} - {}s",
+            PREY_NAMES[m.target_kind.min(2)],
+            m.total,
+            m.total_secs as u32
+        ),
+        MISSION_GEMS => format!("COLLECT {} GEMS - {}s", m.total, m.total_secs as u32),
+        _ => format!("SLAY {} - {}s", m.total, m.total_secs as u32),
+    }
+}
+
+/// The standing readout while a mission's clock runs.
+fn mission_progress(m: &CycleMission) -> String {
+    match m.kind {
+        MISSION_HUNT => format!(
+            "{} {}/{} - {}s",
+            PREY_NAMES[m.target_kind.min(2)],
+            m.done(),
+            m.total,
+            m.secs.ceil() as u32
+        ),
+        MISSION_GEMS => format!("GEMS {}/{} - {}s", m.done(), m.total, m.secs.ceil() as u32),
+        _ => format!("SLAY {}/{} - {}s", m.done(), m.total, m.secs.ceil() as u32),
+    }
+}
+
+/// Boss titles by arrival order (then cycling with a +n suffix).
+const BOSS_NAMES: [&str; 4] = [
+    "GRAVE HULK",
+    "DUSK REVENANT",
+    "HORDE TYRANT",
+    "ANCIENT HORROR",
+];
+/// The boss's weakness rotation: each arrival is weak to the next
+/// gun in the cycle, named on the bar so the player can hunt the
+/// drop that exploits it.
+const BOSS_WEAK_ROTATION: [Weapon; 4] = [
+    Weapon::Laser,
+    Weapon::Rocket,
+    Weapon::MachineGun,
+    Weapon::Rifle,
+];
+/// Damage multiple when the held gun is the boss's weakness.
+const BOSS_WEAK_MULT: f32 = 1.5;
+
+fn boss_name(idx: u32) -> String {
+    let base = BOSS_NAMES[(idx as usize) % BOSS_NAMES.len()];
+    if idx < BOSS_NAMES.len() as u32 {
+        base.to_string()
+    } else {
+        format!("{} +{}", base, idx / BOSS_NAMES.len() as u32)
+    }
+}
+
+/// One mission-reward card: a gun (a prize swap — the old gun is
+/// holstered away, never ground-dropped, so a reward can never
+/// become a swap loop) or one of the standing passives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RewardOffer {
+    Weapon(Weapon),
+    Choice(Choice),
+}
+
+impl RewardOffer {
+    fn name(self) -> &'static str {
+        match self {
+            RewardOffer::Weapon(w) => w.name(),
+            RewardOffer::Choice(c) => c.name(),
+        }
+    }
+
+    fn desc(self) -> &'static str {
+        match self {
+            RewardOffer::Weapon(Weapon::Rifle) => "Prize gun: steady all-round",
+            RewardOffer::Weapon(Weapon::MachineGun) => "Prize gun: fast, light rounds",
+            RewardOffer::Weapon(Weapon::Laser) => "Prize gun: slow, heavy beam",
+            RewardOffer::Weapon(Weapon::Rocket) => "Prize gun: splash damage",
+            RewardOffer::Choice(c) => c.desc(),
+        }
+    }
+
+    /// Card accent: the gun's own tint for a weapon prize, the
+    /// level cards' gold for a passive.
+    fn accent(self) -> [u8; 4] {
+        match self {
+            RewardOffer::Weapon(w) => w.drop_color(),
+            RewardOffer::Choice(_) => [240, 196, 72, 255],
+        }
+    }
+}
+
 /// XP gems needed to leave `level` (level 1 → 5, then +4 a level):
 /// the first choice lands inside the first half minute of contact.
 pub fn xp_need(level: u32) -> u32 {
@@ -504,6 +921,31 @@ pub struct SurvivorLoop {
     spawn_t: f32,
     rng: u32,
     enemies: HashMap<String, EnemyState>,
+    /// Hit sparks / kill bursts (shared `game_core::fx` pool).
+    fx: FxPool,
+    /// Doc slot base of the burst pool's clouds, once declared.
+    fx_base: Option<usize>,
+    /// Dusk atmosphere (shared `game_core::fx` pool + emitters).
+    atmo_fx: FxPool,
+    /// Doc slot base of the atmosphere pool's clouds.
+    atmo_base: Option<usize>,
+    atmo_emitters: AmbientEmitters,
+    /// Timed missions (shared `game_core::mission_cycle` part).
+    missions: MissionCycle,
+    /// True while the mission-reward cards are on screen. The
+    /// world freezes exactly as it does for the level-up cards,
+    /// and taps route to these cards instead.
+    pub reward_pending: bool,
+    /// The three offers of the pending mission reward.
+    reward_offers: [RewardOffer; 3],
+    /// Boss entrance beat (shared `game_core::boss` part).
+    boss_beat: EntranceBeat,
+    /// The current boss's title (empty until the first walks in).
+    boss_name: String,
+    /// The current boss's weakness: the gun it takes extra from.
+    boss_weak: Weapon,
+    /// The current boss's HP at spawn (the bar's denominator).
+    boss_hp_max: f32,
 }
 
 impl Default for SurvivorLoop {
@@ -548,6 +990,22 @@ impl Default for SurvivorLoop {
             spawn_t: 0.0,
             rng: 0x9E37_79B9,
             enemies: HashMap::new(),
+            fx: FxPool::new(burst_fx_spec(), FX_SEED),
+            fx_base: None,
+            atmo_fx: FxPool::new(atmo_fx_spec(), ATMO_SEED),
+            atmo_base: None,
+            atmo_emitters: AmbientEmitters::new(Vec::new(), ATMO_SEED ^ 0x51ab),
+            missions: MissionCycle::new(MISSION_SPEC, MISSION_SEED),
+            reward_pending: false,
+            reward_offers: [
+                RewardOffer::Weapon(Weapon::Laser),
+                RewardOffer::Choice(Choice::RapidFire),
+                RewardOffer::Choice(Choice::DamageUp),
+            ],
+            boss_beat: EntranceBeat::new(),
+            boss_name: String::new(),
+            boss_weak: Weapon::Laser,
+            boss_hp_max: 0.0,
         }
     }
 }
@@ -588,7 +1046,59 @@ impl SurvivorLoop {
                 );
             }
         }
+        // The fx clouds may already be declared in this doc (a
+        // restart rebuilds the loop over the seed doc, clouds and
+        // all): recover the pools' slot bases by cloud id.
+        for (i, p) in doc.points.iter().enumerate() {
+            if p.id == "fx-0-spark_rifle" {
+                state.fx_base = Some(i);
+            }
+            if p.id == "fx-0-mist_a" {
+                state.atmo_base = Some(i);
+            }
+        }
+        // The atmosphere is declared for this arena and primed to
+        // steady state, so a run opens on dusk mist already pooled,
+        // not on a visible build-up (first-occurrence rule).
+        state.atmo_emitters = AmbientEmitters::new(atmo_emitters(doc.half), ATMO_SEED ^ 0x51ab);
+        state.atmo_emitters.prime(&mut state.atmo_fx, 18.0);
+        // The mission stream varies by scene, like the run rng.
         state
+            .missions
+            .reset(MISSION_SEED ^ (doc.walkers.len() as u32).wrapping_mul(0x85EB_CA6B));
+        state
+    }
+
+    /// Declare both fx pools' clouds into the doc (world build):
+    /// the clouds name their atlas from this moment, so every
+    /// texture is resident on the first frame — nothing uploads at
+    /// the first burst or the first mist bank. Idempotent per pool.
+    pub fn declare_fx(&mut self, doc: &mut WorldDoc) {
+        if doc.survivor.is_none() {
+            return;
+        }
+        if self.fx_base.is_none() {
+            self.fx_base = Some(self.fx.declare_slots(doc));
+        }
+        if self.atmo_base.is_none() {
+            self.atmo_base = Some(self.atmo_fx.declare_slots(doc));
+        }
+    }
+
+    /// Republish both pools' clouds from the live particles.
+    fn publish_fx(&self, doc: &mut WorldDoc) {
+        if let Some(base) = self.fx_base {
+            self.fx.refill(doc, base);
+        }
+        if let Some(base) = self.atmo_base {
+            self.atmo_fx.refill(doc, base);
+        }
+    }
+
+    /// The boss entrance's camera push-in, read by `world_play`'s
+    /// follow camera (1.0 outside the beat).
+    pub fn cam_scale(&self) -> f32 {
+        self.boss_beat.cam_scale()
     }
 
     /// Raw pointer feed for the floating stick and the level-up
@@ -620,6 +1130,34 @@ impl SurvivorLoop {
                         {
                             let pick = self.choices[i];
                             self.apply_choice(pick);
+                            break;
+                        }
+                    }
+                }
+                PointerPhase::End | PointerPhase::Cancel => {
+                    if self.stick_id == Some(ev.id) {
+                        self.stick_id = None;
+                        self.stick_finger = None;
+                    }
+                }
+                PointerPhase::Move => {}
+            }
+            return;
+        }
+        if self.reward_pending {
+            // The mission-reward cards: same rects, same freeze
+            // rules as the level-up cards above (a stick release
+            // still counts, for the same reason).
+            match ev.phase {
+                PointerPhase::Begin => {
+                    for (i, r) in level_card_rects(w, h).iter().enumerate() {
+                        if ev.x >= r[0]
+                            && ev.x <= r[0] + r[2]
+                            && ev.y >= r[1]
+                            && ev.y <= r[1] + r[3]
+                        {
+                            let offer = self.reward_offers[i];
+                            self.apply_reward(offer);
                             break;
                         }
                     }
@@ -766,10 +1304,10 @@ impl SurvivorLoop {
         self.cue("pick", CUE_EVENT, 0.1);
     }
 
-    /// Apply one level-up reward and close the cards. The effects
-    /// are arithmetic on the run's stats — fire cadence, damage,
-    /// survivability — never cosmetic.
-    fn apply_choice(&mut self, pick: Choice) {
+    /// One passive's arithmetic on the run's stats — fire cadence,
+    /// damage, survivability — never cosmetic. Shared by the
+    /// level-up cards and the mission-reward cards.
+    fn apply_passive(&mut self, pick: Choice) {
         match pick {
             Choice::RapidFire => self.fire_mult *= 0.88,
             Choice::DamageUp => self.dmg_bonus += 8.0,
@@ -780,8 +1318,53 @@ impl SurvivorLoop {
             Choice::Armor => self.armor_mult *= 0.85,
             Choice::Magnet => self.magnet_r += 1.2,
         }
+    }
+
+    /// Apply one level-up reward and close the cards.
+    fn apply_choice(&mut self, pick: Choice) {
+        self.apply_passive(pick);
         self.level_pending = false;
         // Whatever the stick held before the freeze is stale now.
+        self.drop_stick();
+    }
+
+    /// Deal the mission reward: one gun not in hand (a prize swap)
+    /// and two passives, the gun's slot rotated on the run's rng so
+    /// the prize does not always sit in the same card.
+    fn open_reward_cards(&mut self) {
+        let others: Vec<Weapon> = ALL_WEAPONS
+            .iter()
+            .copied()
+            .filter(|w| *w != self.weapon)
+            .collect();
+        let gun = others[(next_rng(&mut self.rng) % others.len() as u32) as usize];
+        let start = (next_rng(&mut self.rng) % CHOICE_POOL.len() as u32) as usize;
+        let mut offers = [
+            RewardOffer::Weapon(gun),
+            RewardOffer::Choice(CHOICE_POOL[start]),
+            RewardOffer::Choice(CHOICE_POOL[(start + 2) % CHOICE_POOL.len()]),
+        ];
+        offers.rotate_left((next_rng(&mut self.rng) % 3) as usize);
+        self.reward_offers = offers;
+        self.reward_pending = true;
+        self.cue("levelup", CUE_EVENT, 0.3);
+        // The cards are modal, like the level-up's: let the stick go.
+        self.drop_stick();
+    }
+
+    /// Apply one mission-reward pick and close the cards. A gun
+    /// prize replaces the held gun outright (the old one is
+    /// holstered away — a reward, not a ground swap, so it can
+    /// never turn into a swap loop) and flashes the swap banner.
+    fn apply_reward(&mut self, offer: RewardOffer) {
+        match offer {
+            RewardOffer::Weapon(w) => {
+                self.weapon = w;
+                self.weapon_banner_t = WEAPON_BANNER_S;
+            }
+            RewardOffer::Choice(c) => self.apply_passive(c),
+        }
+        self.reward_pending = false;
         self.drop_stick();
     }
 
@@ -825,6 +1408,19 @@ impl SurvivorLoop {
     /// gems ringed around the corpse.
     fn apply_hit(&mut self, doc: &mut WorldDoc, i: usize, dmg: f32, spec: &SurvivorSpec) {
         let id = doc.walkers[i].id.clone();
+        // While a boss is up, missions hold (city_action's rule):
+        // snapshot before this hit changes any modes.
+        let boss_up = self
+            .enemies
+            .values()
+            .any(|e| e.boss && e.mode == Mode::Alive);
+        let target_boss = self.enemies.get(&id).is_some_and(|e| e.boss);
+        // The boss's weakness: the named gun cuts deeper.
+        let dmg = if target_boss && self.weapon == self.boss_weak {
+            dmg * BOSS_WEAK_MULT
+        } else {
+            dmg
+        };
         let mut killed = false;
         let mut was_boss = false;
         if let Some(e) = self.enemies.get_mut(&id) {
@@ -843,6 +1439,23 @@ impl SurvivorLoop {
             // A landed hit ticks; a kill thuds lower (and rarer).
             self.cue("hit", CUE_HIT, 0.07);
             doc.walkers[i].name = "hurt".into();
+            // Sparks where the round landed (hotter on the boss).
+            let tp = doc.walkers[i].position;
+            let (kind, n) = if target_boss {
+                (FX_BOSS_SPARK, 5)
+            } else {
+                (spark_kind(self.weapon), 3)
+            };
+            self.fx.burst(
+                kind,
+                n,
+                [tp[0], tp[1] + 1.0, tp[2]],
+                shot_dir(doc, tp),
+                2.4,
+                1.0,
+                1.4,
+                0.4,
+            );
             return;
         }
         self.cue("kill", CUE_KILL, 0.1);
@@ -892,6 +1505,37 @@ impl SurvivorLoop {
         while self.drops.len() > MAX_DROPS {
             self.drops.remove(0);
         }
+        // The kill pops where the body fell, raked by the gun's
+        // own sparks.
+        let dir = shot_dir(doc, wp);
+        let burst_at = [wp[0], wp[1] + 1.0, wp[2]];
+        self.fx
+            .burst(FX_KILL, 10, burst_at, dir, 2.0, 1.0, 1.7, 0.55);
+        self.fx.burst(
+            spark_kind(self.weapon),
+            4,
+            burst_at,
+            dir,
+            2.6,
+            1.0,
+            1.2,
+            0.4,
+        );
+        // Missions read the kill — never while a boss is up (the
+        // snapshot predates this kill, so a boss's own death does
+        // not leak into the count either).
+        if !boss_up {
+            let prey = self.enemies.get(&id).and_then(|e| prey_index(&e.base_name));
+            if let Some(CycleEvent::Succeeded) =
+                self.missions.count(self.elapsed, |m| match m.kind {
+                    MISSION_SLAY => true,
+                    MISSION_HUNT => prey == Some(m.target_kind),
+                    _ => false,
+                })
+            {
+                self.open_reward_cards();
+            }
+        }
     }
 }
 
@@ -927,6 +1571,16 @@ pub fn park_pool(doc: &mut WorldDoc) {
 /// Ease `cur` toward `want` along the shortest arc, moving at most
 /// `max_step` radians. The result is not renormalized (callers only
 /// feed it to sin/cos and back in here, which is wrap-safe).
+/// Unit XZ direction from the player toward `to` (a shot's line,
+/// for fx bursts).
+fn shot_dir(doc: &WorldDoc, to: [f32; 3]) -> [f32; 2] {
+    let from = player_pos(doc).unwrap_or([0.0, 0.0, 0.0]);
+    let dx = to[0] - from[0];
+    let dz = to[2] - from[2];
+    let l = (dx * dx + dz * dz).sqrt().max(1e-4);
+    [dx / l, dz / l]
+}
+
 fn turn_toward(cur: f32, want: f32, max_step: f32) -> f32 {
     let tau = std::f32::consts::TAU;
     let mut d = (want - cur).rem_euclid(tau);
@@ -1223,10 +1877,19 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     if state.over || dt <= 0.0 {
         return state.over;
     }
-    if state.level_pending {
+    if state.level_pending || state.reward_pending {
         // Choosing a reward: the world holds still (world_play also
         // skips its walker step), so nothing here may advance.
         return false;
+    }
+    // The boss entrance beat runs on real time; the world it
+    // introduces runs slowed while the breath holds.
+    state.boss_beat.step(dt);
+    let dt = dt * state.boss_beat.time_scale();
+    // The fx clouds are declared at world build; this is only a
+    // net for a doc that reached the loop undeclared.
+    if state.fx_base.is_none() || state.atmo_base.is_none() {
+        state.declare_fx(doc);
     }
     state.elapsed += dt;
     state.fire_cd -= dt;
@@ -1270,11 +1933,60 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     // never cancels it. ---
     if state.elapsed >= state.next_boss_t && activate(doc, state, spec, pp, true) {
         state.cue("elite", CUE_EVENT, 0.5);
+        // The entrance (shared boss part): a name, a weakness and
+        // the held breath. `activate` already counted this boss.
+        let idx = state.bosses_spawned - 1;
+        state.boss_name = boss_name(idx);
+        state.boss_weak = BOSS_WEAK_ROTATION[(idx as usize) % BOSS_WEAK_ROTATION.len()];
+        state.boss_hp_max = boss_hp(spec, state.elapsed, idx);
+        state.boss_beat.start();
         state.next_boss_t = if spec.boss_interval_s > 0.0 {
             state.elapsed + spec.boss_interval_s
         } else {
             f32::MAX
         };
+    }
+
+    // --- Timed missions (shared cycle): the clock holds while a
+    // boss is up, so the two never compete for the same seconds.
+    // The offer is pre-rolled from the field (prey worth hunting
+    // = a family fielded at least twice); the cycle's own stream
+    // makes the pick, so a seed replays the mission sequence. ---
+    let boss_up = state
+        .enemies
+        .values()
+        .any(|e| e.boss && e.mode == Mode::Alive);
+    {
+        let mut prey_counts = [0u32; 3];
+        for e in state.enemies.values() {
+            if e.mode == Mode::Alive {
+                if let Some(pi) = prey_index(&e.base_name) {
+                    prey_counts[pi] += 1;
+                }
+            }
+        }
+        let prey: Vec<usize> = (0..3).filter(|&i| prey_counts[i] >= 2).collect();
+        let elapsed = state.elapsed;
+        state.missions.step(dt, elapsed, boss_up, move |rng| {
+            let mut cands = vec![MISSION_SLAY, MISSION_GEMS];
+            if !prey.is_empty() {
+                cands.push(MISSION_HUNT);
+            }
+            let kind = cands[(rng.next_u32() % cands.len() as u32) as usize];
+            match kind {
+                MISSION_HUNT => {
+                    let t = prey[(rng.next_u32() % prey.len() as u32) as usize];
+                    Some((kind, t, 6, 30.0))
+                }
+                MISSION_GEMS => Some((kind, 0, 12, 30.0)),
+                _ => Some((
+                    MISSION_SLAY,
+                    0,
+                    (10 + (elapsed / 45.0) as u32).min(22),
+                    25.0,
+                )),
+            }
+        });
     }
 
     // --- Spawning: top the stage up to the (ramping) alive cap. ---
@@ -1418,6 +2130,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         positions: vec![muzzle(pp, face_yaw)],
         color: state.weapon.drop_color(),
         size: 0.26,
+        ..PointCloud::default()
     });
     let mut ring: Vec<[f32; 3]> = (0..14)
         .map(|i| {
@@ -1435,6 +2148,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         positions: ring,
         color: [110, 255, 190, 255],
         size: 0.2,
+        ..PointCloud::default()
     });
     // The boss wears the same trick in red: a wide ring at its
     // feet plus a point bobbing over its head, so the big body
@@ -1469,6 +2183,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
             positions: ring,
             color: [255, 84, 60, 255],
             size: 0.3,
+            ..PointCloud::default()
         });
     }
     // The tap-locked foe wears the same trick in amber, so the
@@ -1503,6 +2218,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
             positions: ring,
             color: [255, 255, 255, 255],
             size: 0.26,
+            ..PointCloud::default()
         });
     }
 
@@ -1614,6 +2330,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                 positions: vec![from],
                 color: [255, 190, 80, 255],
                 size: 0.3,
+                ..PointCloud::default()
             });
             if let Some(b) = boom {
                 doc.points.push(PointCloud {
@@ -1621,6 +2338,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                     positions: vec![b],
                     color: [255, 150, 70, 255],
                     size: 1.5,
+                    ..PointCloud::default()
                 });
                 state.cue("boom", CUE_EVENT, 0.2);
             }
@@ -1709,6 +2427,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
     let collect_r = COLLECT_R + state.magnet_r * 0.5;
     let magnet_r = MAGNET_R + state.magnet_r;
     let mut banked = false;
+    let mut gems_banked = 0u32;
     let mut healed = false;
     let mut swapped: Option<Weapon> = None;
     state.drops.retain_mut(|d| {
@@ -1731,6 +2450,7 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
                 DropKind::Gem => {
                     state.gems += 1;
                     banked = true;
+                    gems_banked += 1;
                 }
                 DropKind::Heal => {
                     state.hp = (state.hp + HEAL_AMOUNT).min(state.hp_max);
@@ -1785,6 +2505,28 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         // delivered survives into the resumed run.
         state.drop_stick();
     }
+    // Gem missions read the bank — never while a boss is up.
+    if gems_banked > 0
+        && !state
+            .enemies
+            .values()
+            .any(|e| e.boss && e.mode == Mode::Alive)
+    {
+        for _ in 0..gems_banked {
+            if let Some(CycleEvent::Succeeded) = state
+                .missions
+                .count(state.elapsed, |m| m.kind == MISSION_GEMS)
+            {
+                state.open_reward_cards();
+                break;
+            }
+        }
+    }
+    // Effects: both pools advance and republish every step.
+    state.fx.step(dt);
+    state.atmo_emitters.step(&mut state.atmo_fx, dt);
+    state.atmo_fx.step(dt);
+    state.publish_fx(doc);
     sync_drops(doc, state);
 
     state.hp -= damage * state.armor_mult;
@@ -1800,6 +2542,9 @@ pub fn step(doc: &mut WorldDoc, state: &mut SurvivorLoop, spec: &SurvivorSpec, d
         crate::mixer::stop_bgm(0.6);
         state.cue("gameover", CUE_EVENT, 0.5);
         clear_fx(doc);
+        state.fx.clear();
+        state.atmo_fx.clear();
+        state.publish_fx(doc);
         doc.points.retain(|p| {
             p.id != GEM_ID
                 && p.id != HEAL_ID
@@ -1831,6 +2576,7 @@ fn sync_drops(doc: &mut WorldDoc, state: &SurvivorLoop) {
             positions: gems,
             color: [255, 232, 54, 255],
             size: 0.4,
+            ..PointCloud::default()
         });
     }
     let heals: Vec<[f32; 3]> = state
@@ -1845,6 +2591,7 @@ fn sync_drops(doc: &mut WorldDoc, state: &SurvivorLoop) {
             positions: heals,
             color: [255, 120, 140, 255],
             size: 0.45,
+            ..PointCloud::default()
         });
     }
     // One cloud per weapon kind, so each ground gun carries its
@@ -1863,6 +2610,7 @@ fn sync_drops(doc: &mut WorldDoc, state: &SurvivorLoop) {
                 positions: pts,
                 color: w.drop_color(),
                 size: 0.55,
+                ..PointCloud::default()
             });
         }
     }
@@ -1955,23 +2703,9 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                 .aligned(TextAlign::Right)
                 .with_face(TextFace::Display),
             );
-            if state
-                .enemies
-                .values()
-                .any(|e| e.boss && e.mode == Mode::Alive)
-            {
-                texts.push(
-                    TextQuad::new(
-                        "BOSS",
-                        w - pad,
-                        top + 50.0 * s,
-                        19.0 * s,
-                        [255, 84, 60, 255],
-                    )
-                    .aligned(TextAlign::Right)
-                    .with_face(TextFace::Display),
-                );
-            }
+            // (The boss used to be a bare "BOSS" tag here; it has
+            // a name, a bar and a weakness now — the centre stack
+            // below carries all three.)
             texts.push(
                 TextQuad::new(
                     &format!("LV {}", state.level),
@@ -2035,6 +2769,110 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     .with_face(TextFace::Display),
                 );
             }
+            // The centre stack (city_action's UI-round layout,
+            // carried by the shared parts): the mission readout
+            // with its thin clock bar, then the boss bar under it
+            // at a fixed anchor so the column never jumps when a
+            // mission starts or ends.
+            if let Some(m) = state.missions.active() {
+                texts.push(
+                    TextQuad::new(
+                        &mission_progress(m),
+                        w * 0.5,
+                        top + 54.0 * s,
+                        17.0 * s,
+                        [255, 220, 150, 255],
+                    )
+                    .aligned(TextAlign::Center)
+                    .with_face(TextFace::Display),
+                );
+                let bw2 = 170.0 * s;
+                quads.push(Quad::new(
+                    (w - bw2) / 2.0,
+                    top + 76.0 * s,
+                    bw2,
+                    4.0 * s,
+                    [10, 10, 16, 160],
+                ));
+                quads.push(Quad::new(
+                    (w - bw2) / 2.0,
+                    top + 76.0 * s,
+                    bw2 * m.time_frac(),
+                    4.0 * s,
+                    [255, 220, 150, 220],
+                ));
+            }
+            if let Some(b) = state
+                .enemies
+                .values()
+                .find(|e| e.boss && e.mode == Mode::Alive)
+            {
+                // While the entrance banner is posted the bar
+                // waits: the banner is already saying the name
+                // and the weakness.
+                if !state.boss_beat.active() {
+                    let mut tmp = DrawList::default();
+                    draw_boss_bar(
+                        &mut tmp,
+                        &BossMeter {
+                            name: &state.boss_name,
+                            hp: b.hp,
+                            hp_max: state.boss_hp_max,
+                            weak: Some((state.boss_weak.name(), state.boss_weak.drop_color())),
+                        },
+                        w,
+                        s,
+                        top + 88.0 * s,
+                    );
+                    quads.extend(tmp.quads);
+                    texts.extend(tmp.texts);
+                }
+            }
+            // The boss entrance banner: the name big at centre
+            // screen while the beat holds.
+            if state.boss_beat.banner_left().is_some() {
+                let mut tmp = DrawList::default();
+                draw_entrance_banner(
+                    &mut tmp,
+                    &state.boss_name,
+                    Some((state.boss_weak.name(), state.boss_weak.drop_color())),
+                    w,
+                    h,
+                    s,
+                );
+                texts.extend(tmp.texts);
+            }
+            // The mission banners: start (with its objective) and
+            // failure, in the same centre family. They never share
+            // the screen with the boss banner — missions hold
+            // while a boss is up.
+            if let Some((banner, _)) = state.missions.banner() {
+                let (title, objective) = match banner {
+                    CycleBanner::Start => (
+                        "MISSION START",
+                        state.missions.active().map(mission_objective),
+                    ),
+                    CycleBanner::Failed => ("MISSION FAILED", None),
+                };
+                texts.push(
+                    TextQuad::new(title, w * 0.5, h * 0.30, 32.0 * s, [255, 220, 150, 255])
+                        .aligned(TextAlign::Center)
+                        .with_face(TextFace::Display),
+                );
+                if let Some(objective) = objective {
+                    texts.push(
+                        TextQuad::new(
+                            &objective,
+                            w * 0.5,
+                            h * 0.30 + 44.0 * s,
+                            19.0 * s,
+                            [255, 255, 255, 255],
+                        )
+                        .aligned(TextAlign::Center)
+                        .with_face(TextFace::Display),
+                    );
+                }
+            }
             if state.level_pending {
                 // The level-up cards. The rects are the tap targets
                 // (`level_card_rects` is shared with the hit-test).
@@ -2067,6 +2905,48 @@ pub fn build_hud(state: &SurvivorLoop, phase: GamePhase, width: u32, height: u32
                     texts.push(
                         TextQuad::new(
                             c.desc(),
+                            r[0] + 18.0 * s,
+                            r[1] + 48.0 * s,
+                            16.0 * s,
+                            [170, 200, 220, 255],
+                        )
+                        .with_face(TextFace::Display),
+                    );
+                }
+            } else if state.reward_pending {
+                // The mission-reward cards: the level cards'
+                // furniture, the mission's payloads (a prize gun
+                // or a passive). The rects are the tap targets,
+                // shared with the hit-test in `touch`.
+                quads.push(Quad::new(0.0, 0.0, w, h, [6, 8, 10, 150]));
+                texts.push(
+                    TextQuad::new(
+                        "MISSION REWARD",
+                        w * 0.5,
+                        h * 0.32 - 66.0 * s,
+                        32.0 * s,
+                        [255, 220, 150, 255],
+                    )
+                    .aligned(TextAlign::Center)
+                    .with_face(TextFace::Display),
+                );
+                for (i, r) in level_card_rects(w, h).iter().enumerate() {
+                    quads.push(Quad::new(r[0], r[1], r[2], r[3], [18, 22, 30, 240]));
+                    let offer = state.reward_offers[i];
+                    quads.push(Quad::new(r[0], r[1], r[2], 5.0 * s, offer.accent()));
+                    texts.push(
+                        TextQuad::new(
+                            offer.name(),
+                            r[0] + 18.0 * s,
+                            r[1] + 13.0 * s,
+                            21.0 * s,
+                            [255, 255, 255, 255],
+                        )
+                        .with_face(TextFace::Display),
+                    );
+                    texts.push(
+                        TextQuad::new(
+                            offer.desc(),
                             r[0] + 18.0 * s,
                             r[1] + 48.0 * s,
                             16.0 * s,
@@ -2404,16 +3284,26 @@ mod tests {
         );
         let hud = play.build_hud(960, 720);
         assert!(
-            hud.texts.iter().any(|t| t.text == "BOSS"),
-            "the HUD calls the boss out"
+            hud.texts.iter().any(|t| t.text == "GRAVE HULK"),
+            "the HUD calls the boss out by name (entrance banner)"
+        );
+        assert!(
+            hud.texts.iter().any(|t| t.text == "WEAK: LASER GUN"),
+            "the entrance names the first boss's weakness"
         );
         // The bite: drop the boss on the player for one second.
         // (Inside its stop ring the seek pass holds it in place.)
+        // The entrance beat slows the first half-second of the
+        // fight, bite included, so the measured second starts
+        // after the breath lets go.
         let pp = play.doc.player.as_ref().unwrap().position;
         for w in &mut play.doc.walkers {
             if w.id == boss_id {
                 w.position = pp;
             }
+        }
+        for _ in 0..40 {
+            play.tick(dt);
         }
         let hp_before = play.survivor_loop.hp;
         for _ in 0..60 {
@@ -3176,6 +4066,247 @@ mod tests {
         }
         assert_eq!(play.survivor_loop.gems, 1, "magnet feeds the gem home");
         assert!(play.survivor_loop.drops.is_empty());
+    }
+
+    #[test]
+    fn fx_clouds_are_declared_at_build_and_the_mist_is_primed() {
+        let dump = survivor_dump(4, json!({ "cap_start": 1, "cap_max": 1 }));
+        let play = WorldPlay::from_json(&dump).unwrap();
+        for id in ["fx-0-spark_rifle", "fx-0-mist_a", "fx-2-ash_mote"] {
+            assert!(
+                play.doc.points.iter().any(|p| p.id == id),
+                "cloud {id} is declared at build (first-occurrence rule)"
+            );
+        }
+        assert!(
+            !play.survivor_loop.atmo_fx.is_empty(),
+            "the atmosphere is primed to steady state before the first step"
+        );
+    }
+
+    #[test]
+    fn a_mission_runs_counts_and_pays_out_reward_cards() {
+        // A one-shot gun at point-blank range: kills land fast and
+        // their gems fall inside magnet reach, so either mission
+        // the cycle can offer here (slay / gem rush — the test
+        // pool's names field no huntable family) completes on its
+        // clock. No bosses: a boss would hold the mission.
+        let dump = survivor_dump(
+            8,
+            json!({
+                "cap_start": 6, "cap_max": 6, "spawn_radius": 9.0,
+                "enemy_hp": 10.0, "shot_damage": 50.0, "fire_interval": 0.05,
+                "fire_range": 2.5, "contact_dps": 0.0, "boss_first_s": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        let mut started = false;
+        for _ in 0..(75 * 60) {
+            play.tick(dt);
+            if play.survivor_loop.level_pending {
+                play.survivor_loop.apply_choice(Choice::DamageUp);
+            }
+            if play.survivor_loop.missions.active().is_some() {
+                started = true;
+                break;
+            }
+        }
+        assert!(started, "the first mission lands at 35 s");
+        let hud = play.build_hud(960, 720);
+        assert!(
+            hud.texts
+                .iter()
+                .any(|t| t.text.contains("SLAY") || t.text.contains("GEMS")),
+            "the mission readout stands at top centre"
+        );
+        assert!(
+            hud.texts.iter().any(|t| t.text == "MISSION START"),
+            "the start banner posted"
+        );
+        let mut paid = false;
+        for _ in 0..(45 * 60) {
+            play.tick(dt);
+            if play.survivor_loop.reward_pending {
+                paid = true;
+                break;
+            }
+            if play.survivor_loop.level_pending {
+                play.survivor_loop.apply_choice(Choice::DamageUp);
+            }
+        }
+        assert!(paid, "events on the mission clock open the reward cards");
+        assert_eq!(play.survivor_loop.missions.done(), 1);
+        // The reward is dealt: one gun not in hand + two passives.
+        let offers = play.survivor_loop.reward_offers;
+        let gun_idx = offers
+            .iter()
+            .position(|o| matches!(o, RewardOffer::Weapon(_)))
+            .expect("a gun is always among the offers");
+        let RewardOffer::Weapon(gun) = offers[gun_idx] else {
+            unreachable!()
+        };
+        assert_ne!(gun, play.survivor_loop.weapon, "the prize is a new gun");
+        let r = level_card_rects(960.0, 720.0)[gun_idx];
+        play.survivor_touch(
+            ptr(9, r[0] + r[2] / 2.0, r[1] + r[3] / 2.0, PointerPhase::Begin),
+            960,
+            720,
+        );
+        assert!(
+            !play.survivor_loop.reward_pending,
+            "the pick closes the cards"
+        );
+        assert_eq!(play.survivor_loop.weapon, gun, "the prize gun is in hand");
+        assert!(
+            play.survivor_loop.weapon_banner_t > 0.0,
+            "the swap banner flashes the new gun's name"
+        );
+    }
+
+    #[test]
+    fn the_weak_gun_cuts_the_boss_deeper() {
+        let dump = survivor_dump(
+            4,
+            json!({
+                "cap_start": 0, "cap_max": 0, "spawn_radius": 8.0,
+                "enemy_hp": 100.0, "shot_damage": 0.0,
+                "boss_first_s": 1.0, "boss_hp_mult": 30.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let dt = 1.0 / 60.0;
+        for _ in 0..180 {
+            play.tick(dt);
+            if play
+                .survivor_loop
+                .enemies
+                .values()
+                .any(|e| e.boss && e.mode == Mode::Alive)
+            {
+                break;
+            }
+        }
+        let boss_id = play
+            .survivor_loop
+            .enemies
+            .iter()
+            .find(|(_, e)| e.boss && e.mode == Mode::Alive)
+            .map(|(id, _)| id.clone())
+            .expect("the boss walked in");
+        let idx = play
+            .doc
+            .walkers
+            .iter()
+            .position(|w| w.id == boss_id)
+            .unwrap();
+        let spec = play.doc.survivor.clone().unwrap();
+        let boss_hp = |play: &WorldPlay| play.survivor_loop.enemies[&boss_id].hp;
+        // The named weakness: 100 damage lands as 150.
+        play.survivor_loop.weapon = play.survivor_loop.boss_weak;
+        let hp0 = boss_hp(&play);
+        play.survivor_loop
+            .apply_hit(&mut play.doc, idx, 100.0, &spec);
+        assert!(
+            (hp0 - boss_hp(&play) - 150.0).abs() < 1e-3,
+            "the weak gun cuts x1.5"
+        );
+        // Any other gun lands at face value.
+        play.survivor_loop.weapon = ALL_WEAPONS
+            .iter()
+            .copied()
+            .find(|w| *w != play.survivor_loop.boss_weak)
+            .unwrap();
+        let hp1 = boss_hp(&play);
+        play.survivor_loop
+            .apply_hit(&mut play.doc, idx, 100.0, &spec);
+        assert!(
+            (hp1 - boss_hp(&play) - 100.0).abs() < 1e-3,
+            "other guns land at face value"
+        );
+    }
+
+    /// Dev tool (run explicitly): renders the rich round's three
+    /// HUD states to PNGs — the harness's SwiftShader frame rate
+    /// makes the 35 s mission and the 90 s boss impractical to
+    /// reach live, so the HUD is looked at the no-GPU way
+    /// (AGENTS.md rule 2). Output lands in the round's work dir.
+    #[test]
+    #[ignore = "dev tool: writes HUD raster PNGs to ~/workspace/dusk-rich-work/hud-rasters"]
+    fn rich_round_hud_rasters() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../dusk-rich-work/hud-rasters");
+        std::fs::create_dir_all(&dir).unwrap();
+        let (w, h) = (480u32, 854u32);
+        let save = |play: &WorldPlay, name: &str| {
+            let list = play.build_hud(w, h);
+            crate::raster2d::picture(&list, w, h)
+                .save_png(&dir.join(name))
+                .unwrap();
+        };
+        let dt = 1.0 / 60.0;
+        // Mission banner + readout, then the reward cards: the
+        // one-shot point-blank setup from the mission test.
+        let dump = survivor_dump(
+            8,
+            json!({
+                "cap_start": 6, "cap_max": 6, "spawn_radius": 9.0,
+                "enemy_hp": 10.0, "shot_damage": 50.0, "fire_interval": 0.05,
+                "fire_range": 2.5, "contact_dps": 0.0, "boss_first_s": 0.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        let mut shot_mission = false;
+        for _ in 0..(140 * 60) {
+            play.tick(dt);
+            if play.survivor_loop.level_pending {
+                play.survivor_loop.apply_choice(Choice::DamageUp);
+                continue;
+            }
+            if !shot_mission && play.survivor_loop.missions.active().is_some() {
+                save(&play, "hud_mission.png");
+                shot_mission = true;
+            }
+            if play.survivor_loop.reward_pending {
+                save(&play, "hud_reward_cards.png");
+                break;
+            }
+        }
+        assert!(shot_mission, "the mission state was reached");
+        assert!(
+            play.survivor_loop.reward_pending,
+            "the reward state was reached"
+        );
+        // Boss entrance banner, then the settled named bar.
+        let dump = survivor_dump(
+            4,
+            json!({
+                "cap_start": 0, "cap_max": 0, "spawn_radius": 8.0,
+                "enemy_hp": 100.0, "shot_damage": 0.0,
+                "boss_first_s": 1.0, "boss_hp_mult": 30.0
+            }),
+        );
+        let mut play = WorldPlay::from_json(&dump).unwrap();
+        play.start();
+        for _ in 0..240 {
+            play.tick(dt);
+            if play
+                .survivor_loop
+                .enemies
+                .values()
+                .any(|e| e.boss && e.mode == Mode::Alive)
+            {
+                break;
+            }
+        }
+        save(&play, "hud_boss_entrance.png");
+        for _ in 0..180 {
+            play.tick(dt);
+        }
+        save(&play, "hud_boss_bar.png");
     }
 
     #[test]

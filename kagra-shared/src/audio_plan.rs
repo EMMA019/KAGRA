@@ -184,7 +184,14 @@ pub fn plan(spec: Option<&Value>, cues: &Cues) -> Plan {
             });
         }
     }
-    let bgm_spec = spec.get("bgm");
+    // A kit may table several music entries (`bgm`, `bgm_boss`, ...):
+    // the mixer's current name picks its own entry when it has a file,
+    // and every other name keeps the plain `bgm` entry, so single-track
+    // games are untouched.
+    let bgm_spec = spec
+        .get(cues.bgm_name.as_str())
+        .filter(|entry| file_of(Some(entry)).is_some())
+        .or_else(|| spec.get("bgm"));
     let bgm = file_of(bgm_spec)
         .filter(|_| !cues.bgm_name.is_empty() && cues.bgm_gain > 0.001)
         .map(|file| Music {
@@ -285,6 +292,23 @@ mod tests {
         let m = p.bgm.unwrap();
         assert_eq!(m.file, "assets/audio/a/theme.mp3");
         assert!((m.volume - 0.8 * 0.5 * 0.45).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_named_music_entry_wins_over_the_default_bgm() {
+        // Kits with several tracks table them under the mixer's names:
+        // the current name picks its own file and volume, and a name
+        // with no entry of its own falls back to the plain `bgm`.
+        let mut s = spec();
+        s["bgm_boss"] = json!({"file": "assets/audio/a/boss.mp3", "volume": 0.6});
+        let mut c = cues(&[]);
+        c.bgm_name = "bgm_boss".into();
+        let m = plan(Some(&s), &c).bgm.unwrap();
+        assert_eq!(m.file, "assets/audio/a/boss.mp3");
+        assert!((m.volume - 0.8 * 0.5 * 0.6).abs() < 1e-5);
+        c.bgm_name = "bgm_alt".into();
+        let m = plan(Some(&s), &c).bgm.unwrap();
+        assert_eq!(m.file, "assets/audio/a/theme.mp3");
     }
 
     #[test]

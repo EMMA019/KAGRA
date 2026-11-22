@@ -22,13 +22,19 @@
 //! - [`stick`]: a floating thumb stick (landing, follow, analog push, smooth look).
 //! - [`motion`]: body motion for a crowd of static models (bob, squash, sway, lean, flinch).
 //! - [`declare_models`]: name every model a game may show, so the GPU set never changes.
+//! - [`declare_walkers`]: the skinned twin of `declare_models` — name every walker model a
+//!   game may show later (bosses, summons), so its slots are pinned from the first frame.
 //! - [`platform`]: a platformer body (run, jump, dash, coyote time, one-way and moving platforms).
+//! - [`pickup`]: world items the hero collects by walking over them (placed fixtures and
+//!   combat drops: magnet drift, lifetimes, drop caps, respawning spots).
 //! - [`grid`]: square-grid moves for tactics (reach with move costs, paths, ranges).
 //! - [`view`]: camera math for touch (fit a phone in either orientation, project, ground under a
 //!   finger, pick the thing a thumb meant).
 //! - [`tween`]: easing curves, tweens, timers, there-and-back motion.
 //! - [`progress`]: stages unlocked and a record per stage, kept on the device (`page.save`),
 //!   and the stage select on the first story card.
+//! - [`upgrades`]: permanent base-stat levels — a data-driven table (per-level gain, cap,
+//!   geometric price curve) a kit declares in JSON, plus the level state its save keeps.
 //! - [`floats`]: damage numbers and words rising from a spot in the world.
 //! - [`dialogue`]: JSON conversations with faces drawn from shapes, choices, flags, events.
 //! - [`items`]: item kinds, a bag with coins, equipment that adds up stats, shops, saves.
@@ -39,27 +45,37 @@
 //!   pitch, swing, a catcher's squat, a cheer; facing the viewer or from behind.
 //! - [`anim`]: a character's moves (locomotion, one-shot attacks with a hit cue, death hold)
 //!   as crossfaded glTF clips or a procedural pose.
+//! - [`combat`]: bodies with hurt cylinders, attack volumes (sectors, circles), knockback
+//!   velocity, hitstun, poise and projectiles for top-down action kits.
+//! - [`fx`]: pooled particle emitters (the survivor arena's sim, lifted): a declarative
+//!   spec of kinds and flipbook atlases, rendered through textured point clouds.
 //!
 //! HUD pieces (story and clear cards, list menus, button hit tests) are in [`crate::hud_kit`].
 //!
 //! The runner kit (`neon_cat.rs`), HOP-BEAT and the survivor arena are the kits today.
 
 pub mod anim;
+pub mod boss;
 pub mod chibi;
 pub mod chibi3d;
 pub mod collide;
+pub mod combat;
+pub mod companion;
 pub mod dialogue;
 pub mod enemies;
 pub mod feel;
 pub mod floats;
+pub mod fx;
 pub mod grid;
 pub mod items;
 pub mod juice;
 pub mod lives;
 pub mod meta;
+pub mod mission_cycle;
 pub mod missions;
 pub mod motion;
 pub mod physics2d;
+pub mod pickup;
 pub mod platform;
 pub mod portrait;
 pub mod progress;
@@ -68,6 +84,7 @@ pub mod run;
 pub mod stick;
 pub mod swarm;
 pub mod tween;
+pub mod upgrades;
 pub mod view;
 
 use crate::flow::{FlowPhase, GameFlow};
@@ -197,6 +214,26 @@ pub fn declare_models(doc: &mut crate::world_doc::WorldDoc, models: &[&str]) {
             collider: Some("none".into()),
             ..crate::world_doc::WorldProp::default()
         });
+    }
+}
+
+/// The skinned twin of [`declare_models`]: name every glTF model a game may later show as a
+/// skinned walker (a boss that spawns mid-run, a summoned ally, a companion who joins and
+/// leaves). Without it, the first frame such a walker enters the doc — and the frame its
+/// corpse leaves — changes the skinned slot set, so the renderer drops and re-uploads every
+/// mesh: a hitch of seconds on a phone with a large model set (`WorldDoc::gpu_mesh_key`).
+/// Declared models keep pinned slots from the first frame, and the walker takes those same
+/// slots over when it appears. A model that is not mounted (yet) is skipped, exactly like
+/// `declare_models`.
+pub fn declare_walkers(doc: &mut crate::world_doc::WorldDoc, models: &[&str]) {
+    for path in models {
+        if !crate::hop_beat::glb_ready(path) {
+            continue;
+        }
+        let spec = (*path).to_string();
+        if !doc.declared_walkers.contains(&spec) {
+            doc.declared_walkers.push(spec);
+        }
     }
 }
 

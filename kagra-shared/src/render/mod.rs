@@ -24,6 +24,9 @@ use post::PostGraph;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const MAX_TEXTURE_SIDE: u32 = 8192;
+/// Consecutive surface-Lost frames before `render_frame` stops
+/// reconfiguring and escalates to the shell's renderer rebuild.
+const SURFACE_LOST_ESCALATE: u32 = 30;
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 #[repr(C)]
@@ -286,8 +289,33 @@ pub struct Renderer {
     /// TextQuad → カバレッジ Quad のキャッシュ。GPU 状態を持たない。
     /// walker glTF spec → SpringBone 布シミュ（フレーム跨ぎで保持）。
     cloth: std::collections::HashMap<String, crate::spring::SpringState>,
+    /// Skinned specs whose parse this renderer has already warmed
+    /// (lag fix F1): a declared (pinned) walker pays its glTF parse
+    /// on the first frame its doc is drawn — the title, for kits
+    /// that declare up front — instead of the frame it materializes.
+    warmed_skinned: std::collections::HashSet<String>,
+    /// The instance buffer's one-time pre-size (lag fix F4).
+    inst_prewarmed: bool,
     /// Which `WorldDoc` mesh table is on the GPU. A new dump reuploads.
     mesh_key: String,
+    /// How many full mesh re-uploads have run (freeze
+    /// instrumentation, 2026-11-17): a `gpu_mesh_key` change is
+    /// the one renderer event that can cost seconds on a phone,
+    /// so the count is readable from the page.
+    mesh_uploads: u32,
+    /// Set by the device's lost callback (registered in
+    /// `assemble`) when the GPU device goes away for a reason
+    /// other than a normal destroy. `render_frame` turns it into an
+    /// Err so the shell runs its rebuild path: a pure WebGPU device
+    /// loss otherwise surfaces only as frames that never present.
+    device_lost: std::sync::Arc<AtomicBool>,
+    /// Consecutive surface-Lost frames with no presented frame in
+    /// between. A short run is a hiccup; a streak means the surface
+    /// is not coming back on its own, so `render_frame` escalates
+    /// to the same Err → rebuild path instead of reconfiguring a
+    /// dead surface forever (each silent Ok also reset the shell's
+    /// render strikes, so the loss never surfaced at all).
+    surface_lost_streak: u32,
     /// Last `render_frame`. CPU time is filled off wasm. GPU time only when
     /// the device exposes timestamp queries.
     last_profile: crate::profile::FrameProfile,
@@ -490,6 +518,25 @@ impl Renderer {
         if !hdr {
             note_ldr_fallback();
         }
+        // A lost device (the WebGPU shape of a context loss) fires no
+        // exception the shell could catch: frames just stop
+        // presenting. Record the loss on a flag `render_frame`
+        // checks per frame and turns into the shell's rebuild path.
+        // A normal destroy — the shell dropping this renderer during
+        // a rebuild — is not a loss and does not set it.
+        let device_lost = std::sync::Arc::new(AtomicBool::new(false));
+        device.set_device_lost_callback({
+            let device_lost = device_lost.clone();
+            move |reason, message| {
+                if reason == wgpu::DeviceLostReason::Destroyed {
+                    return;
+                }
+                note_renderer(&format!(
+                    "kagra: graphics device lost ({reason:?}): {message}"
+                ));
+                device_lost.store(true, Ordering::Relaxed);
+            }
+        });
         let frame_format = if hdr {
             bloom::HDR_FRAME_FORMAT
         } else {
@@ -1477,7 +1524,12 @@ impl Renderer {
             bloom,
             post,
             cloth: std::collections::HashMap::new(),
+            warmed_skinned: std::collections::HashSet::new(),
+            inst_prewarmed: false,
             mesh_key: String::new(),
+            mesh_uploads: 0,
+            device_lost,
+            surface_lost_streak: 0,
             last_profile: crate::profile::FrameProfile::default(),
             timestamps,
             backend_name: backend,
@@ -1781,6 +1833,13 @@ impl Renderer {
 
     /// 3D を描いてから HUD を重ね、1 枚として present する。
     pub fn render_frame(&mut self, world: Option<&Scene3D>, hud: &DrawList) -> Result<(), String> {
+        // A lost graphics device presents nothing and throws
+        // nothing: surface the loss as an error so the shell runs
+        // the same rebuild a render exception gets (and a GL
+        // context restore gets), instead of drawing into the void.
+        if self.device_lost.load(Ordering::Relaxed) {
+            return Err("graphics device lost".into());
+        }
         puffin::GlobalProfiler::lock().new_frame();
         puffin::profile_function!();
         // Instant::now can panic on wasm32 before a time source exists.
@@ -1935,15 +1994,35 @@ impl Renderer {
                 use wgpu::CurrentSurfaceTexture as Cst;
                 match surface.get_current_texture() {
                     // Suboptimal でもそのフレームは描ける。次フレームで作り直す。
-                    Cst::Success(f) | Cst::Suboptimal(f) => Some(f),
-                    Cst::Outdated | Cst::Lost => {
+                    Cst::Success(f) | Cst::Suboptimal(f) => {
+                        self.surface_lost_streak = 0;
+                        Some(f)
+                    }
+                    Cst::Outdated => {
                         // 回転・リサイズ直後。再構成して次フレームに任せる。
-                        // A configure the browser rejected stays Lost forever
-                        // and presents black, so say so once.
                         note_once(&format!(
                             "kagra: surface lost (format {:?}, {}x{})",
                             self.format, self.width, self.height
                         ));
+                        self.reconfigure();
+                        return Ok(());
+                    }
+                    Cst::Lost => {
+                        // A configure the browser rejected stays Lost forever
+                        // and presents black, so say so once. Reconfiguring
+                        // helps a transient loss; a surface that stays lost
+                        // is escalated to the shell's rebuild (fresh device
+                        // + surface) instead of returning a silent Ok
+                        // forever — a silent Ok also reset the shell's
+                        // render strikes, so the loss never surfaced.
+                        self.surface_lost_streak += 1;
+                        note_once(&format!(
+                            "kagra: surface lost (format {:?}, {}x{})",
+                            self.format, self.width, self.height
+                        ));
+                        if self.surface_lost_streak >= SURFACE_LOST_ESCALATE {
+                            return Err("surface lost repeatedly".into());
+                        }
                         self.reconfigure();
                         return Ok(());
                     }
@@ -2310,6 +2389,11 @@ impl Renderer {
             direct_post,
         );
         Ok(())
+    }
+
+    /// Full mesh re-uploads so far (see `mesh_uploads`).
+    pub fn mesh_uploads(&self) -> u32 {
+        self.mesh_uploads
     }
 
     /// One line the page can print: tier, backend, and which passes ran.
@@ -2945,6 +3029,7 @@ impl Renderer {
             let GltfSlot::Skinned {
                 spec,
                 part,
+                pinned,
                 clip,
                 hair,
                 morph,
@@ -2964,6 +3049,12 @@ impl Renderer {
             else {
                 continue;
             };
+            if pinned {
+                // A declared model with no live walker: the slot only
+                // reserves its mesh ids. Nothing poses or draws it, so
+                // re-skinning it every frame would be pure waste.
+                continue;
+            }
             let Some(parts) = crate::world_doc::load_skinned_parts(&spec) else {
                 continue;
             };
@@ -3043,12 +3134,42 @@ impl Renderer {
         doc: &crate::world_doc::WorldDoc,
         hud: &DrawList,
     ) -> Result<(), String> {
+        // Lag fix F4: grow the instance buffer to its working size
+        // once, up front, instead of in power-of-two steps on the
+        // frames where a mass kill or a boss's gem burst first
+        // crosses each threshold (lag report P2).
+        if !self.inst_prewarmed {
+            self.inst_prewarmed = true;
+            self.ensure_instance_capacity(4096);
+        }
         let key = doc.gpu_mesh_key();
         if self.meshes.is_empty() || self.mesh_key != key {
             // Driving meshes, or a previous world's glTF table, are not this doc.
             self.clear_meshes();
             self.upload_world_meshes(doc)?;
+            self.mesh_uploads += 1;
             self.mesh_key = key;
+            // Lag fix F1: warm the skinned parse of every declared
+            // (pinned) spec this doc carries, once per spec. A
+            // pinned slot only reserves its mesh ids, so without
+            // this its model would pay the full glTF parse on the
+            // frame it first materializes — the boss-spawn hitch.
+            // The parse fills the shared parts cache only: nothing
+            // is uploaded, the mesh key does not move, and because
+            // the scan keys off the doc (not any one game), every
+            // declared walker gets it — bosses today, companions
+            // when they land. A doc's key covers its skinned spec
+            // set, so the key-change branch sees every new spec.
+            for slot in doc.gltf_slots() {
+                if let crate::world_doc::GltfSlot::Skinned {
+                    spec, pinned: true, ..
+                } = slot
+                {
+                    if self.warmed_skinned.insert(spec.clone()) {
+                        let _ = crate::world_doc::load_skinned_parts(&spec);
+                    }
+                }
+            }
         } else {
             // ライブ tick: walker glTF は clip/hair/morph/look で毎フレーム
             // 再スキンする（初回アップロードのみだと T-pose のまま固定）。
@@ -3368,6 +3489,26 @@ struct StrokeView {
 struct PointRaw {
     pos: [f32; 4],
     color: [f32; 4],
+    uv: [f32; 4],
+    /// (rotation radians, textured flag, emit scale, unused)
+    misc: [f32; 4],
+}
+
+/// One uploaded point atlas, kept alive by its bind group.
+#[derive(Debug)]
+struct AtlasTex {
+    bind: wgpu::BindGroup,
+    _tex: wgpu::Texture,
+}
+
+/// One instanced point draw recorded by `prepare`: a run of instances in the
+/// shared point buffer with one pipeline and one atlas binding.
+#[derive(Debug)]
+struct PointDraw {
+    first: u32,
+    count: u32,
+    blend: crate::strokes::PointBlend,
+    bind: wgpu::BindGroup,
 }
 
 #[repr(C)]
@@ -3381,9 +3522,22 @@ struct LineRaw {
 #[derive(Debug)]
 struct StrokeGpu {
     pipeline_points: wgpu::RenderPipeline,
+    pipeline_points_alpha: wgpu::RenderPipeline,
     pipeline_lines: wgpu::RenderPipeline,
     stroke_buf: wgpu::Buffer,
     stroke_bind: wgpu::BindGroup,
+    /// Texture layout shared by every point atlas bind group.
+    tex_layout: wgpu::BindGroupLayout,
+    tex_sampler: wgpu::Sampler,
+    /// 1x1 white atlas bound for untextured batches (never sampled).
+    white_bind: wgpu::BindGroup,
+    _white_tex: wgpu::Texture,
+    /// Atlases uploaded so far, keyed by their doc spec. Uploads happen in
+    /// `prepare`, the first frame a spec is declared — kits declare their
+    /// atlases from frame one, so this never fires at a first spawn.
+    atlas_cache: std::collections::HashMap<String, AtlasTex>,
+    /// Draws recorded by the last `prepare`.
+    point_draws: Vec<PointDraw>,
     point_corner_buf: wgpu::Buffer,
     line_corner_buf: wgpu::Buffer,
     point_inst_buf: wgpu::Buffer,
@@ -3427,6 +3581,58 @@ fn create_stroke_gpu(
         label: Some("kagra-shared stroke pipeline layout"),
         bind_group_layouts: &[Some(&bind_layout)],
         immediate_size: 0,
+    });
+    let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("kagra-shared point atlas layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let points_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("kagra-shared point pipeline layout"),
+        bind_group_layouts: &[Some(&bind_layout), Some(&tex_layout)],
+        immediate_size: 0,
+    });
+    let tex_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("kagra-shared point atlas sampler"),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let white_tex = create_albedo_texture(device, queue, 1, 1, &[255, 255, 255, 255]);
+    let white_view = white_tex.create_view(&Default::default());
+    let white_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("kagra-shared point white atlas"),
+        layout: &tex_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&white_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&tex_sampler),
+            },
+        ],
     });
     let stroke_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("kagra-shared stroke view"),
@@ -3483,6 +3689,16 @@ fn create_stroke_gpu(
             offset: 16,
             shader_location: 2,
         },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 32,
+            shader_location: 3,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Float32x4,
+            offset: 48,
+            shader_location: 4,
+        },
     ];
     let line_attr = [
         wgpu::VertexAttribute {
@@ -3527,7 +3743,7 @@ fn create_stroke_gpu(
     ];
     let pipeline_points = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("kagra-shared points"),
-        layout: Some(&layout),
+        layout: Some(&points_layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_point"),
@@ -3539,6 +3755,57 @@ fn create_stroke_gpu(
             entry_point: Some("fs_point"),
             compilation_options: Default::default(),
             targets: &targets,
+        }),
+        primitive: wgpu::PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: Some(depth.clone()),
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    });
+    // Alpha points: premultiplied blending over the frame — smoke
+    // occludes, it never feeds the bloom. Both targets share ONE
+    // blend/write state on purpose: muting the emit target with a
+    // per-target write mask instead would require INDEPENDENT_BLEND,
+    // which some adapters (SwiftShader among them) do not expose, and
+    // the pipeline then fails creation and every smoke frame logs a
+    // validation error. `fs_point_alpha` returns a zero emit, which
+    // the shared premultiplied blend over the emit target reduces to
+    // the identity — same picture, no optional capability.
+    let premul = wgpu::BlendState {
+        color: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+        alpha: wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+            operation: wgpu::BlendOperation::Add,
+        },
+    };
+    let target_alpha = wgpu::ColorTargetState {
+        format: frame_format,
+        blend: Some(premul),
+        write_mask: wgpu::ColorWrites::ALL,
+    };
+    let targets_alpha = [Some(target_alpha.clone()), Some(target_alpha)];
+    let pipeline_points_alpha = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("kagra-shared points alpha"),
+        layout: Some(&points_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_point"),
+            compilation_options: Default::default(),
+            buffers: &point_buffers,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_point_alpha"),
+            compilation_options: Default::default(),
+            targets: &targets_alpha,
         }),
         primitive: wgpu::PrimitiveState {
             cull_mode: None,
@@ -3577,9 +3844,16 @@ fn create_stroke_gpu(
     let line_inst_capacity = 64;
     StrokeGpu {
         pipeline_points,
+        pipeline_points_alpha,
         pipeline_lines,
         stroke_buf,
         stroke_bind,
+        tex_layout,
+        tex_sampler,
+        white_bind,
+        _white_tex: white_tex,
+        atlas_cache: std::collections::HashMap::new(),
+        point_draws: Vec::new(),
         point_corner_buf: create_init_buffer(
             device,
             queue,
@@ -3597,7 +3871,7 @@ fn create_stroke_gpu(
         point_inst_buf: instance_buf(
             device,
             "kagra-shared point instances",
-            32,
+            std::mem::size_of::<PointRaw>(),
             point_inst_capacity,
         ),
         point_inst_capacity,
@@ -3612,6 +3886,44 @@ fn create_stroke_gpu(
 }
 
 impl StrokeGpu {
+    /// Resolve the atlas a batch declares, uploading it on first sight. The
+    /// upload belongs to the frame the spec is DECLARED in the doc — kits
+    /// declare their atlases from the first frame (the first-occurrence
+    /// rule) — never to the frame a particle first spawns. A spec that does
+    /// not resolve returns None and its points fall back to soft discs.
+    fn atlas_bind(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        spec: &str,
+    ) -> Option<wgpu::BindGroup> {
+        if !self.atlas_cache.contains_key(spec) {
+            let alb = crate::world_doc::load_png_albedo(spec)?;
+            if alb.width == 0 || alb.height == 0 || alb.rgba.is_empty() {
+                return None;
+            }
+            let tex = create_albedo_texture(device, queue, alb.width, alb.height, &alb.rgba);
+            let view = tex.create_view(&Default::default());
+            let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("kagra-shared point atlas"),
+                layout: &self.tex_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&self.tex_sampler),
+                    },
+                ],
+            });
+            self.atlas_cache
+                .insert(spec.to_string(), AtlasTex { bind, _tex: tex });
+        }
+        self.atlas_cache.get(spec).map(|a| a.bind.clone())
+    }
+
     fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -3623,14 +3935,49 @@ impl StrokeGpu {
         let cam = &scene.camera;
         let (forward, right, up) = crate::scene3d::screen_basis(cam.eye, cam.target, cam.up);
         let ahead = |p: [f32; 3]| (glam::Vec3::from_array(p) - cam.eye).dot(forward) > cam.near;
-        let points: Vec<PointRaw> = crate::strokes::collect_points(&scene.points)
-            .into_iter()
-            .filter(|p| ahead(p.position))
-            .map(|p| PointRaw {
-                pos: [p.position[0], p.position[1], p.position[2], p.size],
-                color: color_space::srgb_u8_to_linear(p.color),
-            })
-            .collect();
+        // Batches resolve their atlases even when they hold no sprites: an
+        // empty cloud naming an atlas is a declaration, and its upload
+        // happens on this frame, not at the first spawn into it.
+        let batches = crate::strokes::collect_point_batches(&scene.points);
+        let mut points: Vec<PointRaw> = Vec::new();
+        self.point_draws.clear();
+        for batch in &batches {
+            let (bind, textured_ok) = match &batch.atlas {
+                Some(spec) => match self.atlas_bind(device, queue, spec) {
+                    Some(bind) => (bind, true),
+                    None => (self.white_bind.clone(), false),
+                },
+                None => (self.white_bind.clone(), false),
+            };
+            let first = points.len() as u32;
+            let mut count = 0u32;
+            for p in batch.sprites.iter().filter(|p| ahead(p.position)) {
+                points.push(PointRaw {
+                    pos: [p.position[0], p.position[1], p.position[2], p.size],
+                    color: color_space::srgb_u8_to_linear(p.color),
+                    uv: p.uv,
+                    misc: [
+                        p.rotation,
+                        if textured_ok && p.textured { 1.0 } else { 0.0 },
+                        if batch.blend == crate::strokes::PointBlend::Additive {
+                            1.0
+                        } else {
+                            0.0
+                        },
+                        0.0,
+                    ],
+                });
+                count += 1;
+            }
+            if count > 0 {
+                self.point_draws.push(PointDraw {
+                    first,
+                    count,
+                    blend: batch.blend,
+                    bind,
+                });
+            }
+        }
         let lines: Vec<LineRaw> = crate::strokes::collect_segments(&scene.lines)
             .into_iter()
             .filter(|s| ahead(s.start) && ahead(s.end))
@@ -3659,7 +4006,12 @@ impl StrokeGpu {
         if !points.is_empty() {
             if points.len() > self.point_inst_capacity {
                 let cap = points.len().next_power_of_two();
-                self.point_inst_buf = instance_buf(device, "kagra-shared point instances", 32, cap);
+                self.point_inst_buf = instance_buf(
+                    device,
+                    "kagra-shared point instances",
+                    std::mem::size_of::<PointRaw>(),
+                    cap,
+                );
                 self.point_inst_capacity = cap;
             }
             queue.write_buffer(&self.point_inst_buf, 0, bytemuck::cast_slice(&points));
@@ -3681,10 +4033,16 @@ impl StrokeGpu {
         }
         pass.set_bind_group(0, &self.stroke_bind, &[]);
         if n_points > 0 {
-            pass.set_pipeline(&self.pipeline_points);
             pass.set_vertex_buffer(0, self.point_corner_buf.slice(..));
             pass.set_vertex_buffer(1, self.point_inst_buf.slice(..));
-            pass.draw(0..6, 0..n_points);
+            for d in &self.point_draws {
+                pass.set_pipeline(match d.blend {
+                    crate::strokes::PointBlend::Additive => &self.pipeline_points,
+                    crate::strokes::PointBlend::Alpha => &self.pipeline_points_alpha,
+                });
+                pass.set_bind_group(1, &d.bind, &[]);
+                pass.draw(0..6, d.first..d.first + d.count);
+            }
         }
         if n_lines > 0 {
             pass.set_pipeline(&self.pipeline_lines);
@@ -5161,6 +5519,7 @@ mod tests {
             positions: vec![[0.0, 0.45, 0.0]],
             color: [255, 40, 180, 255],
             size: 0.22,
+            ..crate::strokes::PointCloud::default()
         });
         let on = renderer.render_world_doc(&doc).expect("strokes");
         write_shot("strokes-on.png", 160, 90, &on);
@@ -5187,6 +5546,174 @@ mod tests {
         assert!(
             phone_changed > 20,
             "8-bit path should still draw strokes, changed {phone_changed} {status}"
+        );
+    }
+
+    /// A tiny procedural 2x2 sheet (red glow, green glow, dark smoke,
+    /// white) registered as a picture: frame N of the effect atlas tests.
+    fn test_sheet_spec() -> String {
+        let cell = 64u32;
+        let (w, h) = (cell * 2, cell * 2);
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+        let colours = [[255, 0, 0], [0, 255, 0], [90, 90, 90], [255, 255, 255]];
+        for y in 0..h {
+            for x in 0..w {
+                let (cx, cy) = (x / cell, y / cell);
+                let idx = (cy * 2 + cx) as usize;
+                let (lx, ly) = (
+                    (x % cell) as f32 / cell as f32 - 0.5,
+                    (y % cell) as f32 / cell as f32 - 0.5,
+                );
+                let r = (lx * lx + ly * ly).sqrt() * 2.0;
+                let a = ((1.0 - r).clamp(0.0, 1.0) * 255.0) as u8;
+                let o = ((y * w + x) * 4) as usize;
+                rgba[o..o + 3].copy_from_slice(&colours[idx]);
+                rgba[o + 3] = a;
+            }
+        }
+        let id = crate::image2d::register_rgba(w, h, rgba).expect("sheet");
+        crate::image2d::texture_spec(id)
+    }
+
+    fn fx_test_doc() -> crate::world_doc::WorldDoc {
+        let mut doc = crate::world_doc::WorldDoc {
+            version: 1,
+            ground: Some(false),
+            sky: Some([120, 120, 120, 255]),
+            bloom: Some(0.0),
+            tonemap: Some(false),
+            exposure: Some(1.0),
+            ..Default::default()
+        };
+        doc.cameras.push(crate::world_doc::WorldCamera {
+            id: "cam".into(),
+            kind: "camera".into(),
+            name: "main".into(),
+            position: [0.0, 0.2, 3.2],
+            target: [0.0, 0.0, 0.0],
+            fov: 50.0,
+            roll: 0.0,
+        });
+        doc
+    }
+
+    #[test]
+    fn textured_points_sample_their_own_frame() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(160, 90)).ok() else {
+            eprintln!("no GPU adapter; skipping textured points");
+            return;
+        };
+        let spec = test_sheet_spec();
+        let frame_doc = |frame: [f32; 4]| {
+            let mut doc = fx_test_doc();
+            doc.points.push(crate::strokes::PointCloud {
+                id: "fx".into(),
+                positions: vec![[0.0, 0.45, 0.0]],
+                color: [255, 255, 255, 255],
+                size: 0.3,
+                atlas: Some(spec.clone()),
+                frames: vec![frame],
+                ..crate::strokes::PointCloud::default()
+            });
+            doc
+        };
+        // Frame 0 is the red cell (left half, top row), frame 1 the green.
+        let red = renderer
+            .render_world_doc(&frame_doc([0.0, 0.0, 0.5, 0.5]))
+            .expect("red frame");
+        let green = renderer
+            .render_world_doc(&frame_doc([0.5, 0.0, 1.0, 0.5]))
+            .expect("green frame");
+        write_shot("fx-frame-red.png", 160, 90, &red);
+        write_shot("fx-frame-green.png", 160, 90, &green);
+        // Red frame: some pixel is strongly red-over-green; green frame the
+        // reverse. (The sprite is the only coloured thing on a grey field.)
+        let red_dom = red
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|px| px[0] as i32 - px[1] as i32)
+            .max()
+            .unwrap_or(0);
+        let green_dom = green
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|px| px[1] as i32 - px[0] as i32)
+            .max()
+            .unwrap_or(0);
+        assert!(red_dom > 40, "frame 0 should read red, dominance {red_dom}");
+        assert!(
+            green_dom > 40,
+            "frame 1 should read green, dominance {green_dom}"
+        );
+        // A declaration-only cloud (atlas named, no positions) uploads the
+        // atlas but draws nothing: the frame is the bare field.
+        let mut declare = fx_test_doc();
+        declare.points.push(crate::strokes::PointCloud {
+            id: "declare".into(),
+            atlas: Some(spec.clone()),
+            ..crate::strokes::PointCloud::default()
+        });
+        let declared = renderer.render_world_doc(&declare).expect("declare");
+        let bare = renderer.render_world_doc(&fx_test_doc()).expect("bare");
+        assert_eq!(
+            changed_pixels(&declared, &bare),
+            0,
+            "an empty declaration cloud must not draw"
+        );
+    }
+
+    #[test]
+    fn alpha_points_occlude_where_additive_ones_glow() {
+        let Some(mut renderer) = pollster::block_on(Renderer::new_offscreen(160, 90)).ok() else {
+            eprintln!("no GPU adapter; skipping alpha points");
+            return;
+        };
+        let bare = renderer.render_world_doc(&fx_test_doc()).expect("bare");
+        let smoke_doc = |blend| {
+            let mut doc = fx_test_doc();
+            doc.points.push(crate::strokes::PointCloud {
+                id: "smoke".into(),
+                positions: vec![[0.0, 0.45, 0.0]],
+                color: [90, 90, 90, 255],
+                size: 0.5,
+                blend,
+                ..crate::strokes::PointCloud::default()
+            });
+            doc
+        };
+        let add = renderer
+            .render_world_doc(&smoke_doc(crate::strokes::PointBlend::Additive))
+            .expect("additive");
+        let alpha = renderer
+            .render_world_doc(&smoke_doc(crate::strokes::PointBlend::Alpha))
+            .expect("alpha");
+        // Same dark sprite, two outcomes inside the sprite's window: alpha
+        // pulls the bright field DOWN toward the smoke colour somewhere,
+        // additive pushes it UP somewhere. (Compared per-pixel against the
+        // bare frame, so the sky's own gradient cannot fake either.)
+        let extreme = |img: &[u8], want_dark: bool| -> i32 {
+            let mut best = 0i32;
+            for y in 15..75u32 {
+                for x in 50..110u32 {
+                    let a = pixel_of(img, 160, x, y)[0] as i32;
+                    let b = pixel_of(&bare, 160, x, y)[0] as i32;
+                    let dev = if want_dark { b - a } else { a - b };
+                    best = best.max(dev);
+                }
+            }
+            best
+        };
+        let darkened = extreme(&alpha, true);
+        let brightened = extreme(&add, false);
+        assert!(
+            darkened > 10,
+            "alpha smoke should darken the field, best {darkened}"
+        );
+        assert!(
+            brightened > 10,
+            "additive smoke should brighten the field, best {brightened}"
         );
     }
 

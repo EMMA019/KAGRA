@@ -16,6 +16,11 @@ struct View {
 
 @group(0) @binding(0) var<uniform> v: View;
 
+// Point atlas (group 1 is bound for points only; lines never touch it).
+// Untextured batches bind a 1x1 white texture and never sample it.
+@group(1) @binding(0) var atlas_tex: texture_2d<f32>;
+@group(1) @binding(1) var atlas_smp: sampler;
+
 struct FragOut {
     @location(0) color: vec4<f32>,
     @location(1) emit: vec4<f32>,
@@ -25,38 +30,88 @@ struct PointIn {
     @location(0) corner: vec2<f32>,
     @location(1) pos: vec4<f32>,
     @location(2) color: vec4<f32>,
+    // (u0, v0, u1, v1) of this point's frame; v0 is the sheet's TOP row.
+    @location(3) uv_rect: vec4<f32>,
+    // (rotation radians, textured flag, emit scale, unused)
+    @location(4) misc: vec4<f32>,
 };
 
 struct PointOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) corner: vec2<f32>,
     @location(1) color: vec4<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) misc: vec4<f32>,
 };
 
 @vertex
 fn vs_point(input: PointIn) -> PointOut {
+    let c = cos(input.misc.x);
+    let s = sin(input.misc.x);
+    let rc = vec2<f32>(
+        input.corner.x * c - input.corner.y * s,
+        input.corner.x * s + input.corner.y * c,
+    );
     let world = input.pos.xyz
-        + v.cam_right.xyz * input.corner.x * input.pos.w
-        + v.cam_up.xyz * input.corner.y * input.pos.w;
+        + v.cam_right.xyz * rc.x * input.pos.w
+        + v.cam_up.xyz * rc.y * input.pos.w;
     var o: PointOut;
     o.clip = v.view_proj * vec4<f32>(world, 1.0);
     o.corner = input.corner;
     o.color = input.color;
+    // UVs come from the UNROTATED corner, so the picture turns with the quad.
+    // Corner y = +1 is the top of the billboard and samples v0 (sheet top).
+    let t = input.corner * 0.5 + 0.5;
+    o.uv = vec2<f32>(
+        mix(input.uv_rect.x, input.uv_rect.z, t.x),
+        mix(input.uv_rect.w, input.uv_rect.y, t.y),
+    );
+    o.misc = input.misc;
     return o;
+}
+
+// The premultiplied colour a point paints into the frame target: the
+// atlas texel (or the soft-disc falloff) times the point colour, with the
+// alpha folded into rgb the way both blend states expect.
+fn point_color(input: PointOut) -> vec4<f32> {
+    var a: f32;
+    var tex_rgb = vec3<f32>(1.0);
+    if (input.misc.y > 0.5) {
+        let tex = textureSample(atlas_tex, atlas_smp, input.uv);
+        a = input.color.a * tex.a;
+        tex_rgb = tex.rgb;
+    } else {
+        let r = length(input.corner);
+        if (r > 1.0) {
+            discard;
+        }
+        let edge = 1.0 - smoothstep(0.55, 1.0, r);
+        a = input.color.a * edge;
+    }
+    return vec4<f32>(input.color.rgb * tex_rgb * a, a);
 }
 
 @fragment
 fn fs_point(input: PointOut) -> FragOut {
-    let r = length(input.corner);
-    if (r > 1.0) {
-        discard;
-    }
-    let edge = 1.0 - smoothstep(0.55, 1.0, r);
-    let a = input.color.a * edge;
-    let rgb = input.color.rgb * a;
+    let col = point_color(input);
     var o: FragOut;
-    o.color = vec4<f32>(rgb, a);
-    o.emit = vec4<f32>(a, 0.0, 0.0, 1.0);
+    o.color = col;
+    o.emit = vec4<f32>(col.a * input.misc.z, 0.0, 0.0, 1.0);
+    return o;
+}
+
+// Alpha-blended points (smoke): the same colour, but they must never
+// feed the bloom emit target. The pipeline gives both targets one
+// shared blend/write state — a per-target write mask (the old way of
+// muting the emit write) requires INDEPENDENT_BLEND, which some
+// adapters do not expose — so the muting lives in the shader instead:
+// emit is exactly zero, and the shared premultiplied blend over the
+// emit target is the identity.
+@fragment
+fn fs_point_alpha(input: PointOut) -> FragOut {
+    var o: FragOut;
+    o.color = point_color(input);
+    o.emit = vec4<f32>(0.0);
     return o;
 }
 

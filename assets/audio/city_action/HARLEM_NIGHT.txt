@@ -1,0 +1,14 @@
+"Harlem Night" — the city_action BGM.
+
+An original loop composed and synthesized for KAGRA: a hard-bop /
+funk groove in the shape of the game's Harlem-night stage — a 12-bar
+Bb blues chorus at 126 BPM on a swung eighth grid, with a walking
+bass, ride cymbal, feathered kick, brushy snare, electric-piano
+comping and brass-section stabs. Fully synthesized from oscillators
+and filtered noise; no third-party samples, recordings or material.
+
+License: CC0 1.0 Universal (public domain dedication).
+Author: KAGRA project, 2026-11-14.
+Loop: the 12-bar form (22.857 s) loops on its own turnaround; the
+render keeps the steady-state second pass and closes the seam with
+an 80 ms crossfade.

@@ -520,6 +520,99 @@
   {
    "license_spdx": "CC0-1.0",
    "license_evidence": [
+    "assets/audio/city_action/HARLEM_NIGHT.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original loop synthesized for city_action: a hard-bop / funk groove, 12-bar Bb blues at 126 BPM on a swung grid (22.9 s, 160 kbit/s MP3) for the Harlem-night stage. Loop check (2026-11-14): the form loops on its own turnaround; steady-state second render pass plus an 80 ms seam crossfade; the wrap step stays inside the track's own transient range, so no click is expected; not auditioned by ear.",
+   "verified": "checked",
+   "id": "project-harlem-night",
+   "name": "Harlem Night (city_action BGM)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-14",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/city_action/*.mp3"
+   ],
+   "verified_how": "assets/audio/city_action/HARLEM_NIGHT.txt: original synthesized track made for KAGRA, CC0. No third-party material."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/city_action/LENOX_AFTER_HOURS.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original loop synthesized for city_action: a soul-jazz / midnight-blues groove, 12-bar F-minor blues at 100 BPM on a lightly swung grid (28.8 s, 160 kbit/s MP3), the run's second stage track alongside Harlem Night (runs alternate). Loop check (2026-11-15): the form loops on its own turnaround; steady-state second render pass plus an 80 ms seam crossfade; the wrap step (0.17) stays inside the track's own transient range (max step 0.93), so no click is expected; not auditioned by ear.",
+   "verified": "checked",
+   "id": "project-lenox-after-hours",
+   "name": "Lenox After Hours (city_action BGM)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-15",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/city_action/lenox_after_hours.mp3"
+   ],
+   "verified_how": "assets/audio/city_action/LENOX_AFTER_HOURS.txt: original synthesized track made for KAGRA, CC0. No third-party material."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/city_action/BOSS_STOMP.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original loop synthesized for city_action: a driving minor-funk groove for the boss fights, 8-bar Bb-minor form at 140 BPM on a straight 16th grid (13.7 s, 160 kbit/s MP3); plays only while a boss is up. Loop check (2026-11-15): the form loops on its own turnaround; steady-state second render pass plus an 80 ms seam crossfade; the wrap step (0.31) stays inside the track's own transient range (max step 1.35), so no click is expected; not auditioned by ear.",
+   "verified": "checked",
+   "id": "project-boss-stomp",
+   "name": "Boss Stomp (city_action boss BGM)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-15",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/city_action/boss_stomp.mp3"
+   ],
+   "verified_how": "assets/audio/city_action/BOSS_STOMP.txt: original synthesized track made for KAGRA, CC0. No third-party material."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
     "assets/audio/LICENSE.txt"
    ],
    "receipt_ref": null,
@@ -1465,8 +1558,16 @@
    "license": "cc0",
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/country.png"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/country.png"
+   ],
    "verified_how": "OpenGameArt page states CC0. Layers composited and downscaled in-repo; credit appreciated, not required."
   },
   {
@@ -1486,8 +1587,17 @@
    "license": "cc0",
    "license_url": "https://polyhaven.com/license",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/sky_day.png", "assets/diamond_days/sky_night.png"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/sky_day.png",
+    "assets/diamond_days/sky_night.png"
+   ],
    "verified_how": "polyhaven.com/license is CC0 and allows redistribution. Plates are HDR-derived conversions, not website thumbnails. Sources: https://polyhaven.com/a/kloppenheim_02 and https://polyhaven.com/a/moonless_golf."
   },
   {
@@ -1507,13 +1617,23 @@
    "license": "cc0",
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/ball.png"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/ball.png"
+   ],
    "verified_how": "OpenGameArt page states CC0. Downscaled for phones. The composite sheet with BASEBALL CATCHER title art was not copied."
   },
   {
    "license_spdx": "CC0-1.0",
-   "license_evidence": ["assets/diamond_days/licenses/kenney-ui-adventure.txt"],
+   "license_evidence": [
+    "assets/diamond_days/licenses/kenney-ui-adventure.txt"
+   ],
    "receipt_ref": null,
    "attribution_required": false,
    "attribution_text": null,
@@ -1528,13 +1648,25 @@
    "license": "cc0",
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/paper.png", "assets/diamond_days/banner.png", "assets/diamond_days/licenses/kenney-ui-adventure.txt"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/paper.png",
+    "assets/diamond_days/banner.png",
+    "assets/diamond_days/licenses/kenney-ui-adventure.txt"
+   ],
    "verified_how": "Shipped License.txt says CC0. kenney.nl publishes the pack as CC0."
   },
   {
    "license_spdx": "CC0-1.0",
-   "license_evidence": ["assets/diamond_days/licenses/kenney-ui-pack.txt"],
+   "license_evidence": [
+    "assets/diamond_days/licenses/kenney-ui-pack.txt"
+   ],
    "receipt_ref": null,
    "attribution_required": false,
    "attribution_text": null,
@@ -1549,13 +1681,26 @@
    "license": "cc0",
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/btn_green.png", "assets/diamond_days/btn_gold.png", "assets/diamond_days/star.png", "assets/diamond_days/licenses/kenney-ui-pack.txt"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/btn_green.png",
+    "assets/diamond_days/btn_gold.png",
+    "assets/diamond_days/star.png",
+    "assets/diamond_days/licenses/kenney-ui-pack.txt"
+   ],
    "verified_how": "Shipped License.txt from UI Pack 2.0 says CC0. kenney.nl publishes the pack as CC0."
   },
   {
    "license_spdx": "CC0-1.0",
-   "license_evidence": ["assets/diamond_days/licenses/kenney-medals.txt"],
+   "license_evidence": [
+    "assets/diamond_days/licenses/kenney-medals.txt"
+   ],
    "receipt_ref": null,
    "attribution_required": false,
    "attribution_text": null,
@@ -1570,9 +1715,317 @@
    "license": "cc0",
    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
    "obtained": "2026-11-07",
-   "allowed_uses": ["personal", "commercial", "modify", "redistribute-in-game", "redistribute-standalone"],
-   "paths": ["assets/diamond_days/medal_gold.png", "assets/diamond_days/medal_silver.png", "assets/diamond_days/medal_bronze.png", "assets/diamond_days/licenses/kenney-medals.txt"],
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/diamond_days/medal_gold.png",
+    "assets/diamond_days/medal_silver.png",
+    "assets/diamond_days/medal_bronze.png",
+    "assets/diamond_days/licenses/kenney-medals.txt"
+   ],
    "verified_how": "Shipped License.txt says CC0. kenney.nl publishes the pack as CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/city_action/ULT_READY.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original chime synthesized for city_action: a two-bell ping (an E6 bell answered 70 ms later by a quieter B6 bell, 0.6 s, 160 kbit/s MP3) struck once when the ult gauge tops out and the ULT button lights. Synthesized with numpy on the project's synth bench (generate_ult_ready.py); not auditioned by ear.",
+   "verified": "checked",
+   "id": "project-ult-ready",
+   "name": "Ult Ready (city_action SFX)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-16",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/city_action/ult_ready.mp3"
+   ],
+   "verified_how": "assets/audio/city_action/ULT_READY.txt: original synthesized chime made for KAGRA, CC0. No third-party material."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/audio/city_action/CREDITS.md"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original ambience loop synthesized for city_action's ?look=bg eerie-streets mode: filtered-noise wind with slow periodic gusts and a faint whistle over a low sine-cluster drone (28.0 s, 112 kbit/s MP3), layered under the stage BGM by the kit's re-cue watch. Loop check (2026-11-18): every modulation period divides the 28 s loop and the noise layers close the seam with a 1.5 s equal-power crossfade of tail into head, so the wrap is seamless; not auditioned by ear. Provenance lives in the folder's CREDITS.md (a Night Wind section) rather than a per-track .txt: the preview file budget is at its cap, and the CREDITS.md already ships.",
+   "verified": "checked",
+   "id": "project-night-wind",
+   "name": "Night Wind (city_action bg ambience)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-18",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/audio/city_action/night_wind.mp3"
+   ],
+   "verified_how": "assets/audio/city_action/CREDITS.md (Night Wind section): original synthesized ambience made for KAGRA, CC0. No third-party material."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/textures/city_action/kenney_particle-pack_LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Cells 48-52 of the atlas (glow, flame wisp, bolt cluster, star, arcane mote) are this pack's light_01, flame_01, spark_01, star_01, magic_03, downscaled.",
+   "verified": "checked",
+   "id": "kenney-particle-pack",
+   "name": "Kenney Particle Pack",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/particle-pack",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from kenney.nl via its signed download link on 2026-11-17; the asset page states CC0 and the in-zip License.txt (kept next to the atlas) says Creative Commons Zero, CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [
+    "assets/textures/city_action/kenney_smoke-particles_LICENSE.txt"
+   ],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Cell 53 of the atlas is this pack's White puff sprite, downscaled.",
+   "verified": "checked",
+   "id": "kenney-smoke-particles",
+   "name": "Kenney Smoke Particles",
+   "source": "kenney",
+   "author": "Kenney (www.kenney.nl)",
+   "url": "https://kenney.nl/assets/smoke-particles",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from kenney.nl via its signed download link on 2026-11-17; the asset page states CC0 and the in-zip license.txt (kept next to the atlas) says Creative Commons Zero, CC0."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Atlas cells 0-4 are effect 4 (fireball) and cells 5-9 effect 5 (fire ring) of the SD set, downscaled to 128px cells.",
+   "verified": "checked",
+   "id": "cethiel-fire-wrath",
+   "name": "Cethiel — Fire Wrath, Magic Effect",
+   "source": "opengameart",
+   "author": "Cethiel",
+   "url": "https://opengameart.org/content/fire-wrath-magic-effect",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from the OpenGameArt page on 2026-11-17; the page's License(s) field reads CC0 (re-checked at download time; no CC-BY/CC-BY-SA/GPL terms on the page)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Atlas cells 10-16 are effect #02 and cells 17-23 effect #05, downscaled; a near-black backdrop in the frames was crushed toward black in prep so additive blending draws no box.",
+   "verified": "checked",
+   "id": "cethiel-arcane-magic-effect",
+   "name": "Cethiel — Arcane Magic Effect",
+   "source": "opengameart",
+   "author": "Cethiel",
+   "url": "https://opengameart.org/content/arcane-magic-effect",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from the OpenGameArt page on 2026-11-17; the page's License(s) field reads CC0 (re-checked at download time; no CC-BY/CC-BY-SA/GPL terms on the page)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Atlas cell 55 is lightning_1.png with alpha derived from luminance (the source ships on black, as its page instructs: 'make alpha from grayscale'), downscaled.",
+   "verified": "checked",
+   "id": "wreaderror-lightning",
+   "name": "wreaderror — Lightning",
+   "source": "opengameart",
+   "author": "wreaderror",
+   "url": "https://opengameart.org/content/lightning",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from the OpenGameArt page on 2026-11-17; the page's License(s) field reads CC0 (re-checked at download time; no CC-BY/CC-BY-SA/GPL terms on the page)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Derived: frames packed into the shared city_action magic atlas (assets/textures/city_action/magic_atlas.png); original downloads are not committed. Atlas cells 24-31 are the eight 256px frames of spark_radial_spritesheet_13rice.png, downscaled to 128px cells. The page says attribution is appreciated, not required; credited here voluntarily.",
+   "verified": "checked",
+   "id": "rice13-radial-lightning",
+   "name": "13rice — Radial Lightning Effect",
+   "source": "opengameart",
+   "author": "13rice",
+   "url": "https://opengameart.org/content/radial-lightning-effect",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/textures/city_action/magic_atlas.png"
+   ],
+   "verified_how": "Downloaded from the OpenGameArt page on 2026-11-17; the page's License(s) field reads CC0 (re-checked at download time; no CC-BY/CC-BY-SA/GPL terms on the page)."
+  },
+  {
+   "license_spdx": "CC0-1.0",
+   "license_evidence": [],
+   "receipt_ref": null,
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": true,
+   "notes": "Original Blender-made street-corner vignette for the city_action BG-look experiment (2026-11-17): a weathered corner building on block 0's footprint (rusted fire escape, boarded windows, cornice, drainpipe, doorway), two period lamp posts and two clutter piles, all in ONE GLB. The facade texture is painted procedurally with numpy (brick courses, grime streaks, soot, lit windows) from the same layout tables that place the geometry. No third-party material of any kind. Only referenced behind the ?look=bg URL switch; the shipped default never loads it.",
+   "verified": "checked",
+   "id": "project-city-action-bg-vignette",
+   "name": "City Action BG vignette (Blender, original)",
+   "source": "project",
+   "author": "KAGRA project",
+   "url": "https://github.com/EMMA019/KAGRA",
+   "license": "cc0",
+   "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+   "obtained": "2026-11-17",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game",
+    "redistribute-standalone"
+   ],
+   "paths": [
+    "assets/models/city/bg_vignette.glb"
+   ],
+   "verified_how": "Generated in-project: Blender 5.3 Python (geometry, UVs, materials) + numpy texture painting, script kept at ~/workspace/bg-experiment-work/blender/make_bg_vignette.py in the experiment work files. No external assets, textures, fonts or stock. CC0 like the other project packs."
+  },
+  {
+   "license_spdx": null,
+   "license_evidence": [],
+   "receipt_ref": "Synty Store order, 2026-11-18 (owner's mailbox)",
+   "attribution_required": false,
+   "attribution_text": null,
+   "redistributable_in_public_repo": false,
+   "notes": "Converted Synty GLBs live untracked under assets/models/city/ (wep_*.glb weapons; item_potion_small/large.glb heal flasks; stage_*.glb building shells, street props and ground tile from POLYGON Fantasy Kingdom) with the Mixamo cast and ship only inside the integrated preview pack; the FBX source stays off-repo.",
+   "verified": "checked",
+   "id": "private-synty",
+   "name": "Synty POLYGON Fantasy Kingdom models (not committed)",
+   "source": "synty-store",
+   "author": "Synty Studios",
+   "url": "https://syntystore.com/products/polygon-fantasy-kingdom",
+   "license": "custom",
+   "license_url": "https://syntystore.com/pages/licence",
+   "obtained": "2026-11-18",
+   "allowed_uses": [
+    "personal",
+    "commercial",
+    "modify",
+    "redistribute-in-game"
+   ],
+   "paths": [
+    "assets-private/synty/**"
+   ],
+   "verified_how": "One-time buyout licence (not the Synty Pass subscription) verified on the seller's licence page at purchase: use inside shipped games is licensed, stand-alone redistribution of the source files is not. Six converted swords (Sword_01/07/09/10/15/16), two converted heal flasks (Bottle_11/14) and the stage re-skin set (seven building presets — House_02_A, Stables_01, Hut_01, House_03, House_09_C, Tavern_01+Base+Stairs, Tower_01 — plus street props: crate, crate stack, fence, Street_Lamp_01/02, barrel, sack stack, wood pile, rock chunk, hay cart, market stall, well, banner, round tree, planter; each converted with a per-model UV-footprint crop of the shared atlas) and the ground tile (a single-primitive plane carrying the atlas's ashlar stone swatch, region x in [1024,2048], y in [0,1024], as a 1024 px crop, laid by the kit as a tinted grid; the two composed dressing groups ship merged into one stage_dressing.glb with their four placements baked in, freeing the tile's census slot) are staged untracked like the Mixamo cast; no Synty binary is committed."
   }
  ]
 }
